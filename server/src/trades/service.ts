@@ -22,12 +22,16 @@ import { eventBus } from "../events/bus.js";
 import { checkCanOpenTrade, checkVolumeRisk, recordTradeClose, RiskBlockedError } from "../risk/service.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
+  computePartialTpQuantity,
   computeResultFromPrices,
   computeRiskUsd,
   computeTakeProfitPrice,
+  decimalsOf,
+  isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
   parseRRRatio,
+  PARTIAL_TP_PERCENT,
   type TradeSide,
 } from "./math.js";
 
@@ -207,9 +211,17 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
 export type SetTakeProfitInput = {
   tpPrice?: number;
   rrPreset?: string;
+  /** Опциональная цена частичной фиксации PARTIAL_TP_PERCENT% объёма (см. math.ts). */
+  partialTpPrice?: number;
 };
 
-export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput): Promise<Trade> {
+export type SetTakeProfitResult = {
+  trade: Trade;
+  /** Если не null — основной TP выставлен, но частичный ордер не удалось поставить на бирже. */
+  partialTpWarning: string | null;
+};
+
+export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput): Promise<SetTakeProfitResult> {
   const trade = await getTradeById(tradeId);
   if (!trade || trade.status !== "active") {
     throw new TradeError("Активная сделка не найдена", 404);
@@ -239,12 +251,34 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     throw new TradeError(side === "long" ? "TP должен быть выше цены входа" : "TP должен быть ниже цены входа");
   }
 
+  if (input.partialTpPrice !== undefined && !isValidPartialTakeProfit(entryPrice, tpPrice, input.partialTpPrice, side)) {
+    throw new TradeError(
+      side === "long"
+        ? "Цена частичной фиксации должна быть между входом и TP"
+        : "Цена частичной фиксации должна быть между входом и TP (ниже входа, выше TP)",
+    );
+  }
+
   const credentials = await getBingxCredentials();
   if (!credentials) {
     throw new TradeError("Ключи BingX не настроены");
   }
 
   const exitSide: OrderSide = side === "long" ? "SELL" : "BUY";
+  const totalQuantity = Number(trade.quantity);
+
+  // Если задана частичная фиксация — основной TP уходит не на весь объём, а на остаток
+  // (100% − PARTIAL_TP_PERCENT%). Так обе цели независимы: срабатывание одной не зависит
+  // от способности биржи «урезать» reduceOnly-ордер сверх текущего остатка позиции.
+  let partialQuantity: number | null = null;
+  let mainTpQuantity = totalQuantity;
+  if (input.partialTpPrice !== undefined) {
+    partialQuantity = computePartialTpQuantity(totalQuantity, decimalsOf(trade.quantity));
+    if (!(partialQuantity > 0) || partialQuantity >= totalQuantity) {
+      throw new TradeError("Объём позиции слишком мал для частичной фиксации");
+    }
+    mainTpQuantity = totalQuantity - partialQuantity;
+  }
 
   let tpOrderId: string | number;
   try {
@@ -253,12 +287,33 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
       side: exitSide,
       type: "TAKE_PROFIT_MARKET",
       stopPrice: tpPrice,
-      quantity: Number(trade.quantity),
+      quantity: mainTpQuantity,
       reduceOnly: true,
     });
     tpOrderId = tpOrder.orderId;
   } catch (error) {
     throw new TradeError(bingxMessage(error, "Не удалось выставить TP на бирже"), 502);
+  }
+
+  let partialTpOrderId: string | number | undefined;
+  let partialTpWarning: string | null = null;
+  if (input.partialTpPrice !== undefined && partialQuantity !== null) {
+    try {
+      const partialOrder = await placeOrder(credentials, {
+        symbol: trade.symbol,
+        side: exitSide,
+        type: "TAKE_PROFIT_MARKET",
+        stopPrice: input.partialTpPrice,
+        quantity: partialQuantity,
+        reduceOnly: true,
+      });
+      partialTpOrderId = partialOrder.orderId;
+    } catch (error) {
+      partialTpWarning = bingxMessage(
+        error,
+        "Основной TP выставлен, но частичную фиксацию поставить не удалось — попробуйте ещё раз",
+      );
+    }
   }
 
   // TP уже реально выставлен на бирже — ошибка записи в БД не должна выглядеть
@@ -268,12 +323,19 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     const updated = await updateTrade(tradeId, {
       tpPrice,
       rrPreset,
-      bingxOrderIds: { ...existingOrderIds, tp: tpOrderId },
+      partialTpPrice: partialTpOrderId !== undefined ? input.partialTpPrice : undefined,
+      partialTpPercent: partialTpOrderId !== undefined ? PARTIAL_TP_PERCENT : undefined,
+      partialTpQuantity: partialTpOrderId !== undefined ? (partialQuantity ?? undefined) : undefined,
+      bingxOrderIds: {
+        ...existingOrderIds,
+        tp: tpOrderId,
+        ...(partialTpOrderId !== undefined ? { partialTp: partialTpOrderId } : {}),
+      },
     });
     if (!updated) {
       throw new Error("update returned null");
     }
-    return updated;
+    return { trade: updated, partialTpWarning };
   } catch {
     throw new TradeError(
       "TP выставлен на бирже, но не удалось сохранить это в приложении — перезагрузите дашборд",
@@ -363,7 +425,7 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
   // best-effort зачистка и запись результата; ошибки не должны вылетать необработанными.
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-  for (const key of ["sl", "tp"] as const) {
+  for (const key of ["sl", "tp", "partialTp"] as const) {
     const orderId = orderIds[key];
     if (orderId === undefined) continue;
     try {

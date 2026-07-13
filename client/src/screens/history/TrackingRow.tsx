@@ -30,17 +30,17 @@ export function TrackingRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
 
   return (
-    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-slate-800 p-4 text-xs">
+    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 text-xs shadow-sm">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-100">{displayName}</span>
+        <span className="text-sm font-medium text-ink">{displayName}</span>
         {trade.beCrossed && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-400">
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
             Было в безубытке
           </span>
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-slate-400">
+      <div className="grid grid-cols-3 gap-2 text-slate-500">
         <Field label="Вход" value={formatPrice(trade.entryPrice)} />
         <Field label="SL" value={formatPrice(trade.slPrice)} />
         <Field label="TP" value={formatPrice(trade.tpPrice)} />
@@ -49,8 +49,19 @@ export function TrackingRow({ trade }: { trade: Trade }) {
         <Field label="MFE, R" value={mfeInR(trade)} />
       </div>
 
-      <div className="border-t border-slate-800 pt-2 text-slate-500">
-        Сигналы: <span className="text-slate-300">{signalLabels(trade.signals)}</span>
+      {trade.partialTpPrice && (
+        <div className="border-t border-line pt-2 text-slate-500">
+          Частичная фиксация 70% на {formatPrice(trade.partialTpPrice)}:{" "}
+          <span className="text-ink">
+            {trade.partialTpFilledAt
+              ? `сработала по ${formatPrice(trade.partialTpFillPrice)}`
+              : "не сработала"}
+          </span>
+        </div>
+      )}
+
+      <div className="border-t border-line pt-2 text-slate-500">
+        Сигналы: <span className="text-slate-600">{signalLabels(trade.signals)}</span>
       </div>
     </div>
   );
@@ -60,7 +71,7 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200">{value}</span>
+      <span className="text-ink">{value}</span>
     </div>
   );
 }

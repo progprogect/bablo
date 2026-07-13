@@ -39,6 +39,42 @@ export function isValidTakeProfit(entryPrice: number, tpPrice: number, side: Tra
   return side === "long" ? tpPrice > entryPrice : tpPrice < entryPrice;
 }
 
+/** Фиксированная доля объёма, закрываемая на уровне частичной фиксации (см. docs/PROJECT.md). */
+export const PARTIAL_TP_PERCENT = 70;
+
+/**
+ * Цена частичной фиксации должна лежать строго между входом и основным TP — так частичный
+ * ордер срабатывает раньше основного по мере движения цены в прибыль, а не после него.
+ */
+export function isValidPartialTakeProfit(
+  entryPrice: number,
+  tpPrice: number,
+  partialTpPrice: number,
+  side: TradeSide,
+): boolean {
+  return side === "long"
+    ? partialTpPrice > entryPrice && partialTpPrice < tpPrice
+    : partialTpPrice < entryPrice && partialTpPrice > tpPrice;
+}
+
+/**
+ * Кол-во монет для частичного закрытия — та же точность (кол-во знаков после запятой),
+ * что и у объёма всей позиции, иначе биржа отклонит ордер за несоответствие lot size.
+ * Остаток (для основного TP) считается вычитанием, а не отдельным round — так сумма
+ * partial + remainder всегда точно равна исходному объёму.
+ */
+export function computePartialTpQuantity(quantity: number, quantityDecimals: number): number {
+  const raw = (quantity * PARTIAL_TP_PERCENT) / 100;
+  const factor = 10 ** quantityDecimals;
+  return Math.floor(raw * factor) / factor;
+}
+
+/** Кол-во знаков после запятой у строкового представления количества монет. */
+export function decimalsOf(value: string): number {
+  const dotIndex = value.indexOf(".");
+  return dotIndex === -1 ? 0 : value.length - dotIndex - 1;
+}
+
 /**
  * Результат сделки в R и % по цене закрытия — используется, когда точный реализованный
  * PnL с биржи недоступен (ручное закрытие, резервный путь сверки без ORDER_TRADE_UPDATE).

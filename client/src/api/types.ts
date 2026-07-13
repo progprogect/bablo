@@ -33,6 +33,11 @@ export type Trade = {
   tpPrice: string | null;
   rrPreset: string | null;
   riskUsd: string | null;
+  partialTpPrice: string | null;
+  partialTpPercent: string | null;
+  partialTpQuantity: string | null;
+  partialTpFilledAt: string | null;
+  partialTpFillPrice: string | null;
   openedAt: string;
   closedAt: string | null;
   closeReason: string | null;
@@ -82,6 +87,11 @@ export type BingxKeyStatus = {
 export type OpenTradeResult = {
   trade: Trade;
   slWarning: string | null;
+};
+
+export type SetTakeProfitResult = {
+  trade: Trade;
+  partialTpWarning: string | null;
 };
 
 export type RiskLevel = {

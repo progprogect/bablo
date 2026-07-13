@@ -31,8 +31,8 @@ export function AssetTabs({ assets, selected, onSelect }: AssetTabsProps) {
             onClick={() => onSelect(asset.symbol)}
             className={
               isActive
-                ? "rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-surface"
-                : "rounded-full border border-slate-800 px-4 py-1.5 text-sm text-slate-400"
+                ? "rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white"
+                : "rounded-full border border-line bg-card px-4 py-1.5 text-sm text-slate-500"
             }
           >
             {displayName(asset.symbol)}

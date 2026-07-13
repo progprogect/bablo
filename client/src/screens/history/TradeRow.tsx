@@ -45,19 +45,24 @@ export function TradeRow({ trade }: { trade: Trade }) {
   const isLoss = resultPct !== null && resultPct < 0;
 
   return (
-    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-slate-800 p-4">
+    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-100">{displayName}</span>
+          <span className="text-sm font-medium text-ink">{displayName}</span>
           <span
             className={
               trade.side === "long"
-                ? "rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
-                : "rounded-full bg-red-500/20 px-2 py-0.5 text-[11px] font-medium text-red-400"
+                ? "rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600"
+                : "rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600"
             }
           >
             {trade.side === "long" ? "Лонг" : "Шорт"}
           </span>
+          {trade.partialTpFilledAt && (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+              частичная 70%
+            </span>
+          )}
         </div>
         <span className="text-xs text-slate-500">{formatDate(trade.openedAt)}</span>
       </div>
@@ -69,7 +74,11 @@ export function TradeRow({ trade }: { trade: Trade }) {
         </span>
         <span
           className={
-            isProfit ? "text-sm font-medium text-emerald-400" : isLoss ? "text-sm font-medium text-red-400" : "text-sm font-medium text-slate-300"
+            isProfit
+              ? "text-sm font-medium text-emerald-600"
+              : isLoss
+                ? "text-sm font-medium text-red-600"
+                : "text-sm font-medium text-slate-600"
           }
         >
           {resultPct !== null ? `${resultPct > 0 ? "+" : ""}${resultPct.toFixed(2)}%` : "—"}

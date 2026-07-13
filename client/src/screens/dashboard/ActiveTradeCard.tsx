@@ -46,6 +46,7 @@ export function ActiveTradeCard({
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const [isClosing, setIsClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [partialTpWarning, setPartialTpWarning] = useState<string | null>(null);
 
   const unrealizedProfit = livePrice !== undefined ? computeLivePnl(trade, livePrice) : trade.unrealizedProfit;
 
@@ -64,14 +65,14 @@ export function ActiveTradeCard({
   }
 
   return (
-    <div className="mx-4 flex flex-col gap-4 rounded-2xl border border-slate-800 p-4">
+    <div className="mx-4 flex flex-col gap-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-medium text-slate-100">{displayName}</h2>
+        <h2 className="text-base font-medium text-ink">{displayName}</h2>
         <span
           className={
             trade.side === "long"
-              ? "rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-400"
-              : "rounded-full bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400"
+              ? "rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+              : "rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
           }
         >
           {trade.side === "long" ? "Лонг" : "Шорт"}
@@ -79,16 +80,20 @@ export function ActiveTradeCard({
       </div>
 
       {!slConfirmed && (
-        <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
           SL не подтверждён биржей — проверьте позицию на BingX вручную.
         </p>
       )}
 
       {trade.positionFlat && (
-        <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
           Похоже, позиция уже закрылась на бирже (SL/TP). Нажмите «Закрыть сделку», чтобы
           зафиксировать результат и снять блокировку новых сделок.
         </p>
+      )}
+
+      {partialTpWarning && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{partialTpWarning}</p>
       )}
 
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
@@ -105,17 +110,37 @@ export function ActiveTradeCard({
         />
       </dl>
 
-      {!trade.tpPrice && <TakeProfitForm trade={trade} onUpdated={onUpdated} />}
+      {trade.partialTpPrice && (
+        <div className="flex items-center justify-between rounded-lg bg-accent/5 px-3 py-2 text-xs">
+          <span className="flex items-center gap-1.5 text-ink">
+            Частичная фиксация {fmt(trade.partialTpPrice)}
+            <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+              70%
+            </span>
+          </span>
+          <span className={trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}>
+            {trade.partialTpFilledAt ? `исполнена по ${fmt(trade.partialTpFillPrice)}` : "ожидает"}
+          </span>
+        </div>
+      )}
+
+      {!trade.tpPrice && (
+        <TakeProfitForm
+          trade={trade}
+          onUpdated={onUpdated}
+          onWarning={setPartialTpWarning}
+        />
+      )}
 
       <button
         type="button"
         disabled={isClosing}
         onClick={handleClose}
-        className="rounded-xl border border-red-500/40 py-2 text-sm font-medium text-red-400 disabled:opacity-50"
+        className="rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
       >
         {isClosing ? "Закрываю…" : "Закрыть сделку"}
       </button>
-      {closeError && <p className="text-center text-xs text-red-400">{closeError}</p>}
+      {closeError && <p className="text-center text-xs text-red-600">{closeError}</p>}
     </div>
   );
 }
@@ -124,7 +149,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="text-slate-100">{value}</dd>
+      <dd className="text-ink">{value}</dd>
     </div>
   );
 }
@@ -132,20 +157,42 @@ function Row({ label, value }: { label: string; value: string }) {
 function TakeProfitForm({
   trade,
   onUpdated,
+  onWarning,
 }: {
   trade: ActiveTradeView;
   onUpdated: (trade: ActiveTradeView) => void;
+  onWarning: (message: string | null) => void;
 }) {
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [tpPrice, setTpPrice] = useState("");
+  const [partialTpPrice, setPartialTpPrice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function submit(input: { tpPrice?: number; rrPreset?: string }) {
+  function pickPreset(preset: string) {
+    setSelectedPreset(preset);
+    setTpPrice("");
+  }
+
+  function editTpPrice(value: string) {
+    setTpPrice(value);
+    setSelectedPreset(null);
+  }
+
+  async function handleSave() {
+    if (!selectedPreset && !tpPrice) return;
     setError(null);
+    onWarning(null);
     setIsSubmitting(true);
     try {
-      const updated = await setTakeProfitRequest(trade.id, input);
+      const input = selectedPreset ? { rrPreset: selectedPreset } : { tpPrice: Number(tpPrice) };
+      const parsedPartial = partialTpPrice ? Number(partialTpPrice) : undefined;
+      const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
+        ...input,
+        ...(parsedPartial !== undefined ? { partialTpPrice: parsedPartial } : {}),
+      });
       onUpdated({ ...trade, ...updated });
+      onWarning(partialTpWarning);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось выставить TP");
     } finally {
@@ -154,7 +201,7 @@ function TakeProfitForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
       <p className="text-xs text-slate-500">Выберите соотношение риск/прибыль или укажите цену TP</p>
 
       <div className="flex flex-wrap gap-2">
@@ -163,34 +210,54 @@ function TakeProfitForm({
             key={preset}
             type="button"
             disabled={isSubmitting}
-            onClick={() => submit({ rrPreset: preset })}
-            className="rounded-full border border-slate-800 px-3 py-1 text-xs text-slate-300 disabled:opacity-50"
+            onClick={() => pickPreset(preset)}
+            className={`rounded-full border px-3 py-1 text-xs disabled:opacity-50 ${
+              selectedPreset === preset
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-line text-slate-600"
+            }`}
           >
             {preset}
           </button>
         ))}
       </div>
 
-      <div className="flex gap-2">
+      <input
+        type="number"
+        inputMode="decimal"
+        placeholder="Цена TP вручную"
+        value={tpPrice}
+        onChange={(event) => editTpPrice(event.target.value)}
+        className="rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+      />
+
+      <div className="flex items-center gap-2 pt-1">
         <input
           type="number"
           inputMode="decimal"
-          placeholder="Цена TP вручную"
-          value={tpPrice}
-          onChange={(event) => setTpPrice(event.target.value)}
-          className="flex-1 rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent"
+          placeholder="Цена частичной фиксации (необязательно)"
+          value={partialTpPrice}
+          onChange={(event) => setPartialTpPrice(event.target.value)}
+          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
         />
-        <button
-          type="button"
-          disabled={isSubmitting || !tpPrice}
-          onClick={() => submit({ tpPrice: Number(tpPrice) })}
-          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
-        >
-          Сохранить
-        </button>
+        <span className="shrink-0 rounded-full bg-accent/10 px-2 py-1 text-xs font-medium text-accent">
+          70%
+        </span>
       </div>
+      <p className="text-[11px] text-slate-500">
+        На этой цене закроется 70% позиции, остальные 30% продолжат идти до TP выше
+      </p>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      <button
+        type="button"
+        disabled={isSubmitting || (!selectedPreset && !tpPrice)}
+        onClick={handleSave}
+        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {isSubmitting ? "Сохраняю…" : "Сохранить"}
+      </button>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }

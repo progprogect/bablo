@@ -64,6 +64,13 @@ export const trades = pgTable("trades", {
   tpPrice: numeric("tp_price", { precision: 20, scale: 8 }),
   rrPreset: text("rr_preset"),
   riskUsd: numeric("risk_usd", { precision: 10, scale: 2 }),
+  // Частичная фиксация: опциональный доп. TP на часть объёма (см. docs/PROJECT.md).
+  // Не заменяет основной tpPrice — основной ордер выставляется на остаток объёма.
+  partialTpPrice: numeric("partial_tp_price", { precision: 20, scale: 8 }),
+  partialTpPercent: numeric("partial_tp_percent", { precision: 5, scale: 2 }),
+  partialTpQuantity: numeric("partial_tp_quantity", { precision: 20, scale: 8 }),
+  partialTpFilledAt: timestamp("partial_tp_filled_at", { withTimezone: true }),
+  partialTpFillPrice: numeric("partial_tp_fill_price", { precision: 20, scale: 8 }),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closeReason: text("close_reason"), // 'sl' | 'tp' | 'manual' | 'external' (закрыта на бирже, обнаружено постфактум)

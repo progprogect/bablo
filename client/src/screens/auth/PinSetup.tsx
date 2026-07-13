@@ -34,9 +34,9 @@ export function PinSetup({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
+    <section className="flex flex-1 flex-col items-center justify-center gap-6 bg-surface px-6">
       <div className="text-center">
-        <h1 className="text-lg font-medium text-slate-100">Установите PIN</h1>
+        <h1 className="text-lg font-medium text-ink">Установите PIN</h1>
         <p className="mt-1 text-sm text-slate-500">Он будет нужен для входа в приложение</p>
       </div>
 
@@ -49,7 +49,7 @@ export function PinSetup({ onDone }: { onDone: () => void }) {
           value={pin}
           onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))}
           maxLength={8}
-          className="rounded-xl border border-slate-800 bg-transparent px-4 py-3 text-center text-xl tracking-[0.4em] text-slate-100 outline-none focus:border-accent"
+          className="rounded-xl border border-line bg-card px-4 py-3 text-center text-xl tracking-[0.4em] text-ink outline-none focus:border-accent"
         />
         <input
           type="password"
@@ -58,15 +58,15 @@ export function PinSetup({ onDone }: { onDone: () => void }) {
           value={confirmPin}
           onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, ""))}
           maxLength={8}
-          className="rounded-xl border border-slate-800 bg-transparent px-4 py-3 text-center text-xl tracking-[0.4em] text-slate-100 outline-none focus:border-accent"
+          className="rounded-xl border border-line bg-card px-4 py-3 text-center text-xl tracking-[0.4em] text-ink outline-none focus:border-accent"
         />
 
-        {error && <p className="text-center text-sm text-red-400">{error}</p>}
+        {error && <p className="text-center text-sm text-red-600">{error}</p>}
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="mt-1 rounded-xl bg-accent px-4 py-3 font-medium text-surface disabled:opacity-50"
+          className="mt-1 rounded-xl bg-accent px-4 py-3 font-medium text-white disabled:opacity-50"
         >
           Сохранить
         </button>

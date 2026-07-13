@@ -16,11 +16,11 @@ export function InsightPanel({ stats }: { stats: TimeOfDayStats }) {
   const best = stats.bestPeriod ? stats.periods.find((p) => p.key === stats.bestPeriod) : null;
 
   return (
-    <div className="mx-4 flex flex-col gap-3 rounded-2xl border border-slate-800 p-4">
+    <div className="mx-4 flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-slate-500">Время дня</p>
 
       {best ? (
-        <p className="text-sm text-slate-100">
+        <p className="text-sm text-ink">
           Чаще всего прибыльные сделки — <span className="text-accent">{PERIOD_LABELS[best.key]}</span>:{" "}
           {best.profitableTrades} из {best.totalTrades}.
         </p>
@@ -32,7 +32,7 @@ export function InsightPanel({ stats }: { stats: TimeOfDayStats }) {
         {stats.periods.map((period) => (
           <div key={period.key} className="flex justify-between gap-2">
             <dt>{PERIOD_LABELS[period.key]}</dt>
-            <dd className="text-slate-300">
+            <dd className="text-slate-600">
               {period.totalTrades > 0 ? `${period.profitableTrades}/${period.totalTrades}` : "—"}
             </dd>
           </div>

@@ -42,12 +42,12 @@ export function RiskPlanSection() {
 
   return (
     <section className="flex flex-col gap-3 pt-6">
-      <h2 className="text-sm font-medium text-slate-100">Риск-план</h2>
+      <h2 className="text-sm font-medium text-ink">Риск-план</h2>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
       {settings && (
-        <div className="flex flex-col gap-2 rounded-lg border border-slate-800 p-3">
+        <div className="flex flex-col gap-2 rounded-lg border border-line bg-card p-3">
           <SettingRow
             label="Кулдаун после сделки (мин)"
             value={settings.cooldownMinutes}
@@ -76,7 +76,7 @@ export function RiskPlanSection() {
         </div>
       )}
 
-      <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-slate-800 p-2">
+      <div className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-line bg-card p-2">
         {levels?.map((level) => (
           <div key={level.level} className="flex items-center gap-2 px-1 py-1 text-sm">
             <span className="w-6 text-slate-500">{level.level}</span>
@@ -84,14 +84,14 @@ export function RiskPlanSection() {
               type="number"
               defaultValue={level.riskUsd}
               onBlur={(event) => handleLevelChange(level, { riskUsd: Number(event.target.value) })}
-              className="w-20 rounded-md border border-slate-800 bg-transparent px-2 py-1 text-center text-slate-100 outline-none focus:border-accent"
+              className="w-20 rounded-md border border-line bg-transparent px-2 py-1 text-center text-ink outline-none focus:border-accent"
             />
             <span className="text-xs text-slate-500">USDT →</span>
             <input
               type="number"
               defaultValue={level.requiredR}
               onBlur={(event) => handleLevelChange(level, { requiredR: Number(event.target.value) })}
-              className="w-16 rounded-md border border-slate-800 bg-transparent px-2 py-1 text-center text-slate-100 outline-none focus:border-accent"
+              className="w-16 rounded-md border border-line bg-transparent px-2 py-1 text-center text-ink outline-none focus:border-accent"
             />
             <span className="text-xs text-slate-500">R</span>
           </div>
@@ -117,7 +117,7 @@ function SettingRow({
         type="number"
         defaultValue={value}
         onBlur={(event) => onChange(Number(event.target.value))}
-        className="w-20 rounded-md border border-slate-800 bg-transparent px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-accent"
+        className="w-20 rounded-md border border-line bg-transparent px-2 py-1 text-center text-sm text-ink outline-none focus:border-accent"
       />
     </div>
   );

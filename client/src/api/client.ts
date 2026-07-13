@@ -9,6 +9,7 @@ import type {
   PagedTrades,
   RiskLevel,
   RiskSettings,
+  SetTakeProfitResult,
   TimeOfDayStats,
   Trade,
   TradeSide,
@@ -95,8 +96,12 @@ export const openTradeRequest = (input: {
 
 export const setTakeProfitRequest = (
   tradeId: number,
-  input: { tpPrice?: number; rrPreset?: string },
-) => request<Trade>(`/trades/${tradeId}/takeprofit`, { method: "POST", body: JSON.stringify(input) });
+  input: { tpPrice?: number; rrPreset?: string; partialTpPrice?: number },
+) =>
+  request<SetTakeProfitResult>(`/trades/${tradeId}/takeprofit`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 
 export const closeTradeRequest = (tradeId: number) =>
   request<Trade>(`/trades/${tradeId}/close`, { method: "POST" });

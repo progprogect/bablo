@@ -43,7 +43,7 @@ export function History() {
   if (error) {
     return (
       <section className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-sm text-red-600">{error}</p>
       </section>
     );
   }
@@ -58,7 +58,7 @@ export function History() {
 
   return (
     <section className="flex flex-1 flex-col gap-6 pt-10">
-      <h1 className="px-4 text-lg font-medium text-slate-100">История</h1>
+      <h1 className="px-4 text-lg font-medium text-ink">История</h1>
 
       <div className="flex justify-center gap-2 px-4">
         <TabButton label="Сделки" active={tab === "trades"} onClick={() => setTab("trades")} />
@@ -84,7 +84,7 @@ export function History() {
               type="button"
               onClick={loadMore}
               disabled={isLoadingMore}
-              className="mx-4 rounded-xl border border-slate-800 py-2 text-sm text-slate-300 disabled:opacity-50"
+              className="mx-4 rounded-xl border border-line py-2 text-sm text-slate-600 disabled:opacity-50"
             >
               {isLoadingMore ? "Загружаю…" : "Показать ещё"}
             </button>
@@ -110,8 +110,8 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
       onClick={onClick}
       className={
         active
-          ? "rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-surface"
-          : "rounded-full border border-slate-800 px-4 py-1.5 text-sm text-slate-400"
+          ? "rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white"
+          : "rounded-full border border-line px-4 py-1.5 text-sm text-slate-500"
       }
     >
       {label}

@@ -48,7 +48,10 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post<{ Params: { id: string }; Body: { tpPrice?: number; rrPreset?: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { tpPrice?: number; rrPreset?: string; partialTpPrice?: number };
+  }>(
     "/trades/:id/takeprofit",
     async (request, reply) => {
       const id = Number(request.params.id);

@@ -33,11 +33,11 @@ export function RiskTreeSheet({
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-surface">
       <div
-        className="flex items-center justify-between border-b border-slate-800 px-4 pb-3"
+        className="flex items-center justify-between border-b border-line px-4 pb-3"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 16px)" }}
       >
-        <h2 className="text-base font-medium text-slate-100">Дерево роста</h2>
-        <button type="button" onClick={onClose} className="text-sm text-slate-400">
+        <h2 className="text-base font-medium text-ink">Дерево роста</h2>
+        <button type="button" onClick={onClose} className="text-sm text-slate-500">
           Закрыть
         </button>
       </div>
@@ -86,13 +86,13 @@ function LevelNode({
         isCurrent
           ? "border-accent bg-accent/10"
           : isPast
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-slate-800/60"
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-line bg-card"
       }`}
     >
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-700 ${
-          isCurrent ? "bg-accent text-surface" : isPast ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-800 text-slate-500"
+          isCurrent ? "bg-accent text-white" : isPast ? "bg-emerald-100 text-emerald-600" : "bg-slate-200 text-slate-500"
         }`}
       >
         {isPast ? "✓" : level.level}
@@ -100,7 +100,7 @@ function LevelNode({
 
       <div className="flex flex-1 flex-col gap-1">
         <div className="flex items-center justify-between text-sm">
-          <span className={isPast || isCurrent ? "text-slate-100" : "text-slate-500"}>
+          <span className={isPast || isCurrent ? "text-ink" : "text-slate-500"}>
             {Number(level.riskUsd)} USDT
           </span>
           <span className="text-xs text-slate-500">
@@ -108,7 +108,7 @@ function LevelNode({
           </span>
         </div>
         {(isCurrent || isPast) && (
-          <span className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
+          <span className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
             <span
               className="block h-full rounded-full bg-accent transition-all duration-700"
               style={{ width: `${progressPct}%` }}

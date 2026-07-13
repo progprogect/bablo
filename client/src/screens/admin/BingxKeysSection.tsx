@@ -1,13 +1,25 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, getBingxKeyStatus, saveBingxKey } from "../../api/client";
 
+type SaveBingxKeyResponse = {
+  configured: boolean;
+  balance?: { equity?: string; balance?: string };
+  equity?: string | null;
+};
+
+function pickEquity(result: SaveBingxKeyResponse | null | undefined): string | null {
+  if (!result) return null;
+  const raw = result.equity ?? result.balance?.equity ?? result.balance?.balance;
+  return raw != null && raw !== "" ? String(raw) : null;
+}
+
 export function BingxKeysSection() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkedEquity, setCheckedEquity] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -18,24 +30,41 @@ export function BingxKeysSection() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
-    setCheckedEquity(null);
+    setSuccess(null);
     setIsSaving(true);
     try {
-      const result = await saveBingxKey(apiKey.trim(), secretKey.trim());
+      const result = (await saveBingxKey(apiKey.trim(), secretKey.trim())) as SaveBingxKeyResponse;
       setConfigured(true);
-      setCheckedEquity(result.balance.equity);
       setSecretKey("");
+      const equity = pickEquity(result);
+      setSuccess(equity ? `Подключено. Баланс: ${equity} USDT` : "Ключи сохранены и проверены");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Не удалось проверить ключи");
+      if (err instanceof ApiError) {
+        setError(err.message);
+        return;
+      }
+      // Ответ мог не распарситься на мобильном клиенте, хотя сервер уже сохранил ключи.
+      try {
+        const status = await getBingxKeyStatus();
+        setConfigured(status.configured);
+        if (status.configured) {
+          setSuccess("Ключи сохранены");
+          setError(null);
+        } else {
+          setError("Не удалось подтвердить сохранение ключей — попробуйте ещё раз");
+        }
+      } catch {
+        setError("Не удалось проверить ключи — попробуйте ещё раз");
+      }
     } finally {
       setIsSaving(false);
     }
   }
 
   return (
-    <section className="flex flex-col gap-3 border-b border-slate-800 pb-6">
+    <section className="flex flex-col gap-3 border-b border-line pb-6">
       <div>
-        <h2 className="text-sm font-medium text-slate-100">BingX API</h2>
+        <h2 className="text-sm font-medium text-ink">BingX API</h2>
         <p className="mt-0.5 text-xs text-slate-500">
           {configured === null
             ? "Проверка…"
@@ -51,25 +80,23 @@ export function BingxKeysSection() {
           placeholder="API Key"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
-          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent"
+          className="rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
         />
         <input
           type="password"
           placeholder="Secret Key"
           value={secretKey}
           onChange={(event) => setSecretKey(event.target.value)}
-          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent"
+          className="rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
         />
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        {checkedEquity && (
-          <p className="text-xs text-emerald-400">Подключено. Баланс: {checkedEquity} USDT</p>
-        )}
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        {success && <p className="text-xs text-emerald-600">{success}</p>}
 
         <button
           type="submit"
           disabled={isSaving || !apiKey.trim() || !secretKey.trim()}
-          className="mt-1 self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
+          className="mt-1 self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           Проверить и сохранить
         </button>

@@ -49,8 +49,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       try {
         const balance = await getBalance(credentials);
         await setBingxCredentials(credentials);
-        await restartAccountStream();
-        return { configured: true, balance };
+        // Рестарт account-стрима не должен ломать сохранение ключей: ключи уже валидны
+        // и записаны в БД, даже если WS не поднялся с первой попытки.
+        try {
+          await restartAccountStream();
+        } catch (streamError) {
+          request.log.warn({ err: streamError }, "Ключи сохранены, но account-стрим не перезапустился");
+        }
+        const equity = balance.equity ?? balance.balance ?? null;
+        return { configured: true, balance, equity };
       } catch (error) {
         const message = error instanceof BingXApiError ? error.message : "Не удалось подключиться к BingX";
         reply.code(502).send({ error: message });

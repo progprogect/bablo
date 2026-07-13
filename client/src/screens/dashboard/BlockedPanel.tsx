@@ -39,9 +39,9 @@ export function BlockedPanel({ locks, onExpired }: { locks: RiskLock[]; onExpire
   const remainingMs = new Date(effective.until).getTime() - now;
 
   return (
-    <div className="mx-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-center">
-      <p className="text-sm text-amber-400">{effective.reason}</p>
-      <p className="text-2xl font-semibold tabular-nums text-amber-300">{formatRemaining(remainingMs)}</p>
+    <div className="mx-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+      <p className="text-sm text-amber-700">{effective.reason}</p>
+      <p className="text-2xl font-semibold tabular-nums text-amber-700">{formatRemaining(remainingMs)}</p>
     </div>
   );
 }

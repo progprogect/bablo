@@ -44,7 +44,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 function CenteredMessage({ children }: { children: ReactNode }) {
   return (
-    <section className="flex flex-1 items-center justify-center px-6 text-sm text-slate-500">
+    <section className="flex flex-1 items-center justify-center bg-surface px-6 text-sm text-slate-500">
       {children}
     </section>
   );

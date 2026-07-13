@@ -53,6 +53,11 @@ export async function createTrade(input: CreateTradeInput): Promise<Trade> {
 export type UpdateTradeInput = Partial<{
   tpPrice: number;
   rrPreset: string;
+  partialTpPrice: number;
+  partialTpPercent: number;
+  partialTpQuantity: number;
+  partialTpFilledAt: Date;
+  partialTpFillPrice: number;
   bingxOrderIds: Record<string, string | number>;
   status: "active" | "closed";
   closedAt: Date;
@@ -67,6 +72,11 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   const patch: Record<string, unknown> = {};
   if (input.tpPrice !== undefined) patch.tpPrice = String(input.tpPrice);
   if (input.rrPreset !== undefined) patch.rrPreset = input.rrPreset;
+  if (input.partialTpPrice !== undefined) patch.partialTpPrice = String(input.partialTpPrice);
+  if (input.partialTpPercent !== undefined) patch.partialTpPercent = String(input.partialTpPercent);
+  if (input.partialTpQuantity !== undefined) patch.partialTpQuantity = String(input.partialTpQuantity);
+  if (input.partialTpFilledAt !== undefined) patch.partialTpFilledAt = input.partialTpFilledAt;
+  if (input.partialTpFillPrice !== undefined) patch.partialTpFillPrice = String(input.partialTpFillPrice);
   if (input.bingxOrderIds !== undefined) patch.bingxOrderIds = input.bingxOrderIds;
   if (input.status !== undefined) patch.status = input.status;
   if (input.closedAt !== undefined) patch.closedAt = input.closedAt;

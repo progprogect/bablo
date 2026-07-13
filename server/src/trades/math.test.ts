@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeResultFromPrices, parseRRRatio, computeTakeProfitPrice, isValidStopLoss, isValidTakeProfit } from "./math.js";
+import {
+  computePartialTpQuantity,
+  computeResultFromPrices,
+  computeTakeProfitPrice,
+  decimalsOf,
+  isValidPartialTakeProfit,
+  isValidStopLoss,
+  isValidTakeProfit,
+  parseRRRatio,
+} from "./math.js";
 
 test("computeResultFromPrices: long в плюсе даёт положительный R", () => {
   const { resultR, resultPct } = computeResultFromPrices("long", 100, 110, 10, 50);
@@ -44,4 +53,26 @@ test("isValidStopLoss/isValidTakeProfit: базовые направления",
   assert.equal(isValidStopLoss(100, 105, "long"), false);
   assert.equal(isValidTakeProfit(100, 110, "long"), true);
   assert.equal(isValidTakeProfit(100, 90, "short"), true);
+});
+
+test("isValidPartialTakeProfit: цена должна лежать строго между входом и TP", () => {
+  assert.equal(isValidPartialTakeProfit(100, 120, 110, "long"), true);
+  assert.equal(isValidPartialTakeProfit(100, 120, 100, "long"), false); // равно входу
+  assert.equal(isValidPartialTakeProfit(100, 120, 120, "long"), false); // равно TP
+  assert.equal(isValidPartialTakeProfit(100, 120, 130, "long"), false); // за TP
+  assert.equal(isValidPartialTakeProfit(100, 80, 90, "short"), true);
+  assert.equal(isValidPartialTakeProfit(100, 80, 70, "short"), false); // за TP
+});
+
+test("decimalsOf: считает знаки после запятой у строки", () => {
+  assert.equal(decimalsOf("10"), 0);
+  assert.equal(decimalsOf("10.5"), 1);
+  assert.equal(decimalsOf("10.1234"), 4);
+});
+
+test("computePartialTpQuantity: 70% с округлением вниз до точности объёма", () => {
+  assert.equal(computePartialTpQuantity(10, 0), 7);
+  assert.equal(computePartialTpQuantity(1, 2), 0.7);
+  // 10.33 * 0.7 = 7.231 → округление вниз до 2 знаков
+  assert.equal(computePartialTpQuantity(10.33, 2), 7.23);
 });

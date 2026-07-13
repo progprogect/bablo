@@ -11,4 +11,6 @@ body,
 body {
   /* iPhone safe area (notch / home indicator) */
   padding-top: env(safe-area-inset-top);
+  background-color: #f7f6f1;
+  color: #171a21;
 }

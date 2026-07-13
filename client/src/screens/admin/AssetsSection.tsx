@@ -73,24 +73,24 @@ export function AssetsSection() {
 
   return (
     <section className="flex flex-col gap-3 pt-6">
-      <h2 className="text-sm font-medium text-slate-100">Активы</h2>
+      <h2 className="text-sm font-medium text-ink">Активы</h2>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
       <ul className="flex flex-col gap-2">
         {assets?.map((asset) => (
           <li
             key={asset.id}
-            className="flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
+            className="flex items-center gap-2 rounded-lg border border-line bg-card px-3 py-2"
           >
-            <span className="flex-1 text-sm text-slate-100">{asset.symbol}</span>
+            <span className="flex-1 text-sm text-ink">{asset.symbol}</span>
             <input
               type="number"
               min={1}
               max={125}
               value={asset.leverage}
               onChange={(event) => handleLeverageChange(asset, event.target.value)}
-              className="w-16 rounded-md border border-slate-800 bg-transparent px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-accent"
+              className="w-16 rounded-md border border-line bg-transparent px-2 py-1 text-center text-sm text-ink outline-none focus:border-accent"
             />
             <span className="text-xs text-slate-500">x</span>
             <button
@@ -98,8 +98,8 @@ export function AssetsSection() {
               onClick={() => handleToggleActive(asset)}
               className={
                 asset.isActive
-                  ? "rounded-md bg-accent/20 px-2 py-1 text-xs text-accent"
-                  : "rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-500"
+                  ? "rounded-md bg-accent/15 px-2 py-1 text-xs text-accent"
+                  : "rounded-md bg-slate-200 px-2 py-1 text-xs text-slate-500"
               }
             >
               {asset.isActive ? "включён" : "выключен"}
@@ -107,7 +107,7 @@ export function AssetsSection() {
             <button
               type="button"
               onClick={() => handleDelete(asset)}
-              className="rounded-md px-2 py-1 text-xs text-red-400"
+              className="rounded-md px-2 py-1 text-xs text-red-600"
             >
               удалить
             </button>
@@ -121,7 +121,7 @@ export function AssetsSection() {
           placeholder="Символ (напр. TIA)"
           value={newSymbol}
           onChange={(event) => setNewSymbol(event.target.value)}
-          className="flex-1 rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-sm text-slate-100 outline-none focus:border-accent"
+          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
         />
         <input
           type="number"
@@ -129,11 +129,11 @@ export function AssetsSection() {
           max={125}
           value={newLeverage}
           onChange={(event) => setNewLeverage(event.target.value)}
-          className="w-16 rounded-lg border border-slate-800 bg-transparent px-2 py-2 text-center text-sm text-slate-100 outline-none focus:border-accent"
+          className="w-16 rounded-lg border border-line bg-card px-2 py-2 text-center text-sm text-ink outline-none focus:border-accent"
         />
         <button
           type="submit"
-          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-surface"
+          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white"
         >
           Добавить
         </button>

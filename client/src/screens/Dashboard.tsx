@@ -59,7 +59,7 @@ export function Dashboard() {
   if (error) {
     return (
       <section className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm text-red-400">{error}</p>
+        <p className="text-sm text-red-600">{error}</p>
       </section>
     );
   }
@@ -94,7 +94,7 @@ export function Dashboard() {
         />
       )}
 
-      {notice && <p className="px-6 text-center text-sm text-amber-400">{notice}</p>}
+      {notice && <p className="px-6 text-center text-sm text-amber-700">{notice}</p>}
 
       {data.activeTrade ? (
         <ActiveTradeCard
@@ -149,7 +149,7 @@ function BalanceCard({
   return (
     <div className="mx-auto text-center">
       <p className="text-xs uppercase tracking-wide text-slate-500">Депозит</p>
-      <p className="mt-1 text-3xl font-semibold text-slate-100">
+      <p className="mt-1 text-3xl font-semibold text-ink">
         {Number(balance?.equity ?? 0).toFixed(2)} <span className="text-base text-slate-500">USDT</span>
       </p>
     </div>
