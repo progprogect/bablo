@@ -11,6 +11,14 @@ import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
 
 const LEVEL_UP_GLOW_MS = 2500;
 
+/** Показываем equity как на BingX — без лишнего округления до 2 знаков. */
+function formatFuturesEquity(value: string | null | undefined): string {
+  if (!value) return "0.00";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -149,9 +157,11 @@ function BalanceCard({
   return (
     <div className="mx-auto text-center">
       <p className="text-xs uppercase tracking-wide text-slate-500">Депозит</p>
-      <p className="mt-1 text-3xl font-semibold text-ink">
-        {Number(balance?.equity ?? 0).toFixed(2)} <span className="text-base text-slate-500">USDT</span>
+      <p className="mt-1 text-3xl font-semibold tabular-nums text-ink">
+        {formatFuturesEquity(balance?.equity)}{" "}
+        <span className="text-base text-slate-500">USDT</span>
       </p>
+      <p className="mt-0.5 text-xs text-slate-400">Фьючерсный счёт · эквити BingX</p>
     </div>
   );
 }

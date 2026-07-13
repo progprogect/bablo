@@ -76,18 +76,46 @@ export type BingXBalance = {
   unrealizedProfit: string;
 };
 
-type BingXBalanceResponse = {
+/** v2 оборачивает в `{ balance }`, v3 отдаёт массив записей по активам. */
+type BingXBalanceResponseV2 = {
   balance: BingXBalance;
 };
 
+type BingXBalanceRow = BingXBalance & { userId?: string };
+
+function pickUsdtBalance(rows: BingXBalanceRow[]): BingXBalance {
+  const usdt = rows.find((row) => row.asset === "USDT") ?? rows[0];
+  if (!usdt) {
+    throw new BingXApiError(-1, "BingX не вернул баланс фьючерсного счёта");
+  }
+  return {
+    asset: usdt.asset,
+    balance: usdt.balance,
+    equity: usdt.equity,
+    availableMargin: usdt.availableMargin,
+    unrealizedProfit: usdt.unrealizedProfit,
+  };
+}
+
+/** Нормализует ответ swap balance (v2/v3) в одну USDT-запись. */
+export function normalizeSwapBalanceResponse(data: BingXBalanceResponseV2 | BingXBalanceRow[]): BingXBalance {
+  if (Array.isArray(data)) {
+    return pickUsdtBalance(data);
+  }
+  if (data.balance) {
+    return data.balance;
+  }
+  throw new BingXApiError(-1, "BingX вернул неожиданный формат баланса");
+}
+
 /** Баланс USDT-M Perpetual аккаунта. Используется для проверки ключей и на дашборде. */
 export async function getBalance(credentials: BingXCredentials): Promise<BingXBalance> {
-  const { balance } = await bingxRequest<BingXBalanceResponse>(
+  const data = await bingxRequest<BingXBalanceResponseV2 | BingXBalanceRow[]>(
     credentials,
     "GET",
     "/openApi/swap/v3/user/balance",
   );
-  return balance;
+  return normalizeSwapBalanceResponse(data);
 }
 
 // --- Публичные рыночные данные (без подписи) ---
