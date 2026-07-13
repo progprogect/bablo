@@ -37,7 +37,6 @@ export function ActiveTradeCard({
   onClosed,
 }: {
   trade: ActiveTradeView;
-  /** Живая цена из SSE — если есть, PnL считается ею на клиенте (без доп. событий с сервера). */
   livePrice?: number;
   onUpdated: (trade: ActiveTradeView) => void;
   onClosed: () => void;
@@ -49,6 +48,7 @@ export function ActiveTradeCard({
   const [partialTpWarning, setPartialTpWarning] = useState<string | null>(null);
 
   const unrealizedProfit = livePrice !== undefined ? computeLivePnl(trade, livePrice) : trade.unrealizedProfit;
+  const canAddPartialLater = Boolean(trade.tpPrice && !trade.partialTpPrice && !trade.partialTpFilledAt);
 
   async function handleClose() {
     if (!window.confirm("Закрыть сделку по рынку прямо сейчас?")) return;
@@ -125,11 +125,11 @@ export function ActiveTradeCard({
       )}
 
       {!trade.tpPrice && (
-        <TakeProfitForm
-          trade={trade}
-          onUpdated={onUpdated}
-          onWarning={setPartialTpWarning}
-        />
+        <TakeProfitForm trade={trade} onUpdated={onUpdated} onWarning={setPartialTpWarning} />
+      )}
+
+      {canAddPartialLater && (
+        <AddPartialTpForm trade={trade} onUpdated={onUpdated} onWarning={setPartialTpWarning} />
       )}
 
       <button
@@ -150,6 +150,40 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function PartialTpField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-accent/25 bg-accent/5 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-ink">Частичная фиксация</p>
+        <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white">
+          70%
+        </span>
+      </div>
+      <input
+        type="number"
+        inputMode="decimal"
+        disabled={disabled}
+        placeholder="Цена, на которой закроется 70% позиции"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
+      />
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+        Уровень между входом и TP. На этой цене закроется 70% позиции, остальные 30% дойдут до
+        основного TP.
+      </p>
     </div>
   );
 }
@@ -201,8 +235,13 @@ function TakeProfitForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-line pt-3">
-      <p className="text-xs text-slate-500">Выберите соотношение риск/прибыль или укажите цену TP</p>
+    <div className="flex flex-col gap-3 border-t border-line pt-4">
+      <div>
+        <p className="text-sm font-medium text-ink">Шаг 2 — тейк-профит</p>
+        <p className="mt-0.5 text-xs text-slate-500">Выберите R/R или укажите цену TP</p>
+      </div>
+
+      <PartialTpField value={partialTpPrice} onChange={setPartialTpPrice} disabled={isSubmitting} />
 
       <div className="flex flex-wrap gap-2">
         {RR_PRESETS.map((preset) => (
@@ -231,32 +270,66 @@ function TakeProfitForm({
         className="rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
       />
 
-      <div className="flex items-center gap-2 pt-1">
-        <input
-          type="number"
-          inputMode="decimal"
-          placeholder="Цена частичной фиксации (необязательно)"
-          value={partialTpPrice}
-          onChange={(event) => setPartialTpPrice(event.target.value)}
-          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-        />
-        <span className="shrink-0 rounded-full bg-accent/10 px-2 py-1 text-xs font-medium text-accent">
-          70%
-        </span>
-      </div>
-      <p className="text-[11px] text-slate-500">
-        На этой цене закроется 70% позиции, остальные 30% продолжат идти до TP выше
-      </p>
-
       <button
         type="button"
         disabled={isSubmitting || (!selectedPreset && !tpPrice)}
         onClick={handleSave}
-        className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white disabled:opacity-50"
       >
-        {isSubmitting ? "Сохраняю…" : "Сохранить"}
+        {isSubmitting ? "Сохраняю…" : "Сохранить TP"}
       </button>
 
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function AddPartialTpForm({
+  trade,
+  onUpdated,
+  onWarning,
+}: {
+  trade: ActiveTradeView;
+  onUpdated: (trade: ActiveTradeView) => void;
+  onWarning: (message: string | null) => void;
+}) {
+  const [partialTpPrice, setPartialTpPrice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSave() {
+    const parsed = Number(partialTpPrice);
+    if (!(parsed > 0)) {
+      setError("Укажите цену частичной фиксации");
+      return;
+    }
+    setError(null);
+    onWarning(null);
+    setIsSubmitting(true);
+    try {
+      const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
+        partialTpPrice: parsed,
+      });
+      onUpdated({ ...trade, ...updated });
+      onWarning(partialTpWarning);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось выставить частичную фиксацию");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-4">
+      <PartialTpField value={partialTpPrice} onChange={setPartialTpPrice} disabled={isSubmitting} />
+      <button
+        type="button"
+        disabled={isSubmitting || !partialTpPrice}
+        onClick={handleSave}
+        className="rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {isSubmitting ? "Сохраняю…" : "Добавить частичную фиксацию"}
+      </button>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
