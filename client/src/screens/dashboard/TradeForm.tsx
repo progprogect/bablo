@@ -33,7 +33,7 @@ function estimateLiquidationPrice(currentPrice: number, leverage: number, side: 
 type Validation =
   | { status: "empty" }
   | { status: "invalid"; message: string }
-  | { status: "ok"; riskUsd: number; liquidationSafe: boolean; estimatedLiquidation: number };
+  | { status: "ok"; riskUsd: number; estimatedLiquidation: number };
 
 function evaluateTrade(params: {
   currentPrice: number | null;
@@ -88,10 +88,24 @@ function evaluateTrade(params: {
     };
   }
 
+  // Критическая проверка, а не просто предупреждение: если ликвидация оценочно наступит
+  // раньше стопа, SL физически не успеет сработать — позицию закроет биржа принудительно
+  // и на худших условиях. Для лонга это значит "ликвидация выше SL" (цена падает и первой
+  // достигает ликвидации), для шорта — "ликвидация ниже SL" (цена растёт и первой достигает
+  // ликвидации). Такую сделку открывать нельзя, поэтому это блокирующая ошибка, а не оттенок.
   const estimatedLiquidation = estimateLiquidationPrice(currentPrice, leverage, side);
   const liquidationSafe = side === "long" ? estimatedLiquidation < parsedSl : estimatedLiquidation > parsedSl;
+  if (!liquidationSafe) {
+    return {
+      status: "invalid",
+      message:
+        side === "long"
+          ? `Опасно: ликвидация (≈${estimatedLiquidation.toFixed(4)}) оценочно выше стопа — SL не успеет сработать. Приблизьте SL к цене входа.`
+          : `Опасно: ликвидация (≈${estimatedLiquidation.toFixed(4)}) оценочно ниже стопа — SL не успеет сработать. Приблизьте SL к цене входа.`,
+    };
+  }
 
-  return { status: "ok", riskUsd, liquidationSafe, estimatedLiquidation };
+  return { status: "ok", riskUsd, estimatedLiquidation };
 }
 
 /**
@@ -343,17 +357,10 @@ function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation;
         <span aria-hidden>✓</span>
         Риск {validation.riskUsd.toFixed(2)} из {levelRiskUsd} USDT — в пределах правила
       </p>
-      {validation.liquidationSafe ? (
-        <p className="flex items-center gap-1.5">
-          <span aria-hidden>✓</span>
-          Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) дальше стопа
-        </p>
-      ) : (
-        <p className="flex items-center gap-1.5 text-amber-700">
-          <span aria-hidden>!</span>
-          Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) оценочно близко к стопу — сузьте SL
-        </p>
-      )}
+      <p className="flex items-center gap-1.5">
+        <span aria-hidden>✓</span>
+        Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) дальше стопа
+      </p>
     </div>
   );
 }
