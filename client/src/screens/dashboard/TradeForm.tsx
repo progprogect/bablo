@@ -81,10 +81,15 @@ function evaluateTrade(params: {
 
   const riskUsd = computeRiskUsd(currentPrice, parsedSl, parsedQuantity);
   if (riskUsd > levelRiskUsd * (1 + RISK_TOLERANCE_RATIO)) {
+    // Риск можно снизить двумя равноценными способами: уменьшить объём при том же SL,
+    // или оставить объём и приблизить SL к цене входа. Показываем обе опции — пользователь
+    // сам решает, что удобнее менять, вместо намёка только на один из параметров.
     const maxQuantity = computeMaxQuantity(currentPrice, parsedSl, levelRiskUsd);
+    const maxSlDistance = levelRiskUsd / parsedQuantity;
+    const suggestedSl = side === "long" ? currentPrice - maxSlDistance : currentPrice + maxSlDistance;
     return {
       status: "invalid",
-      message: `Риск ${riskUsd.toFixed(2)} USDT превышает лимит ${levelRiskUsd} USDT — максимум ≈${maxQuantity.toFixed(4)} монет`,
+      message: `Риск ${riskUsd.toFixed(2)} USDT превышает лимит ${levelRiskUsd} USDT — уменьшите объём до ≈${maxQuantity.toFixed(4)} монет либо приблизьте SL до ≈${suggestedSl.toFixed(4)}`,
     };
   }
 
