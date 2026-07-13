@@ -1,6 +1,7 @@
 import {
   cancelOrder,
   ensureOneWayMode,
+  getContractLimits,
   getLatestPrice,
   getPositions,
   placeOrder,
@@ -121,6 +122,19 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
       throw new TradeError(error.message);
     }
     throw error;
+  }
+
+  // Понятная проверка минимального объёма ДО отправки на биржу — иначе пользователь увидит
+  // сырое сообщение BingX вида "The minimum order amount is 5.073 TIA". Best-effort: если
+  // лимиты не удалось получить, не блокируем сделку — решение всё равно примет сама биржа.
+  const limits = await getContractLimits(asset.symbol).catch(() => null);
+  if (limits) {
+    const notionalUsd = input.quantity * currentPrice;
+    if (input.quantity < limits.tradeMinQuantity || notionalUsd < limits.tradeMinUSDT) {
+      throw new TradeError(
+        `Слишком маленький объём. Минимум для ${asset.symbol.replace(/-USDT$/, "")}: ${limits.tradeMinQuantity} монет (≈${limits.tradeMinUSDT} USDT)`,
+      );
+    }
   }
 
   try {

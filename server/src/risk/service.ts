@@ -75,7 +75,16 @@ export async function checkCanOpenTrade(): Promise<void> {
   }
 }
 
-/** Бросает RiskBlockedError, если риск сделки превышает 1R текущего уровня. */
+/**
+ * Допуск на движение цены между тем, как пользователь ввёл объём (глядя на цену в форме),
+ * и моментом клика — доли секунды-секунды спустя цена на бирже уже другая. Без допуска
+ * риск-движок мог бы отклонять корректно рассчитанные пользователем сделки просто из-за
+ * рыночного дрожания цены. Порог не ослабляет саму защиту — она продолжает блокировать
+ * заметные превышения риска, а не наносекундные флуктуации котировки.
+ */
+export const RISK_TOLERANCE_RATIO = 0.01;
+
+/** Бросает RiskBlockedError, если риск сделки превышает 1R текущего уровня (с допуском на дрожание цены). */
 export async function checkVolumeRisk(currentPrice: number, slPrice: number, quantity: number): Promise<void> {
   const [stateRow, levels] = await Promise.all([getOrCreateRiskState(), listRiskLevelDefs()]);
   const levelDef = getLevelDef(levels, stateRow.currentLevel);
@@ -84,7 +93,7 @@ export async function checkVolumeRisk(currentPrice: number, slPrice: number, qua
   }
 
   const riskUsd = computeRiskUsd(currentPrice, slPrice, quantity);
-  if (riskUsd > levelDef.riskUsd) {
+  if (riskUsd > levelDef.riskUsd * (1 + RISK_TOLERANCE_RATIO)) {
     const maxQuantity = computeMaxQuantity(currentPrice, slPrice, levelDef.riskUsd);
     throw new RiskBlockedError(
       `Риск сделки ${riskUsd.toFixed(2)} USDT превышает лимит уровня ${levelDef.riskUsd} USDT. Максимальный объём: ${maxQuantity.toFixed(4)}`,

@@ -136,6 +136,59 @@ export async function getLatestPrice(symbol: string): Promise<number> {
   return Number(json.data.price);
 }
 
+export type BingXContractLimits = {
+  symbol: string;
+  quantityPrecision: number;
+  pricePrecision: number;
+  /** Минимальный объём ордера в монетах. */
+  tradeMinQuantity: number;
+  /** Минимальный номинал ордера в USDT. */
+  tradeMinUSDT: number;
+};
+
+type BingXContractRaw = {
+  symbol: string;
+  quantityPrecision: number;
+  pricePrecision: number;
+  tradeMinQuantity: number | string;
+  tradeMinUSDT: number | string;
+};
+
+const CONTRACTS_CACHE_TTL_MS = 10 * 60 * 1000;
+let contractsCache: { at: number; bySymbol: Map<string, BingXContractLimits> } | null = null;
+
+async function fetchContracts(): Promise<Map<string, BingXContractLimits>> {
+  const url = `${BASE_URL}/openApi/swap/v2/quote/contracts`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const json = (await response.json()) as BingXEnvelope<BingXContractRaw[]>;
+  if (json.code !== 0) {
+    throw new BingXApiError(json.code, json.msg || "BingX API error");
+  }
+  const map = new Map<string, BingXContractLimits>();
+  for (const c of json.data) {
+    map.set(c.symbol, {
+      symbol: c.symbol,
+      quantityPrecision: c.quantityPrecision,
+      pricePrecision: c.pricePrecision,
+      tradeMinQuantity: Number(c.tradeMinQuantity),
+      tradeMinUSDT: Number(c.tradeMinUSDT),
+    });
+  }
+  return map;
+}
+
+/**
+ * Лимиты контракта (мин. объём/номинал ордера, точность) — публичные и почти неизменные
+ * данные, поэтому кешируются на 10 минут вместо запроса на каждый рендер формы. Это ленивое
+ * обновление по TTL при обращении, а не циклический поллинг.
+ */
+export async function getContractLimits(symbol: string): Promise<BingXContractLimits | null> {
+  if (!contractsCache || Date.now() - contractsCache.at > CONTRACTS_CACHE_TTL_MS) {
+    contractsCache = { at: Date.now(), bySymbol: await fetchContracts() };
+  }
+  return contractsCache.bySymbol.get(symbol) ?? null;
+}
+
 // --- Настройка торговли по символу ---
 
 type PositionModeResponse = { dualSidePosition: boolean };

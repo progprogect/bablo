@@ -119,6 +119,7 @@ export function Dashboard() {
           {selectedSymbol && (
             <TradeForm
               symbol={selectedSymbol}
+              leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
               levelRiskUsd={data.risk.levelRiskUsd}
               livePrice={livePrices[selectedSymbol]}
               onOpened={(result) => {

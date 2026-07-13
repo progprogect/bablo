@@ -1,27 +1,121 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ApiError, getPrice, openTradeRequest } from "../../api/client";
 import type { OpenTradeResult, TradeSide } from "../../api/types";
 
 type Phase = "idle" | "side" | "details";
 
+/** Держим в синхроне с server/src/risk/service.ts — допуск на дрожание цены между вводом и кликом. */
+const RISK_TOLERANCE_RATIO = 0.01;
+
+function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
+  return side === "long" ? slPrice < currentPrice : slPrice > currentPrice;
+}
+
+function computeRiskUsd(currentPrice: number, slPrice: number, quantity: number): number {
+  return Math.abs(currentPrice - slPrice) * quantity;
+}
+
+function computeMaxQuantity(currentPrice: number, slPrice: number, levelRiskUsd: number): number {
+  const distance = Math.abs(currentPrice - slPrice);
+  return distance > 0 ? levelRiskUsd / distance : 0;
+}
+
+/**
+ * Грубая оценка цены ликвидации для изолированной маржи без учёта тиров обслуживающей маржи
+ * биржи — этого достаточно для предупреждения "стоп шире ликвидации", точное значение BingX
+ * покажет уже после открытия позиции (см. ActiveTradeCard).
+ */
+function estimateLiquidationPrice(currentPrice: number, leverage: number, side: TradeSide): number {
+  const buffer = currentPrice / leverage;
+  return side === "long" ? currentPrice - buffer : currentPrice + buffer;
+}
+
+type Validation =
+  | { status: "empty" }
+  | { status: "invalid"; message: string }
+  | { status: "ok"; riskUsd: number; liquidationSafe: boolean; estimatedLiquidation: number };
+
+function evaluateTrade(params: {
+  currentPrice: number | null;
+  quantity: string;
+  slPrice: string;
+  side: TradeSide;
+  levelRiskUsd: number;
+  leverage: number;
+  minQuantity: number | null;
+  minNotionalUsdt: number | null;
+  symbolLabel: string;
+}): Validation {
+  const { currentPrice, quantity, slPrice, side, levelRiskUsd, leverage, minQuantity, minNotionalUsdt, symbolLabel } =
+    params;
+
+  if (!quantity || !slPrice || currentPrice === null) {
+    return { status: "empty" };
+  }
+
+  const parsedQuantity = Number(quantity);
+  const parsedSl = Number(slPrice);
+
+  if (!(parsedQuantity > 0)) {
+    return { status: "invalid", message: "Укажите объём позиции больше нуля" };
+  }
+  if (!(parsedSl > 0)) {
+    return { status: "invalid", message: "Укажите цену SL" };
+  }
+  if (!isValidStopLossDirection(currentPrice, parsedSl, side)) {
+    return {
+      status: "invalid",
+      message: side === "long" ? "SL должен быть ниже текущей цены" : "SL должен быть выше текущей цены",
+    };
+  }
+
+  if (minQuantity !== null && minNotionalUsdt !== null) {
+    const notional = parsedQuantity * currentPrice;
+    if (parsedQuantity < minQuantity || notional < minNotionalUsdt) {
+      return {
+        status: "invalid",
+        message: `Минимальный объём для ${symbolLabel}: ${minQuantity} монет (≈${minNotionalUsdt} USDT)`,
+      };
+    }
+  }
+
+  const riskUsd = computeRiskUsd(currentPrice, parsedSl, parsedQuantity);
+  if (riskUsd > levelRiskUsd * (1 + RISK_TOLERANCE_RATIO)) {
+    const maxQuantity = computeMaxQuantity(currentPrice, parsedSl, levelRiskUsd);
+    return {
+      status: "invalid",
+      message: `Риск ${riskUsd.toFixed(2)} USDT превышает лимит ${levelRiskUsd} USDT — максимум ≈${maxQuantity.toFixed(4)} монет`,
+    };
+  }
+
+  const estimatedLiquidation = estimateLiquidationPrice(currentPrice, leverage, side);
+  const liquidationSafe = side === "long" ? estimatedLiquidation < parsedSl : estimatedLiquidation > parsedSl;
+
+  return { status: "ok", riskUsd, liquidationSafe, estimatedLiquidation };
+}
+
 /**
  * Трёхшаговое открытие сделки:
  * 1) «Открыть сделку» — на дашборде только кнопка, без полей;
  * 2) выбор направления (Купить/Продать);
- * 3) объём + SL и подтверждение.
+ * 3) объём + SL с живой проверкой риска/минимума/ликвидации до нажатия кнопки.
  */
 export function TradeForm({
   symbol,
+  leverage,
   levelRiskUsd,
   livePrice,
   onOpened,
 }: {
   symbol: string;
+  leverage: number;
   levelRiskUsd: number;
   livePrice?: number;
   onOpened: (result: OpenTradeResult) => void;
 }) {
   const [restPrice, setRestPrice] = useState<number | null>(null);
+  const [minQuantity, setMinQuantity] = useState<number | null>(null);
+  const [minNotionalUsdt, setMinNotionalUsdt] = useState<number | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [side, setSide] = useState<TradeSide | null>(null);
   const [quantity, setQuantity] = useState("");
@@ -31,8 +125,14 @@ export function TradeForm({
 
   useEffect(() => {
     setRestPrice(null);
+    setMinQuantity(null);
+    setMinNotionalUsdt(null);
     getPrice(symbol)
-      .then((result) => setRestPrice(result.price))
+      .then((result) => {
+        setRestPrice(result.price);
+        setMinQuantity(result.minQuantity);
+        setMinNotionalUsdt(result.minNotionalUsdt);
+      })
       .catch(() => setRestPrice(null));
   }, [symbol]);
 
@@ -45,6 +145,25 @@ export function TradeForm({
   }, [symbol]);
 
   const currentPrice = livePrice ?? restPrice;
+  const symbolLabel = symbol.replace(/-USDT$/, "");
+
+  const validation = useMemo(
+    () =>
+      side
+        ? evaluateTrade({
+            currentPrice,
+            quantity,
+            slPrice,
+            side,
+            levelRiskUsd,
+            leverage,
+            minQuantity,
+            minNotionalUsdt,
+            symbolLabel,
+          })
+        : { status: "empty" as const },
+    [currentPrice, quantity, slPrice, side, levelRiskUsd, leverage, minQuantity, minNotionalUsdt, symbolLabel],
+  );
 
   function resetToIdle() {
     setPhase("idle");
@@ -61,23 +180,16 @@ export function TradeForm({
   }
 
   async function handleConfirm() {
-    if (!side) return;
+    if (!side || validation.status !== "ok") return;
     setError(null);
-    const parsedQuantity = Number(quantity);
-    const parsedSl = Number(slPrice);
-
-    if (!(parsedQuantity > 0)) {
-      setError("Укажите объём позиции больше нуля");
-      return;
-    }
-    if (!(parsedSl > 0)) {
-      setError("Укажите цену SL");
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      const result = await openTradeRequest({ symbol, side, quantity: parsedQuantity, slPrice: parsedSl });
+      const result = await openTradeRequest({
+        symbol,
+        side,
+        quantity: Number(quantity),
+        slPrice: Number(slPrice),
+      });
       onOpened(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось открыть сделку");
@@ -86,16 +198,12 @@ export function TradeForm({
     }
   }
 
-  const lowerError = error?.toLowerCase() ?? "";
-  const slFieldError = lowerError.includes("sl");
-  const volumeFieldError = lowerError.includes("риск") || lowerError.includes("объём");
-
   if (phase === "idle") {
     return (
       <div className="flex flex-col gap-3 px-4">
         <div className="rounded-2xl border border-line bg-card p-4 text-center shadow-sm">
           <p className="text-sm text-slate-500">
-            {symbol.replace(/-USDT$/, "")} · цена {currentPrice !== null ? currentPrice : "…"}
+            {symbolLabel} · цена {currentPrice !== null ? currentPrice : "…"}
           </p>
           <p className="mt-1 text-xs text-slate-400">Лимит риска: {levelRiskUsd} USDT</p>
           <button
@@ -115,7 +223,7 @@ export function TradeForm({
       <div className="flex flex-col gap-3 px-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">
-            {symbol.replace(/-USDT$/, "")} · {currentPrice !== null ? currentPrice : "…"}
+            {symbolLabel} · {currentPrice !== null ? currentPrice : "…"}
           </p>
           <button
             type="button"
@@ -147,6 +255,7 @@ export function TradeForm({
   }
 
   const isLong = side === "long";
+  const hasInvalidIssue = validation.status === "invalid";
 
   return (
     <div className="flex flex-col gap-3 px-4">
@@ -178,7 +287,7 @@ export function TradeForm({
           value={quantity}
           onChange={(event) => setQuantity(event.target.value)}
           className={`rounded-xl border bg-surface px-4 py-3 text-center text-ink outline-none focus:border-accent ${
-            volumeFieldError ? "border-red-500" : "border-line"
+            hasInvalidIssue ? "border-red-400" : "border-line"
           }`}
         />
         <input
@@ -188,25 +297,63 @@ export function TradeForm({
           value={slPrice}
           onChange={(event) => setSlPrice(event.target.value)}
           className={`rounded-xl border bg-surface px-4 py-3 text-center text-ink outline-none focus:border-accent ${
-            slFieldError ? "border-red-500" : "border-line"
+            hasInvalidIssue ? "border-red-400" : "border-line"
           }`}
         />
       </div>
 
-      <p className="text-center text-xs text-slate-500">Лимит риска: {levelRiskUsd} USDT</p>
+      <ValidationPanel validation={validation} levelRiskUsd={levelRiskUsd} />
 
       {error && <p className="text-center text-sm text-red-600">{error}</p>}
 
       <button
         type="button"
-        disabled={isSubmitting}
+        disabled={isSubmitting || validation.status !== "ok"}
         onClick={handleConfirm}
-        className={`rounded-xl py-3.5 font-medium text-white disabled:opacity-50 ${
+        className={`rounded-xl py-3.5 font-medium text-white disabled:opacity-40 ${
           isLong ? "bg-emerald-600" : "bg-red-600"
         }`}
       >
         {isSubmitting ? "Открываю…" : isLong ? "Открыть лонг" : "Открыть шорт"}
       </button>
+    </div>
+  );
+}
+
+function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation; levelRiskUsd: number }) {
+  if (validation.status === "empty") {
+    return (
+      <p className="rounded-xl bg-surface px-3 py-2.5 text-center text-xs text-slate-500">
+        Заполните объём и SL — проверим риск и минимальный объём
+      </p>
+    );
+  }
+
+  if (validation.status === "invalid") {
+    return (
+      <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-center text-xs text-red-700">
+        {validation.message}
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-800">
+      <p className="flex items-center gap-1.5">
+        <span aria-hidden>✓</span>
+        Риск {validation.riskUsd.toFixed(2)} из {levelRiskUsd} USDT — в пределах правила
+      </p>
+      {validation.liquidationSafe ? (
+        <p className="flex items-center gap-1.5">
+          <span aria-hidden>✓</span>
+          Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) дальше стопа
+        </p>
+      ) : (
+        <p className="flex items-center gap-1.5 text-amber-700">
+          <span aria-hidden>!</span>
+          Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) оценочно близко к стопу — сузьте SL
+        </p>
+      )}
     </div>
   );
 }

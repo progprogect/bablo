@@ -119,8 +119,14 @@ export const getRiskTreeLevels = () => request<RiskLevel[]>("/risk/levels");
 
 // --- Цена ---
 
-export const getPrice = (symbol: string) =>
-  request<{ symbol: string; price: number }>(`/price/${encodeURIComponent(symbol)}`);
+export type PriceQuote = {
+  symbol: string;
+  price: number;
+  minQuantity: number | null;
+  minNotionalUsdt: number | null;
+};
+
+export const getPrice = (symbol: string) => request<PriceQuote>(`/price/${encodeURIComponent(symbol)}`);
 
 // --- Админка: риск-план ---
 
