@@ -98,13 +98,13 @@ export async function checkCanOpenTrade(credentials: BingXCredentials | null): P
  * Допустимое отклонение риска сделки от плана текущего уровня — в обе стороны. Риск-план
  * задаёт конкретную сумму 1R не просто как потолок, а как ориентир: сделка с риском заметно
  * МЕНЬШЕ плана так же нарушает дисциплину лестницы, как и сделка с риском больше плана
- * (прогресс перестаёт соответствовать заложенным шагам). 5% — разумный люфт на округление
+ * (прогресс перестаёт соответствовать заложенным шагам). 20% — разумный люфт на округление
  * объёма/цены SL и на дрожание цены между вводом в форме и моментом подтверждения; более
  * заметные отклонения означают, что объём или SL посчитаны неверно.
  */
-export const RISK_SIZE_TOLERANCE_RATIO = 0.05;
+export const RISK_SIZE_TOLERANCE_RATIO = 0.2;
 
-/** Бросает RiskBlockedError, если риск сделки выходит за пределы ±5% от 1R текущего уровня. */
+/** Бросает RiskBlockedError, если риск сделки выходит за пределы ±20% от 1R текущего уровня. */
 export async function checkVolumeRisk(currentPrice: number, slPrice: number, quantity: number): Promise<void> {
   const [stateRow, levels] = await Promise.all([getOrCreateRiskState(), listRiskLevelDefs()]);
   const levelDef = getLevelDef(levels, stateRow.currentLevel);

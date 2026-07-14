@@ -6,10 +6,11 @@ type Phase = "idle" | "side" | "details";
 
 /**
  * Держим в синхроне с server/src/risk/service.ts — риск сделки должен лежать в пределах
- * ±5% от плана 1R текущего уровня, а не просто не превышать его. Слишком маленький риск
+ * ±20% от плана 1R текущего уровня, а не просто не превышать его. Слишком маленький риск
  * так же ломает дисциплину лестницы, как и слишком большой.
  */
-const RISK_SIZE_TOLERANCE_RATIO = 0.05;
+const RISK_SIZE_TOLERANCE_RATIO = 0.2;
+const TOLERANCE_PCT_LABEL = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
   return side === "long" ? slPrice < currentPrice : slPrice > currentPrice;
@@ -243,7 +244,9 @@ export function TradeForm({
           <p className="text-sm text-slate-500">
             {symbolLabel} · цена {currentPrice !== null ? currentPrice : "…"}
           </p>
-          <p className="mt-1 text-xs text-slate-400">План риска: {levelRiskUsd} USDT (±5%)</p>
+          <p className="mt-1 text-xs text-slate-400">
+            План риска: {levelRiskUsd} USDT (±{TOLERANCE_PCT_LABEL}%)
+          </p>
           <button
             type="button"
             onClick={() => setPhase("side")}
@@ -362,7 +365,7 @@ function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation;
   if (validation.status === "empty") {
     return (
       <p className="rounded-xl bg-surface px-3 py-2.5 text-center text-xs text-slate-500">
-        Заполните объём и SL — риск сделки должен быть ≈{levelRiskUsd} USDT (±5%)
+        Заполните объём и SL — риск сделки должен быть ≈{levelRiskUsd} USDT (±{TOLERANCE_PCT_LABEL}%)
       </p>
     );
   }
