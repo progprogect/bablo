@@ -43,6 +43,30 @@ function computeLivePnl(trade: ActiveTradeView, livePrice: number): number | nul
   return delta * qty;
 }
 
+/** Изолированная маржа, выделенная под сделку при открытии (объём × вход / плечо). */
+function computeMarginUsd(trade: ActiveTradeView): number | null {
+  const entry = Number(trade.entryPrice);
+  const qty = Number(trade.quantity);
+  if (!Number.isFinite(entry) || !Number.isFinite(qty) || !trade.leverage) return null;
+  return (entry * qty) / trade.leverage;
+}
+
+/** Потенциальный результат в USDT, если цена дойдёт до заданного уровня (SL/TP). */
+function computePotentialPnl(trade: ActiveTradeView, targetPrice: number): number | null {
+  const entry = Number(trade.entryPrice);
+  const qty = Number(trade.quantity);
+  if (!Number.isFinite(entry) || !Number.isFinite(qty)) return null;
+  const delta = trade.side === "long" ? targetPrice - entry : entry - targetPrice;
+  return delta * qty;
+}
+
+/** "+12.30 USDT" / "-4.50 USDT" — со знаком, для наглядности прибыли/убытка. */
+function formatSignedUsd(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatPrice(value, 2)} USDT`;
+}
+
 export function ActiveTradeCard({
   trade,
   livePrice,
@@ -63,6 +87,17 @@ export function ActiveTradeCard({
   const unrealizedProfit = livePrice !== undefined ? computeLivePnl(trade, livePrice) : trade.unrealizedProfit;
   const ratio = riskRewardRatio(trade);
   const riskRewardLabel = ratio !== null ? `1 / ${trimTrailingZeros(ratio)}` : "—";
+  const pnlColorClass =
+    unrealizedProfit === null
+      ? "text-slate-500"
+      : unrealizedProfit > 0
+        ? "text-emerald-600"
+        : unrealizedProfit < 0
+          ? "text-red-600"
+          : "text-slate-500";
+  const marginUsd = computeMarginUsd(trade);
+  const potentialLossAtSl = trade.slPrice ? computePotentialPnl(trade, Number(trade.slPrice)) : null;
+  const potentialProfitAtTp = trade.tpPrice ? computePotentialPnl(trade, Number(trade.tpPrice)) : null;
 
   // После настройки TP сделка полностью готова — дальше просто ждём SL/TP, без кнопок,
   // которые создавали бы соблазн что-то вручную докрутить. Кнопка закрытия остаётся только
@@ -87,7 +122,10 @@ export function ActiveTradeCard({
   return (
     <div className="mx-4 flex flex-col gap-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-medium text-ink">{displayName}</h2>
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-base font-medium text-ink">{displayName}</h2>
+          <span className={`text-sm font-semibold ${pnlColorClass}`}>{formatSignedUsd(unrealizedProfit)}</span>
+        </div>
         <span
           className={
             trade.side === "long"
@@ -119,15 +157,18 @@ export function ActiveTradeCard({
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
         <Row label="Вход" value={formatPrice(trade.entryPrice)} />
         <Row label="Текущая цена" value={livePrice !== undefined ? formatPrice(livePrice) : "—"} />
-        <Row label="SL" value={formatPrice(trade.slPrice)} />
-        <Row label="TP" value={trade.tpPrice ? formatPrice(trade.tpPrice) : "не задан"} />
+        <Row label="Маржа" value={marginUsd !== null ? `${formatPrice(marginUsd, 2)} USDT` : "—"} />
+        <Row
+          label="SL"
+          value={trade.slPrice ? `${formatPrice(trade.slPrice)} / ${formatSignedUsd(potentialLossAtSl)}` : "—"}
+        />
         <Row label="Ликвидация" value={formatPrice(trade.liquidationPrice)} />
         <Row label="Риск/прибыль" value={riskRewardLabel} />
         <Row label="Сумма риска" value={trade.riskUsd ? `${formatPrice(trade.riskUsd, 2)} USDT` : "—"} />
         <Row label="Плечо" value={`${trade.leverage}x`} />
         <Row
-          label="PnL"
-          value={unrealizedProfit !== null ? `${formatPrice(unrealizedProfit, 2)} USDT` : "—"}
+          label="TP"
+          value={trade.tpPrice ? `${formatPrice(trade.tpPrice)} / ${formatSignedUsd(potentialProfitAtTp)}` : "не задан"}
           full
         />
       </dl>
