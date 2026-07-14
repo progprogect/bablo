@@ -76,15 +76,16 @@ export async function checkCanOpenTrade(): Promise<void> {
 }
 
 /**
- * Допуск на движение цены между тем, как пользователь ввёл объём (глядя на цену в форме),
- * и моментом клика — доли секунды-секунды спустя цена на бирже уже другая. Без допуска
- * риск-движок мог бы отклонять корректно рассчитанные пользователем сделки просто из-за
- * рыночного дрожания цены. Порог не ослабляет саму защиту — она продолжает блокировать
- * заметные превышения риска, а не наносекундные флуктуации котировки.
+ * Допустимое отклонение риска сделки от плана текущего уровня — в обе стороны. Риск-план
+ * задаёт конкретную сумму 1R не просто как потолок, а как ориентир: сделка с риском заметно
+ * МЕНЬШЕ плана так же нарушает дисциплину лестницы, как и сделка с риском больше плана
+ * (прогресс перестаёт соответствовать заложенным шагам). 5% — разумный люфт на округление
+ * объёма/цены SL и на дрожание цены между вводом в форме и моментом подтверждения; более
+ * заметные отклонения означают, что объём или SL посчитаны неверно.
  */
-export const RISK_TOLERANCE_RATIO = 0.01;
+export const RISK_SIZE_TOLERANCE_RATIO = 0.05;
 
-/** Бросает RiskBlockedError, если риск сделки превышает 1R текущего уровня (с допуском на дрожание цены). */
+/** Бросает RiskBlockedError, если риск сделки выходит за пределы ±5% от 1R текущего уровня. */
 export async function checkVolumeRisk(currentPrice: number, slPrice: number, quantity: number): Promise<void> {
   const [stateRow, levels] = await Promise.all([getOrCreateRiskState(), listRiskLevelDefs()]);
   const levelDef = getLevelDef(levels, stateRow.currentLevel);
@@ -93,10 +94,20 @@ export async function checkVolumeRisk(currentPrice: number, slPrice: number, qua
   }
 
   const riskUsd = computeRiskUsd(currentPrice, slPrice, quantity);
-  if (riskUsd > levelDef.riskUsd * (1 + RISK_TOLERANCE_RATIO)) {
-    const maxQuantity = computeMaxQuantity(currentPrice, slPrice, levelDef.riskUsd);
+  const minAllowed = levelDef.riskUsd * (1 - RISK_SIZE_TOLERANCE_RATIO);
+  const maxAllowed = levelDef.riskUsd * (1 + RISK_SIZE_TOLERANCE_RATIO);
+  const tolerancePct = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
+
+  if (riskUsd > maxAllowed) {
+    const targetQuantity = computeMaxQuantity(currentPrice, slPrice, levelDef.riskUsd);
     throw new RiskBlockedError(
-      `Риск сделки ${riskUsd.toFixed(2)} USDT превышает лимит уровня ${levelDef.riskUsd} USDT. Максимальный объём: ${maxQuantity.toFixed(4)}`,
+      `Риск сделки ${riskUsd.toFixed(2)} USDT выше плана ${levelDef.riskUsd} USDT (допуск ±${tolerancePct}%). Уменьшите объём до ≈${targetQuantity.toFixed(4)}`,
+    );
+  }
+  if (riskUsd < minAllowed) {
+    const targetQuantity = computeMaxQuantity(currentPrice, slPrice, levelDef.riskUsd);
+    throw new RiskBlockedError(
+      `Риск сделки ${riskUsd.toFixed(2)} USDT ниже плана ${levelDef.riskUsd} USDT (допуск ±${tolerancePct}%). Увеличьте объём до ≈${targetQuantity.toFixed(4)}`,
     );
   }
 }

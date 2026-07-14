@@ -4,8 +4,12 @@ import type { OpenTradeResult, TradeSide } from "../../api/types";
 
 type Phase = "idle" | "side" | "details";
 
-/** Держим в синхроне с server/src/risk/service.ts — допуск на дрожание цены между вводом и кликом. */
-const RISK_TOLERANCE_RATIO = 0.01;
+/**
+ * Держим в синхроне с server/src/risk/service.ts — риск сделки должен лежать в пределах
+ * ±5% от плана 1R текущего уровня, а не просто не превышать его. Слишком маленький риск
+ * так же ломает дисциплину лестницы, как и слишком большой.
+ */
+const RISK_SIZE_TOLERANCE_RATIO = 0.05;
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
   return side === "long" ? slPrice < currentPrice : slPrice > currentPrice;
@@ -80,16 +84,31 @@ function evaluateTrade(params: {
   }
 
   const riskUsd = computeRiskUsd(currentPrice, parsedSl, parsedQuantity);
-  if (riskUsd > levelRiskUsd * (1 + RISK_TOLERANCE_RATIO)) {
+  const minAllowedRisk = levelRiskUsd * (1 - RISK_SIZE_TOLERANCE_RATIO);
+  const maxAllowedRisk = levelRiskUsd * (1 + RISK_SIZE_TOLERANCE_RATIO);
+  const tolerancePct = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
+
+  if (riskUsd > maxAllowedRisk) {
     // Риск можно снизить двумя равноценными способами: уменьшить объём при том же SL,
     // или оставить объём и приблизить SL к цене входа. Показываем обе опции — пользователь
     // сам решает, что удобнее менять, вместо намёка только на один из параметров.
-    const maxQuantity = computeMaxQuantity(currentPrice, parsedSl, levelRiskUsd);
-    const maxSlDistance = levelRiskUsd / parsedQuantity;
-    const suggestedSl = side === "long" ? currentPrice - maxSlDistance : currentPrice + maxSlDistance;
+    const targetQuantity = computeMaxQuantity(currentPrice, parsedSl, levelRiskUsd);
+    const targetSlDistance = levelRiskUsd / parsedQuantity;
+    const suggestedSl = side === "long" ? currentPrice - targetSlDistance : currentPrice + targetSlDistance;
     return {
       status: "invalid",
-      message: `Риск ${riskUsd.toFixed(2)} USDT превышает лимит ${levelRiskUsd} USDT — уменьшите объём до ≈${maxQuantity.toFixed(4)} монет либо приблизьте SL до ≈${suggestedSl.toFixed(4)}`,
+      message: `Риск ${riskUsd.toFixed(2)} USDT выше плана ${levelRiskUsd} USDT (допуск ±${tolerancePct}%) — уменьшите объём до ≈${targetQuantity.toFixed(4)} монет либо приблизьте SL до ≈${suggestedSl.toFixed(4)}`,
+    };
+  }
+  if (riskUsd < minAllowedRisk) {
+    // Симметрично верхней проверке: слишком маленький риск не даёт сделке продвигать
+    // лестницу по плану — предлагаем увеличить объём либо отодвинуть SL дальше от входа.
+    const targetQuantity = computeMaxQuantity(currentPrice, parsedSl, levelRiskUsd);
+    const targetSlDistance = levelRiskUsd / parsedQuantity;
+    const suggestedSl = side === "long" ? currentPrice - targetSlDistance : currentPrice + targetSlDistance;
+    return {
+      status: "invalid",
+      message: `Риск ${riskUsd.toFixed(2)} USDT ниже плана ${levelRiskUsd} USDT (допуск ±${tolerancePct}%) — увеличьте объём до ≈${targetQuantity.toFixed(4)} монет либо отодвиньте SL до ≈${suggestedSl.toFixed(4)}`,
     };
   }
 
@@ -224,7 +243,7 @@ export function TradeForm({
           <p className="text-sm text-slate-500">
             {symbolLabel} · цена {currentPrice !== null ? currentPrice : "…"}
           </p>
-          <p className="mt-1 text-xs text-slate-400">Лимит риска: {levelRiskUsd} USDT</p>
+          <p className="mt-1 text-xs text-slate-400">План риска: {levelRiskUsd} USDT (±5%)</p>
           <button
             type="button"
             onClick={() => setPhase("side")}
@@ -343,7 +362,7 @@ function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation;
   if (validation.status === "empty") {
     return (
       <p className="rounded-xl bg-surface px-3 py-2.5 text-center text-xs text-slate-500">
-        Заполните объём и SL — проверим риск и минимальный объём
+        Заполните объём и SL — риск сделки должен быть ≈{levelRiskUsd} USDT (±5%)
       </p>
     );
   }
@@ -360,7 +379,7 @@ function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation;
     <div className="flex flex-col gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-800">
       <p className="flex items-center gap-1.5">
         <span aria-hidden>✓</span>
-        Риск {validation.riskUsd.toFixed(2)} из {levelRiskUsd} USDT — в пределах правила
+        Риск {validation.riskUsd.toFixed(2)} USDT — соответствует плану {levelRiskUsd} USDT
       </p>
       <p className="flex items-center gap-1.5">
         <span aria-hidden>✓</span>
