@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ApiError, getBingxKeyStatus, saveBingxKey } from "../../api/client";
+import { ApiError, getBingxKeyStatus, resetAccountData, saveBingxKey } from "../../api/client";
 
 type SaveBingxKeyResponse = {
   configured: boolean;
@@ -20,6 +20,9 @@ export function BingxKeysSection() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -58,6 +61,26 @@ export function BingxKeysSection() {
       }
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    const confirmed = window.confirm(
+      "Удалить всю историю сделок, дневную статистику и сбросить прогресс риск-плана к уровню 1?\n\n" +
+        "Ключи BingX это не затронет. Действие нельзя отменить — используйте перед подключением другого аккаунта.",
+    );
+    if (!confirmed) return;
+
+    setResetError(null);
+    setResetSuccess(null);
+    setIsResetting(true);
+    try {
+      const result = await resetAccountData();
+      setResetSuccess(`Данные очищены (удалено сделок: ${result.tradesDeleted})`);
+    } catch (err) {
+      setResetError(err instanceof ApiError ? err.message : "Не удалось очистить данные");
+    } finally {
+      setIsResetting(false);
     }
   }
 
@@ -101,6 +124,23 @@ export function BingxKeysSection() {
           Проверить и сохранить
         </button>
       </form>
+
+      <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
+        <p className="text-xs text-slate-500">
+          Перед подключением другого аккаунта очистите историю сделок и прогресс риск-плана —
+          иначе они останутся от старого аккаунта.
+        </p>
+        <button
+          type="button"
+          disabled={isResetting}
+          onClick={handleReset}
+          className="self-start rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 disabled:opacity-50"
+        >
+          {isResetting ? "Очищаю…" : "Очистить данные для нового аккаунта"}
+        </button>
+        {resetError && <p className="text-xs text-red-600">{resetError}</p>}
+        {resetSuccess && <p className="text-xs text-emerald-600">{resetSuccess}</p>}
+      </div>
     </section>
   );
 }

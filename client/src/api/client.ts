@@ -70,6 +70,10 @@ export const saveBingxKey = (apiKey: string, secretKey: string) =>
     body: JSON.stringify({ apiKey, secretKey }),
   });
 
+/** Полный сброс истории сделок и прогресса риск-плана — перед подключением другого аккаунта. */
+export const resetAccountData = () =>
+  request<{ ok: boolean; tradesDeleted: number }>("/admin/reset-account-data", { method: "POST" });
+
 // --- Админка: активы ---
 
 export const getAssets = () => request<Asset[]>("/admin/assets");

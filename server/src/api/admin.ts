@@ -10,7 +10,10 @@ import {
 } from "../db/repositories/assets.js";
 import { getBingxCredentials, setBingxCredentials, getRiskSettings, setRiskSettings } from "../db/repositories/settings.js";
 import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
+import { getActiveTrade } from "../db/repositories/trades.js";
+import { resetAccountData } from "../db/repositories/accountReset.js";
 import { resyncMarketSymbols, restartAccountStream } from "../realtime/manager.js";
+import { stopTracking } from "../tracker/activeTradeTracker.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 const MAX_LEVERAGE = 125;
@@ -64,6 +67,19 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  // --- Сброс данных перед подключением другого BingX-аккаунта ---
+
+  app.post("/admin/reset-account-data", async (_request, reply) => {
+    const activeTrade = await getActiveTrade();
+    if (activeTrade) {
+      reply.code(409).send({ error: "Нельзя сбросить данные при активной сделке — сначала закройте её." });
+      return;
+    }
+    const result = await resetAccountData();
+    stopTracking();
+    return { ok: true, ...result };
+  });
 
   // --- Активы ---
 
