@@ -5,6 +5,7 @@ import type { ActiveTradeView, DashboardResponse } from "../api/types";
 import { AssetTabs } from "../components/AssetTabs";
 import { TradeForm } from "./dashboard/TradeForm";
 import { ActiveTradeCard } from "./dashboard/ActiveTradeCard";
+import { ExternalPositionsPanel } from "./dashboard/ExternalPositionsPanel";
 import { BlockedPanel } from "./dashboard/BlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
 import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
@@ -80,7 +81,8 @@ export function Dashboard() {
     );
   }
 
-  const isBlocked = !data.activeTrade && data.risk.activeLocks.length > 0;
+  const hasExternalPositions = data.externalPositions.length > 0;
+  const isBlocked = !data.activeTrade && !hasExternalPositions && data.risk.activeLocks.length > 0;
 
   return (
     <section className="flex flex-1 flex-col gap-6 pt-10">
@@ -104,37 +106,43 @@ export function Dashboard() {
 
       {notice && <p className="px-6 text-center text-sm text-amber-700">{notice}</p>}
 
-      {data.activeTrade ? (
+      {data.activeTrade && (
         <ActiveTradeCard
           trade={data.activeTrade}
           livePrice={livePrices[data.activeTrade.symbol]}
           onUpdated={handleTradeUpdated}
           onClosed={loadDashboard}
         />
-      ) : isBlocked ? (
-        <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
-      ) : (
-        <>
-          <AssetTabs assets={data.assets} selected={selectedSymbol} onSelect={setSelectedSymbol} />
-          {selectedSymbol && (
-            <TradeForm
-              symbol={selectedSymbol}
-              leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
-              levelRiskUsd={data.risk.levelRiskUsd}
-              livePrice={livePrices[selectedSymbol]}
-              onOpened={(result) => {
-                setNotice(result.slWarning);
-                handleTradeUpdated({
-                  ...result.trade,
-                  liquidationPrice: null,
-                  unrealizedProfit: null,
-                  positionFlat: false,
-                });
-              }}
-            />
-          )}
-        </>
       )}
+
+      {hasExternalPositions && <ExternalPositionsPanel positions={data.externalPositions} />}
+
+      {!data.activeTrade &&
+        !hasExternalPositions &&
+        (isBlocked ? (
+          <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
+        ) : (
+          <>
+            <AssetTabs assets={data.assets} selected={selectedSymbol} onSelect={setSelectedSymbol} />
+            {selectedSymbol && (
+              <TradeForm
+                symbol={selectedSymbol}
+                leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
+                levelRiskUsd={data.risk.levelRiskUsd}
+                livePrice={livePrices[selectedSymbol]}
+                onOpened={(result) => {
+                  setNotice(result.slWarning);
+                  handleTradeUpdated({
+                    ...result.trade,
+                    liquidationPrice: null,
+                    unrealizedProfit: null,
+                    positionFlat: false,
+                  });
+                }}
+              />
+            )}
+          </>
+        ))}
     </section>
   );
 }

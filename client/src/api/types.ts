@@ -56,6 +56,17 @@ export type ActiveTradeView = Trade & {
   positionFlat: boolean;
 };
 
+/** Позиция на BingX, открытая не через приложение — без SL/TP/riskUsd, известных нам. */
+export type ExternalPosition = {
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  entryPrice: number;
+  leverage: number;
+  liquidationPrice: number | null;
+  unrealizedProfit: number | null;
+};
+
 export type RiskLock = {
   type: string;
   reason: string;
@@ -77,6 +88,7 @@ export type DashboardResponse = {
   balanceError: string | null;
   assets: Asset[];
   activeTrade: ActiveTradeView | null;
+  externalPositions: ExternalPosition[];
   risk: RiskSnapshot;
 };
 

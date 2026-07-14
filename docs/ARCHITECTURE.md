@@ -105,7 +105,7 @@ daily_stats     — агрегат по дню: sum_r, trades_count (для бы
 
 ```
 POST /api/auth/pin              — вход по PIN → сессионная кука
-GET  /api/dashboard             — баланс, активы, активная сделка (risk_state/блокировки — этап 3)
+GET  /api/dashboard             — баланс, активы, активная сделка, внешние позиции BingX (risk_state/блокировки — этап 3)
 GET  /api/price/:symbol         — текущая цена символа (REST по действию, без поллинга)
 POST /api/trades                — открыть { symbol, side, quantity, slPrice } → market + SL
 GET  /api/trades/active         — активная сделка + живые данные позиции (ликвидация, PnL)

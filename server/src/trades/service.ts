@@ -86,8 +86,16 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
     throw new TradeError("Некорректная цена SL");
   }
 
+  const credentials = await getBingxCredentials();
+  if (!credentials) {
+    throw new TradeError("Ключи BingX не настроены — добавьте их в админке");
+  }
+
+  // Credentials нужны здесь же — проверка захватывает не только БД, но и реальные
+  // позиции на BingX (см. checkCanOpenTrade), чтобы не открыть вторую позицию
+  // параллельно с уже открытой вручную на бирже.
   try {
-    await checkCanOpenTrade();
+    await checkCanOpenTrade(credentials);
   } catch (error) {
     if (error instanceof RiskBlockedError) {
       throw new TradeError(error.message, 409);
@@ -96,11 +104,6 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
   }
 
   const asset = await getActiveAssetOrThrow(input.symbol);
-
-  const credentials = await getBingxCredentials();
-  if (!credentials) {
-    throw new TradeError("Ключи BingX не настроены — добавьте их в админке");
-  }
 
   let currentPrice: number;
   try {
@@ -508,5 +511,47 @@ export async function getActiveTradeView(): Promise<ActiveTradeView | null> {
     };
   } catch {
     return { ...trade, liquidationPrice: null, unrealizedProfit: null, positionFlat: false };
+  }
+}
+
+export type ExternalPositionView = {
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  entryPrice: number;
+  leverage: number;
+  liquidationPrice: number | null;
+  unrealizedProfit: number | null;
+};
+
+/**
+ * Позиции на BingX, открытые не через приложение (вручную на бирже) — у них нет
+ * записи в trades, поэтому нет SL/TP/riskUsd, известных приложению, и риск-движок
+ * ими не управляет. Показываем как есть, чтобы пользователь не остался в неведении,
+ * и параллельно блокируем открытие новых сделок (см. checkCanOpenTrade), пока они
+ * не закрыты. `excludeSymbol` — символ уже отслеживаемой в БД активной сделки, чтобы
+ * не показать одну и ту же позицию дважды.
+ */
+export async function getExternalPositions(excludeSymbol?: string | null): Promise<ExternalPositionView[]> {
+  const credentials = await getBingxCredentials();
+  if (!credentials) {
+    return [];
+  }
+
+  try {
+    const positions = await getPositions(credentials);
+    return positions
+      .filter((p) => Number(p.positionAmt) !== 0 && p.symbol !== excludeSymbol)
+      .map((p) => ({
+        symbol: p.symbol,
+        side: (Number(p.positionAmt) > 0 ? "long" : "short") as TradeSide,
+        quantity: Math.abs(Number(p.positionAmt)),
+        entryPrice: Number(p.avgPrice),
+        leverage: Number(p.leverage),
+        liquidationPrice: p.liquidationPrice ? Number(p.liquidationPrice) : null,
+        unrealizedProfit: p.unrealizedProfit !== undefined ? Number(p.unrealizedProfit) : null,
+      }));
+  } catch {
+    return [];
   }
 }

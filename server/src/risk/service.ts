@@ -1,3 +1,4 @@
+import { getPositions, type BingXCredentials } from "../bingx/client.js";
 import { ensureSeedRiskLevels, listRiskLevelDefs } from "../db/repositories/riskLevels.js";
 import { getOrCreateRiskState, updateRiskState } from "../db/repositories/riskState.js";
 import { getDailySumR, addTradeResultToDailyStats } from "../db/repositories/dailyStats.js";
@@ -59,8 +60,16 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   };
 }
 
-/** Бросает RiskBlockedError, если открывать новую сделку сейчас нельзя. */
-export async function checkCanOpenTrade(): Promise<void> {
+/**
+ * Бросает RiskBlockedError, если открывать новую сделку сейчас нельзя. Кроме сделки,
+ * уже отслеживаемой в БД, и активных блокировок, проверяет реальные позиции на BingX —
+ * пользователь мог открыть позицию вручную на самой бирже, минуя приложение. Пока на
+ * аккаунте есть хоть одна открытая позиция (наша или сторонняя), параллельно открывать
+ * новую нельзя — иначе фактический риск на счету перестанет соответствовать риск-плану.
+ * Проверка BingX best-effort: если REST недоступен, не блокируем открытие только из-за
+ * этого — остальные проверки (БД, локи) продолжают действовать как обычно.
+ */
+export async function checkCanOpenTrade(credentials: BingXCredentials | null): Promise<void> {
   const activeTrade = await getActiveTrade();
   if (activeTrade) {
     throw new RiskBlockedError("Уже есть активная сделка");
@@ -72,6 +81,16 @@ export async function checkCanOpenTrade(): Promise<void> {
   );
   if (effective) {
     throw new RiskBlockedError(effective.reason, effective.until);
+  }
+
+  if (credentials) {
+    const positions = await getPositions(credentials).catch(() => []);
+    const openPosition = positions.find((p) => Number(p.positionAmt) !== 0);
+    if (openPosition) {
+      throw new RiskBlockedError(
+        `На BingX уже открыта позиция по ${openPosition.symbol.replace(/-USDT$/, "")} — она была открыта не через приложение. Закройте её, прежде чем открывать новую сделку.`,
+      );
+    }
   }
 }
 
