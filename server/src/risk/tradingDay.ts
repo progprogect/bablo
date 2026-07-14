@@ -32,6 +32,22 @@ export function getLocalHour(date: Date, tzOffsetMinutes: number): number {
   return toShifted(date, tzOffsetMinutes).getUTCHours();
 }
 
+/**
+ * Обычный календарный день (YYYY-MM-DD) в локальной таймзоне — в отличие от
+ * getTradingDayKey, сбрасывается в полночь, а не в настраиваемый час риск-плана.
+ * Используется там, где нужен именно календарный день: месячная статистика,
+ * снимки эквити (см. history/monthlyStats.ts, db/repositories/equitySnapshots.ts).
+ */
+export function getLocalDateKey(date: Date, tzOffsetMinutes: number): string {
+  return getTradingDayKey(date, 0, tzOffsetMinutes);
+}
+
+/** Минута дня (0–1439) в локальной таймзоне — точнее часа, для медианы времени достижения дневной цели (см. history/insights.ts). */
+export function getLocalMinuteOfDay(date: Date, tzOffsetMinutes: number): number {
+  const shifted = toShifted(date, tzOffsetMinutes);
+  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+}
+
 /** Следующий момент сброса дня (в реальном UTC) строго после `date`. */
 export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: number): Date {
   const shifted = toShifted(date, tzOffsetMinutes);

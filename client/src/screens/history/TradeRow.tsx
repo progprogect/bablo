@@ -1,11 +1,16 @@
 import type { Trade } from "../../api/types";
-import { trimTrailingZeros } from "../../lib/format";
+import { formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
+/**
+ * "external" (закрыта на BingX не через приложение, обнаружено постфактум) показываем
+ * так же, как "manual" — пользователю не важно, каким способом технически определилась
+ * ручная закрытие, важен сам факт.
+ */
 const CLOSE_REASON_LABELS: Record<string, string> = {
   sl: "По стопу",
   tp: "По тейку",
   manual: "Вручную",
-  external: "На бирже",
+  external: "Вручную",
 };
 
 function formatDate(iso: string): string {
@@ -39,11 +44,17 @@ function riskReward(trade: Trade): string {
   return `1/${trimTrailingZeros(Math.abs(tp - entry) / risk)}`;
 }
 
+/** Реализованный результат в USDT: resultR × риск сделки в $. */
+function realizedPnlUsd(trade: Trade): number | null {
+  if (trade.resultR === null || trade.riskUsd === null) return null;
+  return Number(trade.resultR) * Number(trade.riskUsd);
+}
+
 export function TradeRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
-  const resultPct = trade.resultPct !== null ? Number(trade.resultPct) : null;
-  const isProfit = resultPct !== null && resultPct > 0;
-  const isLoss = resultPct !== null && resultPct < 0;
+  const pnlUsd = realizedPnlUsd(trade);
+  const isProfit = pnlUsd !== null && pnlUsd > 0;
+  const isLoss = pnlUsd !== null && pnlUsd < 0;
 
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -82,7 +93,7 @@ export function TradeRow({ trade }: { trade: Trade }) {
                 : "text-sm font-medium text-slate-600"
           }
         >
-          {resultPct !== null ? `${resultPct > 0 ? "+" : ""}${resultPct.toFixed(2)}%` : "—"}
+          {formatSignedUsd(pnlUsd)}
         </span>
       </div>
     </div>

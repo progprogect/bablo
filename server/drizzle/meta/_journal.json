@@ -15,6 +15,13 @@
       "when": 1783982942489,
       "tag": "0001_busy_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784029638962,
+      "tag": "0002_long_colonel_america",
+      "breakpoints": true
     }
   ]
 }

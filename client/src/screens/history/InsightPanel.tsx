@@ -1,43 +1,73 @@
-import type { TimeOfDayStats } from "../../api/types";
+import type { TradeInsights } from "../../api/types";
 
-const PERIOD_LABELS: Record<TimeOfDayStats["periods"][number]["key"], string> = {
-  night: "Ночь (00:00–06:00)",
-  morning: "Утро (06:00–12:00)",
-  day: "День (12:00–18:00)",
-  evening: "Вечер (18:00–24:00)",
-};
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
 
-export function InsightPanel({ stats }: { stats: TimeOfDayStats }) {
-  const totalTrades = stats.periods.reduce((sum, p) => sum + p.totalTrades, 0);
-  if (totalTrades === 0) {
-    return null;
-  }
+/** "15" → "15:00–16:00" (перенос через полночь показываем как "23:00–00:00"). */
+function formatHourRange(hour: number): string {
+  const next = (hour + 1) % 24;
+  return `${pad2(hour)}:00–${pad2(next)}:00`;
+}
 
-  const best = stats.bestPeriod ? stats.periods.find((p) => p.key === stats.bestPeriod) : null;
+const EMPTY_HOURS_LIMIT = 3;
+
+export function InsightPanel({ insights }: { insights: TradeInsights }) {
+  const hasAnyData =
+    insights.topProfitableHours.length > 0 ||
+    insights.topStopHours.length > 0 ||
+    insights.bestAsset !== null ||
+    insights.dailyTargetHour !== null ||
+    insights.emptyHours.length < 24;
+
+  if (!hasAnyData) return null;
+
+  const shownEmptyHours = insights.emptyHours.slice(0, EMPTY_HOURS_LIMIT);
+  const extraEmptyHours = insights.emptyHours.length - shownEmptyHours.length;
 
   return (
-    <div className="mx-4 flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">Время дня</p>
+    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <h3 className="text-sm font-medium text-ink">Подсказка</h3>
+      <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
+        {insights.topProfitableHours.length > 0 && (
+          <li>
+            Чаще всего прибыльные сделки открыты в:{" "}
+            {insights.topProfitableHours
+              .map((bucket) => `${formatHourRange(bucket.hour)} ${bucket.profitable}/${bucket.total}`)
+              .join(", ")}
+          </li>
+        )}
 
-      {best ? (
-        <p className="text-sm text-ink">
-          Чаще всего прибыльные сделки — <span className="text-accent">{PERIOD_LABELS[best.key]}</span>:{" "}
-          {best.profitableTrades} из {best.totalTrades}.
-        </p>
-      ) : (
-        <p className="text-sm text-slate-500">Пока нет закрытых прибыльных сделок для инсайта.</p>
-      )}
+        {insights.bestAsset && (
+          <li>
+            Самый прибыльный актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")} (
+            {insights.bestAsset.tpCount} {insights.bestAsset.tpCount === 1 ? "сделка" : "сделок"} по тейку)
+          </li>
+        )}
 
-      <dl className="grid grid-cols-2 gap-y-1.5 text-xs text-slate-500">
-        {stats.periods.map((period) => (
-          <div key={period.key} className="flex justify-between gap-2">
-            <dt>{PERIOD_LABELS[period.key]}</dt>
-            <dd className="text-slate-600">
-              {period.totalTrades > 0 ? `${period.profitableTrades}/${period.totalTrades}` : "—"}
-            </dd>
-          </div>
-        ))}
-      </dl>
+        {shownEmptyHours.length > 0 && (
+          <li>
+            Не было открытых сделок: {shownEmptyHours.map(formatHourRange).join(", ")}
+            {extraEmptyHours > 0 ? ` и ещё ${extraEmptyHours}` : ""}
+          </li>
+        )}
+
+        {insights.topStopHours.length > 0 && (
+          <li>
+            Чаще всего идут в стоп сделки, открытые в:{" "}
+            {insights.topStopHours
+              .map((bucket) => `${formatHourRange(bucket.hour)} (${bucket.count})`)
+              .join(", ")}
+          </li>
+        )}
+
+        {insights.dailyTargetHour && (
+          <li>
+            Обычно закрываю дневную цель +{insights.dailyTargetHour.targetR}R к{" "}
+            {pad2(insights.dailyTargetHour.hour)}:00
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

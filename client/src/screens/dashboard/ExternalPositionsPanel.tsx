@@ -1,11 +1,5 @@
 import type { ExternalPosition } from "../../api/types";
-import { formatPrice } from "../../lib/format";
-
-function formatSignedUsd(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${formatPrice(value, 2)} USDT`;
-}
+import { formatPrice, formatSignedUsd } from "../../lib/format";
 
 /**
  * Позиции, открытые на BingX не через приложение (вручную на бирже) — без SL/TP/riskUsd,

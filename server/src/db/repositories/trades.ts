@@ -155,11 +155,12 @@ export async function listClosedTrades(options: { limit: number; offset: number 
   return { trades: rows, total: totalRow?.value ?? 0 };
 }
 
-/** Все закрытые сделки без пагинации — для инсайта по времени дня (history/insights.ts). Небольшой объём данных у одного пользователя, разовый запрос — не поллинг. */
-export async function listAllClosedTradesForStats(): Promise<Array<Pick<Trade, "openedAt" | "resultR">>> {
+/**
+ * Все закрытые сделки без пагинации — для инсайтов и месячной статистики
+ * (history/insights.ts, history/monthlyStats.ts). Небольшой объём данных у одного
+ * пользователя, разовый запрос по событию (загрузка вкладки статистики) — не поллинг.
+ */
+export async function listAllClosedTrades(): Promise<Trade[]> {
   const db = getDb();
-  return db
-    .select({ openedAt: trades.openedAt, resultR: trades.resultR })
-    .from(trades)
-    .where(eq(trades.status, "closed"));
+  return db.select().from(trades).where(eq(trades.status, "closed"));
 }

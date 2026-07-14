@@ -126,16 +126,40 @@ export type PagedTrades = {
   total: number;
 };
 
-export type PeriodKey = "night" | "morning" | "day" | "evening";
-
-export type PeriodStats = {
-  key: PeriodKey;
-  totalTrades: number;
-  profitableTrades: number;
-  winRate: number;
+export type TradeInsights = {
+  topProfitableHours: { hour: number; profitable: number; total: number }[];
+  emptyHours: number[];
+  topStopHours: { hour: number; count: number }[];
+  bestAsset: { symbol: string; tpCount: number } | null;
+  dailyTargetHour: { targetR: number; hour: number } | null;
 };
 
-export type TimeOfDayStats = {
-  periods: PeriodStats[];
-  bestPeriod: PeriodKey | null;
+export type MonthlyRRPresetCount = { preset: string; count: number };
+
+export type MonthlyStat = {
+  year: number;
+  month: number;
+  totalTrades: number;
+  tpCount: number;
+  slCount: number;
+  beCount: number;
+  otherCount: number;
+  winRate: number;
+  sumR: number;
+  resultPct: number | null;
+  tradingDays: number;
+  daysWithoutTrading: number;
+  daysInMonth: number;
+  byRRPreset: MonthlyRRPresetCount[];
+};
+
+export type StatsResponse = {
+  insights: TradeInsights;
+  monthly: MonthlyStat[];
+};
+
+/** Точка графика роста депозита — один снимок эквити за календарный день. */
+export type EquitySnapshot = {
+  date: string;
+  equity: number;
 };

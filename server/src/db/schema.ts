@@ -89,3 +89,16 @@ export const dailyStats = pgTable("daily_stats", {
   sumR: numeric("sum_r", { precision: 10, scale: 4 }).notNull().default("0"),
   tradesCount: integer("trades_count").notNull().default(0),
 });
+
+/**
+ * Снимок эквити на календарный день (локальная таймзона, docs/RISK_ENGINE.md). Один
+ * снимок в день, лениво создаётся при первой загрузке дашборда за день (best-effort,
+ * без поллинга). Используется как база для "% к депозиту" в месячной статистике —
+ * истории баланса до появления этой таблицы не существует, поэтому для месяцев без
+ * снимков % не считается (см. history/monthlyStats.ts).
+ */
+export const equitySnapshots = pgTable("equity_snapshots", {
+  date: date("date").primaryKey(),
+  equity: numeric("equity", { precision: 20, scale: 8 }).notNull(),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+});

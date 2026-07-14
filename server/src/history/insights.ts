@@ -1,74 +1,176 @@
-import { getLocalHour } from "../risk/tradingDay.js";
+import { getLocalDateKey, getLocalHour, getLocalMinuteOfDay } from "../risk/tradingDay.js";
 
-export type PeriodKey = "night" | "morning" | "day" | "evening";
-
-export const PERIOD_LABELS: Record<PeriodKey, string> = {
-  night: "Ночь (00:00–06:00)",
-  morning: "Утро (06:00–12:00)",
-  day: "День (12:00–18:00)",
-  evening: "Вечер (18:00–24:00)",
+export type InsightTradeInput = {
+  symbol: string;
+  openedAt: Date;
+  closedAt: Date | null;
+  closeReason: string | null;
+  resultR: number | null;
+  riskUsd: number | null;
 };
 
-const PERIOD_ORDER: PeriodKey[] = ["night", "morning", "day", "evening"];
+export type HourBucketStat = { hour: number; total: number; profitable: number };
 
-export type PeriodStats = {
-  key: PeriodKey;
-  totalTrades: number;
-  profitableTrades: number;
-  winRate: number;
+export type TradeInsights = {
+  /** Часы открытия с наибольшим числом прибыльных сделок (топ-3, только ненулевые). */
+  topProfitableHours: { hour: number; profitable: number; total: number }[];
+  /** Часы (0–23), в которые за всю историю ни разу не открывалась сделка. */
+  emptyHours: number[];
+  /** Часы открытия, после которых сделка чаще всего закрывалась по стопу (топ-2, только ненулевые). */
+  topStopHours: { hour: number; count: number }[];
+  /** Самый прибыльный по сумме $ актив и число его сделок, закрытых по тейку. Null, если данных нет. */
+  bestAsset: { symbol: string; tpCount: number } | null;
+  /** Типичный (медианный) час, к которому в удачные дни достигается дневная цель +targetR. Null, если цель ни разу не была достигнута. */
+  dailyTargetHour: { targetR: number; hour: number } | null;
 };
 
-export type TimeOfDayStats = {
-  periods: PeriodStats[];
-  /** Период с наибольшим числом прибыльных сделок; null, если прибыльных сделок нет вообще. */
-  bestPeriod: PeriodKey | null;
-};
+const HOURS_IN_DAY = 24;
 
-function periodForHour(hour: number): PeriodKey {
-  if (hour < 6) return "night";
-  if (hour < 12) return "morning";
-  if (hour < 18) return "day";
-  return "evening";
+function emptyHourBuckets(): HourBucketStat[] {
+  return Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({ hour, total: 0, profitable: 0 }));
 }
 
-/**
- * Инсайт «в какое время дня чаще открывались прибыльные сделки» (см. docs/PROJECT.md).
- * Группируем по времени ОТКРЫТИЯ (openedAt) — решение входить в сделку принимается
- * в этот момент, а не в момент закрытия. Сутки делим на 4 крупных периода — часовые
- * бины дали бы разреженную, малоинформативную статистику при небольшом числе сделок.
- */
-export function computeTimeOfDayStats(
-  trades: { openedAt: Date; resultR: number | null }[],
+/** Считаем сделку прибыльной строго при resultR > 0 — ноль (безубыток) не считается прибылью. */
+function isProfitable(resultR: number): boolean {
+  return resultR > 0;
+}
+
+function bucketByOpenHour(
+  trades: InsightTradeInput[],
   tzOffsetMinutes: number,
-): TimeOfDayStats {
-  const buckets: Record<PeriodKey, { total: number; profitable: number }> = {
-    night: { total: 0, profitable: 0 },
-    morning: { total: 0, profitable: 0 },
-    day: { total: 0, profitable: 0 },
-    evening: { total: 0, profitable: 0 },
-  };
+): { buckets: HourBucketStat[]; slCountsByHour: number[] } {
+  const buckets = emptyHourBuckets();
+  const slCountsByHour = Array.from({ length: HOURS_IN_DAY }, () => 0);
 
   for (const trade of trades) {
     if (trade.resultR === null) continue;
-    const period = periodForHour(getLocalHour(trade.openedAt, tzOffsetMinutes));
-    buckets[period].total += 1;
-    if (trade.resultR > 0) {
-      buckets[period].profitable += 1;
+    const hour = getLocalHour(trade.openedAt, tzOffsetMinutes);
+    const bucket = buckets[hour]!;
+    bucket.total += 1;
+    if (isProfitable(trade.resultR)) {
+      bucket.profitable += 1;
+    }
+    if (trade.closeReason === "sl") {
+      slCountsByHour[hour] = (slCountsByHour[hour] ?? 0) + 1;
     }
   }
 
-  const periods: PeriodStats[] = PERIOD_ORDER.map((key) => ({
-    key,
-    totalTrades: buckets[key].total,
-    profitableTrades: buckets[key].profitable,
-    winRate: buckets[key].total > 0 ? buckets[key].profitable / buckets[key].total : 0,
-  }));
+  return { buckets, slCountsByHour };
+}
 
-  const bestPeriod = periods.reduce<PeriodStats | null>((best, current) => {
-    if (current.profitableTrades === 0) return best;
-    if (!best || current.profitableTrades > best.profitableTrades) return current;
-    return best;
-  }, null);
+function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsights["topProfitableHours"] {
+  return buckets
+    .filter((bucket) => bucket.profitable > 0)
+    .sort((a, b) => b.profitable - a.profitable)
+    .slice(0, limit)
+    .map((bucket) => ({ hour: bucket.hour, profitable: bucket.profitable, total: bucket.total }));
+}
 
-  return { periods, bestPeriod: bestPeriod?.key ?? null };
+function emptyHours(buckets: HourBucketStat[]): number[] {
+  return buckets.filter((bucket) => bucket.total === 0).map((bucket) => bucket.hour);
+}
+
+function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["topStopHours"] {
+  return slCountsByHour
+    .map((count, hour) => ({ hour, count }))
+    .filter((bucket) => bucket.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+/** Самый прибыльный актив по сумме реализованного $ (resultR × riskUsd), а не по числу сделок. */
+function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsset"] {
+  const bySymbol = new Map<string, { pnlUsd: number; tpCount: number }>();
+
+  for (const trade of trades) {
+    if (trade.resultR === null || trade.riskUsd === null) continue;
+    const entry = bySymbol.get(trade.symbol) ?? { pnlUsd: 0, tpCount: 0 };
+    entry.pnlUsd += trade.resultR * trade.riskUsd;
+    if (trade.closeReason === "tp") {
+      entry.tpCount += 1;
+    }
+    bySymbol.set(trade.symbol, entry);
+  }
+
+  let best: { symbol: string; pnlUsd: number; tpCount: number } | null = null;
+  for (const [symbol, stats] of bySymbol) {
+    if (!best || stats.pnlUsd > best.pnlUsd) {
+      best = { symbol, ...stats };
+    }
+  }
+
+  if (!best || best.pnlUsd <= 0) return null;
+  return { symbol: best.symbol, tpCount: best.tpCount };
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Типичный час достижения дневной цели +targetR (например, +3R дневного лимита прибыли,
+ * см. docs/RISK_ENGINE.md). Для каждого календарного дня идём по закрытым сделкам в
+ * хронологическом порядке и находим момент, когда накопленный R впервые достигает цели —
+ * это и есть "момент достижения" для этого дня. Из всех таких моментов берём медианный
+ * час (устойчивее к выбросам, чем среднее) и округляем вверх до полного часа — так
+ * результат читается как "обычно закрываю цель К такому-то часу".
+ */
+function dailyTargetHour(
+  trades: InsightTradeInput[],
+  targetR: number,
+  tzOffsetMinutes: number,
+): TradeInsights["dailyTargetHour"] {
+  if (!(targetR > 0)) return null;
+
+  const byDay = new Map<string, InsightTradeInput[]>();
+  for (const trade of trades) {
+    if (trade.resultR === null || !trade.closedAt) continue;
+    const dayKey = getLocalDateKey(trade.closedAt, tzOffsetMinutes);
+    const list = byDay.get(dayKey);
+    if (list) {
+      list.push(trade);
+    } else {
+      byDay.set(dayKey, [trade]);
+    }
+  }
+
+  const crossingMinutes: number[] = [];
+  for (const dayTrades of byDay.values()) {
+    const sorted = [...dayTrades].sort((a, b) => a.closedAt!.getTime() - b.closedAt!.getTime());
+    let cumulativeR = 0;
+    for (const trade of sorted) {
+      cumulativeR += trade.resultR!;
+      if (cumulativeR >= targetR) {
+        crossingMinutes.push(getLocalMinuteOfDay(trade.closedAt!, tzOffsetMinutes));
+        break;
+      }
+    }
+  }
+
+  if (crossingMinutes.length === 0) return null;
+  const hour = Math.ceil(median(crossingMinutes) / 60) % HOURS_IN_DAY;
+  return { targetR, hour };
+}
+
+/**
+ * Инсайты по истории сделок для карточки-подсказки на экране "Сделки" (docs/PROJECT.md).
+ * Все метрики считаются по времени ОТКРЫТИЯ (решение войти принимается в этот момент),
+ * кроме "дневной цели", которая по смыслу привязана к моменту ЗАКРЫТИЯ — именно закрытые
+ * сделки формируют дневной результат.
+ */
+export function computeTradeInsights(
+  trades: InsightTradeInput[],
+  tzOffsetMinutes: number,
+  dailyProfitLimitR: number,
+): TradeInsights {
+  const { buckets, slCountsByHour } = bucketByOpenHour(trades, tzOffsetMinutes);
+  return {
+    topProfitableHours: topProfitableHours(buckets, 3),
+    emptyHours: emptyHours(buckets),
+    topStopHours: topStopHours(slCountsByHour, 2),
+    bestAsset: bestAssetBySymbol(trades),
+    dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),
+  };
 }

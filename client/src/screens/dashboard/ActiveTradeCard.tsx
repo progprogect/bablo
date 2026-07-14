@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/client";
 import type { ActiveTradeView, TradeSide } from "../../api/types";
-import { formatPrice, trimTrailingZeros } from "../../lib/format";
+import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
 const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7"];
 
@@ -58,13 +58,6 @@ function computePotentialPnl(trade: ActiveTradeView, targetPrice: number): numbe
   if (!Number.isFinite(entry) || !Number.isFinite(qty)) return null;
   const delta = trade.side === "long" ? targetPrice - entry : entry - targetPrice;
   return delta * qty;
-}
-
-/** "+12.30 USDT" / "-4.50 USDT" — со знаком, для наглядности прибыли/убытка. */
-function formatSignedUsd(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${formatPrice(value, 2)} USDT`;
 }
 
 export function ActiveTradeCard({

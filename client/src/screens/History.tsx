@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { ApiError, getStats, getTradeHistory } from "../api/client";
-import type { Trade, TimeOfDayStats } from "../api/types";
+import type { StatsResponse, Trade } from "../api/types";
+import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
+import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { TradeRow } from "./history/TradeRow";
-import { TrackingRow } from "./history/TrackingRow";
 
 const PAGE_SIZE = 20;
 
@@ -12,10 +13,11 @@ type Tab = "trades" | "stats";
 export function History() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [total, setTotal] = useState(0);
-  const [stats, setStats] = useState<TimeOfDayStats | null>(null);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tab, setTab] = useState<Tab>("trades");
+  const [showEquityChart, setShowEquityChart] = useState(false);
 
   useEffect(() => {
     Promise.all([getTradeHistory(PAGE_SIZE, 0), getStats()])
@@ -67,7 +69,7 @@ export function History() {
 
       {tab === "trades" ? (
         <>
-          <InsightPanel stats={stats} />
+          <InsightPanel insights={stats.insights} />
 
           {trades.length === 0 ? (
             <p className="px-6 text-center text-sm text-slate-500">Закрытых сделок пока нет.</p>
@@ -90,15 +92,25 @@ export function History() {
             </button>
           )}
         </>
-      ) : trades.length === 0 ? (
-        <p className="px-6 text-center text-sm text-slate-500">Закрытых сделок пока нет.</p>
       ) : (
-        <div className="flex flex-col gap-3">
-          {trades.map((trade) => (
-            <TrackingRow key={trade.id} trade={trade} />
-          ))}
+        <div className="mx-4 flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setShowEquityChart(true)}
+            className="rounded-xl border border-line bg-card py-2.5 text-sm font-medium text-accent shadow-sm"
+          >
+            График роста депозита
+          </button>
+
+          {stats.monthly.length === 0 ? (
+            <p className="px-2 text-center text-sm text-slate-500">Пока нет ни одного закрытого месяца.</p>
+          ) : (
+            stats.monthly.map((stat) => <MonthlyStatCard key={`${stat.year}-${stat.month}`} stat={stat} />)
+          )}
         </div>
       )}
+
+      {showEquityChart && <EquityHistorySheet onClose={() => setShowEquityChart(false)} />}
     </section>
   );
 }

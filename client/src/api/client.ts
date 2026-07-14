@@ -5,12 +5,13 @@ import type {
   BingxKeyStatus,
   DashboardResponse,
   BingXBalance,
+  EquitySnapshot,
   OpenTradeResult,
   PagedTrades,
   RiskLevel,
   RiskSettings,
   SetTakeProfitResult,
-  TimeOfDayStats,
+  StatsResponse,
   Trade,
   TradeSide,
 } from "./types";
@@ -118,7 +119,9 @@ export const closeTradeRequest = (tradeId: number) =>
 export const getTradeHistory = (limit: number, offset: number) =>
   request<PagedTrades>(`/trades?limit=${limit}&offset=${offset}`);
 
-export const getStats = () => request<TimeOfDayStats>("/stats");
+export const getStats = () => request<StatsResponse>("/stats");
+
+export const getEquityHistory = () => request<EquitySnapshot[]>("/stats/equity-history");
 
 // --- Дерево роста (Этап 6) ---
 

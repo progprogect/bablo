@@ -13,3 +13,10 @@ export function formatPrice(value: string | number | null | undefined, digits = 
 export function trimTrailingZeros(value: number, maxDecimals = 2): string {
   return Number(value.toFixed(maxDecimals)).toString();
 }
+
+/** "+12.30 USDT" / "-4.50 USDT" — со знаком, для наглядности прибыли/убытка. */
+export function formatSignedUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatPrice(value, 2)} USDT`;
+}
