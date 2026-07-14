@@ -126,15 +126,18 @@ export function ActiveTradeCard({
           <h2 className="text-base font-medium text-ink">{displayName}</h2>
           <span className={`text-sm font-semibold ${pnlColorClass}`}>{formatSignedUsd(unrealizedProfit)}</span>
         </div>
-        <span
-          className={
-            trade.side === "long"
-              ? "rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
-              : "rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
-          }
-        >
-          {trade.side === "long" ? "Лонг" : "Шорт"}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={
+              trade.side === "long"
+                ? "rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                : "rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
+            }
+          >
+            {trade.side === "long" ? "Лонг" : "Шорт"}
+          </span>
+          <span className="text-xs text-slate-400">{trade.leverage}x</span>
+        </div>
       </div>
 
       {!slConfirmed && (
@@ -159,18 +162,16 @@ export function ActiveTradeCard({
         <Row label="Текущая цена" value={livePrice !== undefined ? formatPrice(livePrice) : "—"} />
         <Row label="Маржа" value={marginUsd !== null ? `${formatPrice(marginUsd, 2)} USDT` : "—"} />
         <Row
+          label="TP"
+          value={trade.tpPrice ? `${formatPrice(trade.tpPrice)} / ${formatSignedUsd(potentialProfitAtTp)}` : "не задан"}
+        />
+        <Row label="Ликвидация" value={formatPrice(trade.liquidationPrice)} />
+        <Row
           label="SL"
           value={trade.slPrice ? `${formatPrice(trade.slPrice)} / ${formatSignedUsd(potentialLossAtSl)}` : "—"}
         />
-        <Row label="Ликвидация" value={formatPrice(trade.liquidationPrice)} />
-        <Row label="Риск/прибыль" value={riskRewardLabel} />
         <Row label="Сумма риска" value={trade.riskUsd ? `${formatPrice(trade.riskUsd, 2)} USDT` : "—"} />
-        <Row label="Плечо" value={`${trade.leverage}x`} />
-        <Row
-          label="TP"
-          value={trade.tpPrice ? `${formatPrice(trade.tpPrice)} / ${formatSignedUsd(potentialProfitAtTp)}` : "не задан"}
-          full
-        />
+        <Row label="Риск/прибыль" value={riskRewardLabel} />
       </dl>
 
       {trade.partialTpPrice && (
