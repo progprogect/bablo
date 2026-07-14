@@ -240,6 +240,12 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   if (!trade || trade.status !== "active") {
     throw new TradeError("Активная сделка не найдена", 404);
   }
+  // TP (и частичная фиксация вместе с ним) задаётся один раз сразу после открытия сделки —
+  // клиент больше не предлагает докидывать частичную фиксацию позже отдельным действием
+  // (см. docs/PROJECT.md), поэтому повторный вызов для уже настроенной сделки — явная ошибка.
+  if (trade.tpPrice != null) {
+    throw new TradeError("TP уже выставлен для этой сделки");
+  }
 
   const entryPrice = Number(trade.entryPrice);
   const slPrice = Number(trade.slPrice);
@@ -247,12 +253,6 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
 
   let tpPrice: number;
   let rrPreset: string | undefined;
-
-  const isPartialOnly =
-    input.partialTpPrice !== undefined &&
-    input.tpPrice === undefined &&
-    input.rrPreset === undefined &&
-    trade.tpPrice != null;
 
   if (input.rrPreset) {
     const ratio = parseRRRatio(input.rrPreset);
@@ -263,12 +263,6 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     rrPreset = input.rrPreset;
   } else if (input.tpPrice !== undefined) {
     tpPrice = input.tpPrice;
-  } else if (isPartialOnly) {
-    if (trade.partialTpPrice) {
-      throw new TradeError("Частичная фиксация уже задана");
-    }
-    tpPrice = Number(trade.tpPrice);
-    rrPreset = trade.rrPreset ?? undefined;
   } else {
     throw new TradeError("Укажите tpPrice или rrPreset");
   }
@@ -288,17 +282,6 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   const credentials = await getBingxCredentials();
   if (!credentials) {
     throw new TradeError("Ключи BingX не настроены");
-  }
-
-  const existingOrderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-  // При добавлении частичной фиксации к уже выставленному TP — отменяем старый ордер
-  // на весь объём и ставим два: 70% + остаток на прежней цене TP.
-  if (isPartialOnly && existingOrderIds.tp !== undefined) {
-    try {
-      await cancelOrder(credentials, trade.symbol, existingOrderIds.tp);
-    } catch {
-      // Ордер мог уже исполниться — дальше placeOrder вернёт понятную ошибку.
-    }
   }
 
   const exitSide: OrderSide = side === "long" ? "SELL" : "BUY";
@@ -356,6 +339,7 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   // TP уже реально выставлен на бирже — ошибка записи в БД не должна выглядеть
   // как отказ всей операции, но должна быть явно видна пользователю.
   try {
+    const existingOrderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
     const updated = await updateTrade(tradeId, {
       tpPrice,
       rrPreset,

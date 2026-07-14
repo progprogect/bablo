@@ -1,4 +1,5 @@
 import type { Trade } from "../../api/types";
+import { trimTrailingZeros } from "../../lib/format";
 
 const CLOSE_REASON_LABELS: Record<string, string> = {
   sl: "По стопу",
@@ -35,7 +36,7 @@ function riskReward(trade: Trade): string {
   const tp = Number(trade.tpPrice);
   const risk = Math.abs(entry - sl);
   if (risk === 0) return "—";
-  return `1/${(Math.abs(tp - entry) / risk).toFixed(2)}`;
+  return `1/${trimTrailingZeros(Math.abs(tp - entry) / risk)}`;
 }
 
 export function TradeRow({ trade }: { trade: Trade }) {

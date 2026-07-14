@@ -34,13 +34,15 @@ export function PinSetup({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="flex flex-1 flex-col items-center justify-center gap-6 bg-surface px-6">
+    <section className="flex flex-1 flex-col items-center gap-6 bg-surface px-6 pb-10 pt-16 md:justify-center md:pt-0 md:pb-0">
       <div className="text-center">
         <h1 className="text-lg font-medium text-ink">Установите PIN</h1>
         <p className="mt-1 text-sm text-slate-500">Он будет нужен для входа в приложение</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col gap-3">
+      {/* На мобильном форма прижата к низу (mt-auto) — ближе к области, где обычно
+          открывается системная клавиатура. На десктопе — обычный центрированный блок. */}
+      <form onSubmit={handleSubmit} className="mt-auto flex w-full max-w-xs flex-col gap-3 md:mt-0">
         <input
           type="password"
           inputMode="numeric"

@@ -1,24 +1,37 @@
 import { useState } from "react";
 import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/client";
-import type { ActiveTradeView } from "../../api/types";
+import type { ActiveTradeView, TradeSide } from "../../api/types";
+import { formatPrice, trimTrailingZeros } from "../../lib/format";
 
 const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7"];
 
-function fmt(value: string | number | null | undefined, digits = 4): string {
-  if (value === null || value === undefined) return "—";
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toFixed(digits) : "—";
+/** "1/2" → 2, "1/1.5" → 1.5. Держим в синхроне с server/src/trades/math.ts. */
+function parseRRRatio(preset: string): number | null {
+  const match = /^1\/(\d+(\.\d+)?)$/.exec(preset);
+  return match?.[1] ? Number(match[1]) : null;
 }
 
-function riskReward(trade: ActiveTradeView): string | null {
+/** Держим в синхроне с computeTakeProfitPrice в server/src/trades/math.ts. */
+function computeTakeProfitPrice(entryPrice: number, slPrice: number, side: TradeSide, ratio: number): number {
+  const riskDistance = Math.abs(entryPrice - slPrice);
+  const rewardDistance = riskDistance * ratio;
+  return side === "long" ? entryPrice + rewardDistance : entryPrice - rewardDistance;
+}
+
+/** Без незначащих нулей — так вычисленную по пресету цену удобно чуть подправить вручную. */
+function formatComputedPrice(value: number): string {
+  return Number(value.toFixed(6)).toString();
+}
+
+/** Соотношение риск/прибыль сделки, если TP уже задан. */
+function riskRewardRatio(trade: ActiveTradeView): number | null {
   if (!trade.tpPrice || !trade.entryPrice || !trade.slPrice) return null;
   const entry = Number(trade.entryPrice);
   const sl = Number(trade.slPrice);
   const tp = Number(trade.tpPrice);
   const risk = Math.abs(entry - sl);
   if (risk === 0) return null;
-  const reward = Math.abs(tp - entry);
-  return `1 / ${(reward / risk).toFixed(2)}`;
+  return Math.abs(tp - entry) / risk;
 }
 
 /** PnL по живой цене (USDT-M linear: delta цены × кол-во монет, с учётом направления). */
@@ -48,7 +61,14 @@ export function ActiveTradeCard({
   const [partialTpWarning, setPartialTpWarning] = useState<string | null>(null);
 
   const unrealizedProfit = livePrice !== undefined ? computeLivePnl(trade, livePrice) : trade.unrealizedProfit;
-  const canAddPartialLater = Boolean(trade.tpPrice && !trade.partialTpPrice && !trade.partialTpFilledAt);
+  const ratio = riskRewardRatio(trade);
+  const riskRewardLabel = ratio !== null ? `1 / ${trimTrailingZeros(ratio)}` : "—";
+
+  // После настройки TP сделка полностью готова — дальше просто ждём SL/TP, без кнопок,
+  // которые создавали бы соблазн что-то вручную докрутить. Кнопка закрытия остаётся только
+  // как аварийный путь подтвердить уже закрытую на бирже позицию (positionFlat).
+  const isFullyConfigured = Boolean(trade.tpPrice);
+  const showCloseButton = !isFullyConfigured || trade.positionFlat;
 
   async function handleClose() {
     if (!window.confirm("Закрыть сделку по рынку прямо сейчас?")) return;
@@ -97,29 +117,26 @@ export function ActiveTradeCard({
       )}
 
       <dl className="grid grid-cols-2 gap-y-2 text-sm">
-        <Row label="Вход" value={fmt(trade.entryPrice)} />
-        <Row label="SL" value={fmt(trade.slPrice)} />
-        <Row label="TP" value={trade.tpPrice ? fmt(trade.tpPrice) : "не задан"} />
-        <Row label="Риск/прибыль" value={riskReward(trade) ?? "—"} />
-        <Row label="Сумма риска" value={trade.riskUsd ? `${fmt(trade.riskUsd, 2)} USDT` : "—"} />
+        <Row label="Вход" value={formatPrice(trade.entryPrice)} />
+        <Row label="Текущая цена" value={livePrice !== undefined ? formatPrice(livePrice) : "—"} />
+        <Row label="SL" value={formatPrice(trade.slPrice)} />
+        <Row label="TP" value={trade.tpPrice ? formatPrice(trade.tpPrice) : "не задан"} />
+        <Row label="Ликвидация" value={formatPrice(trade.liquidationPrice)} />
+        <Row label="Риск/прибыль" value={riskRewardLabel} />
+        <Row label="Сумма риска" value={trade.riskUsd ? `${formatPrice(trade.riskUsd, 2)} USDT` : "—"} />
         <Row label="Плечо" value={`${trade.leverage}x`} />
-        <Row label="Ликвидация" value={fmt(trade.liquidationPrice)} />
         <Row
           label="PnL"
-          value={unrealizedProfit !== null ? `${fmt(unrealizedProfit, 2)} USDT` : "—"}
+          value={unrealizedProfit !== null ? `${formatPrice(unrealizedProfit, 2)} USDT` : "—"}
+          full
         />
       </dl>
 
       {trade.partialTpPrice && (
-        <div className="flex items-center justify-between rounded-lg bg-accent/5 px-3 py-2 text-xs">
-          <span className="flex items-center gap-1.5 text-ink">
-            Частичная фиксация {fmt(trade.partialTpPrice)}
-            <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-              70%
-            </span>
-          </span>
+        <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 text-xs">
+          <span className="text-ink">Частичная фиксация {formatPrice(trade.partialTpPrice)} · 70%</span>
           <span className={trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}>
-            {trade.partialTpFilledAt ? `исполнена по ${fmt(trade.partialTpFillPrice)}` : "ожидает"}
+            {trade.partialTpFilledAt ? `исполнена по ${formatPrice(trade.partialTpFillPrice)}` : "ожидает"}
           </span>
         </div>
       )}
@@ -128,65 +145,32 @@ export function ActiveTradeCard({
         <TakeProfitForm trade={trade} onUpdated={onUpdated} onWarning={setPartialTpWarning} />
       )}
 
-      {canAddPartialLater && (
-        <AddPartialTpForm trade={trade} onUpdated={onUpdated} onWarning={setPartialTpWarning} />
+      {showCloseButton && (
+        <button
+          type="button"
+          disabled={isClosing}
+          onClick={handleClose}
+          className="rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
+        >
+          {isClosing ? "Закрываю…" : "Закрыть сделку"}
+        </button>
       )}
-
-      <button
-        type="button"
-        disabled={isClosing}
-        onClick={handleClose}
-        className="rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
-      >
-        {isClosing ? "Закрываю…" : "Закрыть сделку"}
-      </button>
       {closeError && <p className="text-center text-xs text-red-600">{closeError}</p>}
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, full }: { label: string; value: string; full?: boolean }) {
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col ${full ? "col-span-2" : ""}`}>
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="text-ink">{value}</dd>
     </div>
   );
 }
 
-function PartialTpField({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-accent/25 bg-accent/5 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-ink">Частичная фиксация</p>
-        <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white">
-          70%
-        </span>
-      </div>
-      <input
-        type="number"
-        inputMode="decimal"
-        disabled={disabled}
-        placeholder="Цена, на которой закроется 70% позиции"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
-      />
-      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-        Уровень между входом и TP. На этой цене закроется 70% позиции, остальные 30% дойдут до
-        основного TP.
-      </p>
-    </div>
-  );
-}
+const inputClass =
+  "rounded-xl border border-line bg-surface px-4 py-3 text-center text-ink outline-none focus:border-accent";
 
 function TakeProfitForm({
   trade,
@@ -204,8 +188,15 @@ function TakeProfitForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function pickPreset(preset: string) {
+    const ratio = parseRRRatio(preset);
+    const entry = Number(trade.entryPrice);
+    const sl = Number(trade.slPrice);
     setSelectedPreset(preset);
-    setTpPrice("");
+    if (ratio !== null && Number.isFinite(entry) && Number.isFinite(sl)) {
+      setTpPrice(formatComputedPrice(computeTakeProfitPrice(entry, sl, trade.side, ratio)));
+    } else {
+      setTpPrice("");
+    }
   }
 
   function editTpPrice(value: string) {
@@ -219,6 +210,9 @@ function TakeProfitForm({
     onWarning(null);
     setIsSubmitting(true);
     try {
+      // Если пресет всё ещё выбран (поле цены не трогали после клика по нему) — отправляем
+      // rrPreset, сервер сам точно пересчитает цену от актуальных entry/SL. Если пользователь
+      // подправил значение вручную — отправляем именно его как обычный tpPrice.
       const input = selectedPreset ? { rrPreset: selectedPreset } : { tpPrice: Number(tpPrice) };
       const parsedPartial = partialTpPrice ? Number(partialTpPrice) : undefined;
       const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
@@ -235,22 +229,17 @@ function TakeProfitForm({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-line pt-4">
-      <div>
-        <p className="text-sm font-medium text-ink">Шаг 2 — тейк-профит</p>
-        <p className="mt-0.5 text-xs text-slate-500">Выберите R/R или укажите цену TP</p>
-      </div>
+    <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+      <p className="text-sm font-medium text-ink">Шаг 2 — тейк-профит</p>
 
-      <PartialTpField value={partialTpPrice} onChange={setPartialTpPrice} disabled={isSubmitting} />
-
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {RR_PRESETS.map((preset) => (
           <button
             key={preset}
             type="button"
             disabled={isSubmitting}
             onClick={() => pickPreset(preset)}
-            className={`rounded-full border px-3 py-1 text-xs disabled:opacity-50 ${
+            className={`rounded-full border px-2.5 py-1 text-xs disabled:opacity-50 ${
               selectedPreset === preset
                 ? "border-accent bg-accent/10 text-accent"
                 : "border-line text-slate-600"
@@ -264,72 +253,33 @@ function TakeProfitForm({
       <input
         type="number"
         inputMode="decimal"
-        placeholder="Цена TP вручную"
+        placeholder="Цена TP (или выберите R/R выше)"
         value={tpPrice}
         onChange={(event) => editTpPrice(event.target.value)}
-        className="rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+        className={inputClass}
       />
+
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="Частичная фиксация (необязательно)"
+          value={partialTpPrice}
+          onChange={(event) => setPartialTpPrice(event.target.value)}
+          className={`flex-1 ${inputClass}`}
+        />
+        <span className="shrink-0 text-xs text-slate-500">70%</span>
+      </div>
 
       <button
         type="button"
         disabled={isSubmitting || (!selectedPreset && !tpPrice)}
         onClick={handleSave}
-        className="rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-xl bg-accent py-3 text-sm font-medium text-white disabled:opacity-50"
       >
         {isSubmitting ? "Сохраняю…" : "Сохранить TP"}
       </button>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
-  );
-}
-
-function AddPartialTpForm({
-  trade,
-  onUpdated,
-  onWarning,
-}: {
-  trade: ActiveTradeView;
-  onUpdated: (trade: ActiveTradeView) => void;
-  onWarning: (message: string | null) => void;
-}) {
-  const [partialTpPrice, setPartialTpPrice] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handleSave() {
-    const parsed = Number(partialTpPrice);
-    if (!(parsed > 0)) {
-      setError("Укажите цену частичной фиксации");
-      return;
-    }
-    setError(null);
-    onWarning(null);
-    setIsSubmitting(true);
-    try {
-      const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
-        partialTpPrice: parsed,
-      });
-      onUpdated({ ...trade, ...updated });
-      onWarning(partialTpWarning);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Не удалось выставить частичную фиксацию");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2 border-t border-line pt-4">
-      <PartialTpField value={partialTpPrice} onChange={setPartialTpPrice} disabled={isSubmitting} />
-      <button
-        type="button"
-        disabled={isSubmitting || !partialTpPrice}
-        onClick={handleSave}
-        className="rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-      >
-        {isSubmitting ? "Сохраняю…" : "Добавить частичную фиксацию"}
-      </button>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

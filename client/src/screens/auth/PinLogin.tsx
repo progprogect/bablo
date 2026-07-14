@@ -22,10 +22,13 @@ export function PinLogin({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="flex flex-1 flex-col items-center justify-center gap-6 bg-surface px-6">
+    <section className="flex flex-1 flex-col items-center gap-6 bg-surface px-6 pb-10 pt-16 md:justify-center md:pt-0 md:pb-0">
       <h1 className="text-lg font-medium text-ink">Bablo</h1>
 
-      <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col gap-3">
+      {/* На мобильном форма прижата к низу (mt-auto) — так проще дотянуться на весу телефона,
+          и системная клавиатура открывается ближе к полю, без лишнего скролла. На десктопе
+          отступ фиксированный — просто центрированный блок, как раньше. */}
+      <form onSubmit={handleSubmit} className="mt-auto flex w-full max-w-xs flex-col gap-3 md:mt-0">
         <input
           type="password"
           inputMode="numeric"
