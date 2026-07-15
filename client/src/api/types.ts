@@ -131,12 +131,12 @@ export type PresetOutcome = {
   totalTrades: number;
   tpCount: number;
   hitRate: number;
-  avgResultR: number;
+  slCount: number;
+  avgSlResultR: number;
 };
 
 export type TradeInsights = {
   topProfitableHours: { hour: number; profitable: number; total: number }[];
-  emptyHours: number[];
   topStopHours: { hour: number; count: number }[];
   bestAsset: { symbol: string; tpCount: number } | null;
   dailyTargetHour: { targetR: number; hour: number } | null;
@@ -155,6 +155,8 @@ export type MonthlyStat = {
   otherCount: number;
   winRate: number;
   sumR: number;
+  sumPositiveR: number;
+  sumNegativeR: number;
   resultPct: number | null;
   tradingDays: number;
   daysWithoutTrading: number;

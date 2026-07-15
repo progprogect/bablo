@@ -17,8 +17,10 @@ export type PresetOutcome = {
   tpCount: number;
   /** tpCount / totalTrades — как часто цена доходит до этого пресета. */
   hitRate: number;
-  /** Средний resultR по всем сделкам с этим пресетом (не только дошедшим до тейка) — что отвечает на "какой пресет выгоднее по факту". */
-  avgResultR: number;
+  /** Сколько из НЕ дошедших до тейка сделок с этим пресетом закрылись по стопу. */
+  slCount: number;
+  /** Средний resultR именно среди этих закрытых по стопу сделок (не среди всех) — конкретно "цена" промаха, без смешивания с прибыльными исходами. 0, если slCount = 0. */
+  avgSlResultR: number;
 };
 
 export type HourBucketStat = { hour: number; total: number; profitable: number };
@@ -26,8 +28,6 @@ export type HourBucketStat = { hour: number; total: number; profitable: number }
 export type TradeInsights = {
   /** Часы открытия с наибольшим числом прибыльных сделок (топ-3, только ненулевые). */
   topProfitableHours: { hour: number; profitable: number; total: number }[];
-  /** Часы (0–23), в которые за всю историю ни разу не открывалась сделка. */
-  emptyHours: number[];
   /** Часы открытия, после которых сделка чаще всего закрывалась по стопу (топ-2, только ненулевые). */
   topStopHours: { hour: number; count: number }[];
   /** Самый прибыльный по сумме $ актив и число его сделок, закрытых по тейку. Null, если данных нет. */
@@ -80,10 +80,6 @@ function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsi
     .map((bucket) => ({ hour: bucket.hour, profitable: bucket.profitable, total: bucket.total }));
 }
 
-function emptyHours(buckets: HourBucketStat[]): number[] {
-  return buckets.filter((bucket) => bucket.total === 0).map((bucket) => bucket.hour);
-}
-
 function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["topStopHours"] {
   return slCountsByHour
     .map((count, hour) => ({ hour, count }))
@@ -118,23 +114,24 @@ function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsse
 }
 
 /**
- * Статистика "сколько сделок закрылось по тейку" и "какой пресет прибыльнее" в разрезе
- * пресетов R/R (docs/PROJECT.md). hitRate — доля сделок с этим пресетом, где цена реально
- * дошла до тейка (обратная величина отвечает на "как часто цена не доходит до, например,
- * 1/2"); avgResultR — средний R по ВСЕМ сделкам с этим пресетом (включая закрытые по стопу),
- * а не только успешным — именно это число показывает фактическую прибыльность пресета,
- * а не только частоту попадания в цель.
+ * Статистика "сколько сделок закрылось по тейку" в разрезе пресетов R/R (docs/PROJECT.md).
+ * hitRate — доля сделок с этим пресетом, где цена реально дошла до тейка (обратная величина
+ * отвечает на "как часто цена не доходит до, например, 1/2"). Для промахов отдельно считаем
+ * долю закрытых по стопу и их средний R — конкретную "цену" промаха, а не смешанное среднее
+ * по всем исходам (которое на малой выборке выглядит как случайное "-1R" без контекста).
  */
 function presetOutcomes(trades: InsightTradeInput[]): PresetOutcome[] {
-  const byPreset = new Map<string, { total: number; tp: number; sumR: number }>();
+  const byPreset = new Map<string, { total: number; tp: number; sl: number; slSumR: number }>();
 
   for (const trade of trades) {
     if (trade.resultR === null || !trade.rrPreset) continue;
-    const entry = byPreset.get(trade.rrPreset) ?? { total: 0, tp: 0, sumR: 0 };
+    const entry = byPreset.get(trade.rrPreset) ?? { total: 0, tp: 0, sl: 0, slSumR: 0 };
     entry.total += 1;
-    entry.sumR += trade.resultR;
     if (trade.closeReason === "tp") {
       entry.tp += 1;
+    } else if (trade.closeReason === "sl") {
+      entry.sl += 1;
+      entry.slSumR += trade.resultR;
     }
     byPreset.set(trade.rrPreset, entry);
   }
@@ -146,7 +143,8 @@ function presetOutcomes(trades: InsightTradeInput[]): PresetOutcome[] {
       totalTrades: stats.total,
       tpCount: stats.tp,
       hitRate: stats.total > 0 ? stats.tp / stats.total : 0,
-      avgResultR: stats.total > 0 ? stats.sumR / stats.total : 0,
+      slCount: stats.sl,
+      avgSlResultR: stats.sl > 0 ? stats.slSumR / stats.sl : 0,
     };
   });
 }
@@ -216,7 +214,6 @@ export function computeTradeInsights(
   const { buckets, slCountsByHour } = bucketByOpenHour(trades, tzOffsetMinutes);
   return {
     topProfitableHours: topProfitableHours(buckets, 3),
-    emptyHours: emptyHours(buckets),
     topStopHours: topStopHours(slCountsByHour, 2),
     bestAsset: bestAssetBySymbol(trades),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),

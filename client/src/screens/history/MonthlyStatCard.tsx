@@ -21,6 +21,12 @@ function formatSignedPercent(value: number): string {
   return `${sign}${trimTrailingZeros(value)}%`;
 }
 
+/** "1/1" → "1R", "1/1.5" → "1.5R" — R-множитель пресета (после слэша), для компактной шапки таблицы. */
+function presetRLabel(preset: string): string {
+  const parts = preset.split("/");
+  return `${parts[1] ?? preset}R`;
+}
+
 export function MonthlyStatCard({ stat }: { stat: MonthlyStat }) {
   const isProfit = stat.resultPct !== null ? stat.resultPct > 0 : stat.sumR > 0;
   const isLoss = stat.resultPct !== null ? stat.resultPct < 0 : stat.sumR < 0;
@@ -47,13 +53,28 @@ export function MonthlyStatCard({ stat }: { stat: MonthlyStat }) {
         <Row label="Всего сделок" value={String(stat.totalTrades)} />
         <Row label="Винрейт" value={`${trimTrailingZeros(stat.winRate * 100)}%`} />
         <Row label="TP / SL / Б/У" value={`${stat.tpCount} / ${stat.slCount} / ${stat.beCount}`} />
-        <Row label="Торговых дней" value={`${stat.tradingDays} / ${stat.daysWithoutTrading} без торговли`} />
+        <Row label="Торговых дней" value={`${stat.tradingDays} торговых дней`} />
       </dl>
 
       {stat.byRRPreset.length > 0 && (
-        <p className="text-xs text-slate-500">
-          По тейку: {stat.byRRPreset.map((entry) => `${entry.preset} — ${entry.count}`).join(" · ")}
-        </p>
+        <div className="flex items-start justify-between gap-3 border-t border-line pt-2.5">
+          <div className="flex flex-1 flex-wrap gap-x-2.5 gap-y-1.5">
+            {stat.byRRPreset.map((entry) => (
+              <div key={entry.preset} className="flex min-w-[26px] flex-col items-center">
+                <span className="text-[10px] text-slate-400">{presetRLabel(entry.preset)}</span>
+                <span className="text-xs font-medium text-ink">{entry.count}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex shrink-0 flex-col items-center border-l border-line pl-2.5">
+            <span className="text-[10px] text-slate-400">+R / −R</span>
+            <span className="text-xs font-medium">
+              <span className="text-emerald-600">+{trimTrailingZeros(stat.sumPositiveR)}</span>
+              <span className="text-slate-400"> / </span>
+              <span className="text-red-600">{trimTrailingZeros(stat.sumNegativeR)}</span>
+            </span>
+          </div>
+        </div>
       )}
 
       {stat.resultPct === null && (

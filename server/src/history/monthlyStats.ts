@@ -22,11 +22,16 @@ export type MonthlyStat = {
   otherCount: number;
   winRate: number; // 0..1
   sumR: number;
+  /** Сумма resultR только по прибыльным сделкам (resultR > 0) — "сколько R заработано". */
+  sumPositiveR: number;
+  /** Сумма resultR только по убыточным сделкам (resultR < 0, само число отрицательное) — "сколько R потеряно". */
+  sumNegativeR: number;
   /** % к депозиту за месяц. Null, если на начало месяца не было снимка эквити (см. db/repositories/equitySnapshots.ts). */
   resultPct: number | null;
   tradingDays: number;
   daysWithoutTrading: number;
   daysInMonth: number;
+  /** Разбивка закрытых по тейку сделок по всем пресетам RR_PRESETS (включая пресеты с нулём сделок за месяц). */
   byRRPreset: MonthlyRRPresetCount[];
 };
 
@@ -96,6 +101,8 @@ export function computeMonthlyStats(
     let otherCount = 0;
     let winCount = 0;
     let sumR = 0;
+    let sumPositiveR = 0;
+    let sumNegativeR = 0;
     let sumUsd = 0;
     const byRRPresetCounts = new Map<string, number>();
 
@@ -105,7 +112,12 @@ export function computeMonthlyStats(
       if (trade.riskUsd !== null) {
         sumUsd += resultR * trade.riskUsd;
       }
-      if (resultR > 0) winCount += 1;
+      if (resultR > 0) {
+        winCount += 1;
+        sumPositiveR += resultR;
+      } else if (resultR < 0) {
+        sumNegativeR += resultR;
+      }
 
       if (Math.abs(resultR) <= BREAKEVEN_EPSILON_R) {
         beCount += 1;
@@ -140,13 +152,15 @@ export function computeMonthlyStats(
       otherCount,
       winRate: totalTrades > 0 ? winCount / totalTrades : 0,
       sumR,
+      sumPositiveR,
+      sumNegativeR,
       resultPct,
       tradingDays: tradingDays.size,
       daysWithoutTrading: Math.max(daysElapsed - tradingDays.size, 0),
       daysInMonth: totalDaysInMonth,
-      byRRPreset: RR_PRESETS.filter((preset) => byRRPresetCounts.has(preset)).map((preset) => ({
+      byRRPreset: RR_PRESETS.map((preset) => ({
         preset,
-        count: byRRPresetCounts.get(preset)!,
+        count: byRRPresetCounts.get(preset) ?? 0,
       })),
     });
   }

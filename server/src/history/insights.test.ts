@@ -37,16 +37,10 @@ function trade(input: {
 test("computeTradeInsights: пустой список — всё пустое/null", () => {
   const insights = computeTradeInsights([], TZ, 3);
   assert.deepEqual(insights.topProfitableHours, []);
-  assert.equal(insights.emptyHours.length, 24);
   assert.deepEqual(insights.topStopHours, []);
   assert.equal(insights.bestAsset, null);
   assert.equal(insights.dailyTargetHour, null);
   assert.deepEqual(insights.presetOutcomes, []);
-});
-
-test("computeTradeInsights: сделки без результата (не закрыты) игнорируются в почасовых бакетах", () => {
-  const insights = computeTradeInsights([trade({ openedHourUtc: 4, resultR: null })], TZ, 3);
-  assert.equal(insights.emptyHours.length, 24);
 });
 
 test("computeTradeInsights: топ часов открытия по числу прибыльных сделок", () => {
@@ -68,12 +62,6 @@ test("computeTradeInsights: топ часов открытия по числу �
 test("computeTradeInsights: безубыточная сделка (resultR = 0) не считается прибыльной", () => {
   const insights = computeTradeInsights([trade({ openedHourUtc: 4, resultR: 0 })], TZ, 3);
   assert.deepEqual(insights.topProfitableHours, []);
-});
-
-test("computeTradeInsights: часы без единой сделки попадают в emptyHours", () => {
-  const insights = computeTradeInsights([trade({ openedHourUtc: 4, resultR: 1 })], TZ, 3);
-  assert.equal(insights.emptyHours.includes(7), false);
-  assert.equal(insights.emptyHours.length, 23);
 });
 
 test("computeTradeInsights: топ часов открытия сделок, закрытых по стопу", () => {
@@ -144,17 +132,17 @@ test("computeTradeInsights: presetOutcomes — сделки без пресет�
   assert.deepEqual(insights.presetOutcomes, []);
 });
 
-test("computeTradeInsights: presetOutcomes считает hitRate и средний R по пресету", () => {
+test("computeTradeInsights: presetOutcomes считает hitRate и средний R закрытых по стопу", () => {
   const trades = [
-    // 1/1: 2 из 3 дошли до тейка (hitRate ≈ 0.67), sumR = 1+1-1 = 1 → avg ≈ 0.33
+    // 1/1: 2 из 3 дошли до тейка (hitRate ≈ 0.67), 1 закрылась по стопу с -1R
     trade({ openedHourUtc: 4, resultR: 1, rrPreset: "1/1", closeReason: "tp" }),
     trade({ openedHourUtc: 4, resultR: 1, rrPreset: "1/1", closeReason: "tp" }),
     trade({ openedHourUtc: 4, resultR: -1, rrPreset: "1/1", closeReason: "sl" }),
-    // 1/2: 1 из 4 дошла до тейка (hitRate = 0.25), sumR = 2-1-1-1 = -1 → avg = -0.25
+    // 1/2: 1 из 4 дошла до тейка (hitRate = 0.25), 3 закрылись по стопу со средним -1.5R
     trade({ openedHourUtc: 4, resultR: 2, rrPreset: "1/2", closeReason: "tp" }),
     trade({ openedHourUtc: 4, resultR: -1, rrPreset: "1/2", closeReason: "sl" }),
-    trade({ openedHourUtc: 4, resultR: -1, rrPreset: "1/2", closeReason: "sl" }),
-    trade({ openedHourUtc: 4, resultR: -1, rrPreset: "1/2", closeReason: "sl" }),
+    trade({ openedHourUtc: 4, resultR: -1.5, rrPreset: "1/2", closeReason: "sl" }),
+    trade({ openedHourUtc: 4, resultR: -2, rrPreset: "1/2", closeReason: "sl" }),
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
 
@@ -162,14 +150,29 @@ test("computeTradeInsights: presetOutcomes считает hitRate и средн�
   assert.equal(oneToOne?.totalTrades, 3);
   assert.equal(oneToOne?.tpCount, 2);
   assert.ok(Math.abs((oneToOne?.hitRate ?? 0) - 2 / 3) < 1e-9);
-  assert.ok(Math.abs((oneToOne?.avgResultR ?? 0) - 1 / 3) < 1e-9);
+  assert.equal(oneToOne?.slCount, 1);
+  assert.equal(oneToOne?.avgSlResultR, -1);
 
   const oneToTwo = insights.presetOutcomes.find((entry) => entry.preset === "1/2");
   assert.equal(oneToTwo?.totalTrades, 4);
   assert.equal(oneToTwo?.tpCount, 1);
   assert.equal(oneToTwo?.hitRate, 0.25);
-  assert.equal(oneToTwo?.avgResultR, -0.25);
+  assert.equal(oneToTwo?.slCount, 3);
+  assert.ok(Math.abs((oneToTwo?.avgSlResultR ?? 0) - -1.5) < 1e-9);
 
   // Порядок — по канонической последовательности RR_PRESETS, а не по числу сделок.
   assert.deepEqual(insights.presetOutcomes.map((entry) => entry.preset), ["1/1", "1/2"]);
+});
+
+test("computeTradeInsights: presetOutcomes — slCount = 0, если все промахи закрылись не по стопу", () => {
+  const trades = [
+    trade({ openedHourUtc: 4, resultR: 1, rrPreset: "1/3", closeReason: "tp" }),
+    trade({ openedHourUtc: 4, resultR: 0, rrPreset: "1/3", closeReason: "external" }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+  const oneToThree = insights.presetOutcomes.find((entry) => entry.preset === "1/3");
+  assert.equal(oneToThree?.totalTrades, 2);
+  assert.equal(oneToThree?.tpCount, 1);
+  assert.equal(oneToThree?.slCount, 0);
+  assert.equal(oneToThree?.avgSlResultR, 0);
 });

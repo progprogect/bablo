@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { computeMonthlyStats, type MonthlyStatTradeInput } from "./monthlyStats.js";
+import { RR_PRESETS } from "../trades/math.js";
 
 const TZ = 180; // UTC+3
 
@@ -63,9 +64,15 @@ test("computeMonthlyStats: группирует по месяцу ЗАКРЫТИ
   assert.equal(stat.slCount, 1);
   assert.equal(stat.beCount, 0);
   assert.equal(stat.sumR, 1);
+  assert.equal(stat.sumPositiveR, 2);
+  assert.equal(stat.sumNegativeR, -1);
   assert.equal(stat.winRate, 0.5);
   assert.equal(stat.tradingDays, 2);
-  assert.deepEqual(stat.byRRPreset, [{ preset: "1/2", count: 1 }]);
+  // Все пресеты присутствуют в списке (даже с нулём сделок), чтобы клиент мог показать полную сетку.
+  assert.deepEqual(
+    stat.byRRPreset,
+    RR_PRESETS.map((preset) => ({ preset, count: preset === "1/2" ? 1 : 0 })),
+  );
 });
 
 test("computeMonthlyStats: сделка около нуля результата — считается 'в безубытке' независимо от closeReason", () => {
@@ -77,6 +84,9 @@ test("computeMonthlyStats: сделка около нуля результата
   assert.equal(stat.beCount, 1);
   assert.equal(stat.tpCount, 0);
   assert.equal(stat.otherCount, 0);
+  // resultR > 0, поэтому попадает в sumPositiveR несмотря на то, что засчитана как безубыток.
+  assert.equal(stat.sumPositiveR, 0.02);
+  assert.equal(stat.sumNegativeR, 0);
 });
 
 test("computeMonthlyStats: resultPct null без снимка эквити, иначе — % от базы", () => {
