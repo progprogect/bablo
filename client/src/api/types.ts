@@ -126,12 +126,21 @@ export type PagedTrades = {
   total: number;
 };
 
+export type PresetOutcome = {
+  preset: string;
+  totalTrades: number;
+  tpCount: number;
+  hitRate: number;
+  avgResultR: number;
+};
+
 export type TradeInsights = {
   topProfitableHours: { hour: number; profitable: number; total: number }[];
   emptyHours: number[];
   topStopHours: { hour: number; count: number }[];
   bestAsset: { symbol: string; tpCount: number } | null;
   dailyTargetHour: { targetR: number; hour: number } | null;
+  presetOutcomes: PresetOutcome[];
 };
 
 export type MonthlyRRPresetCount = { preset: string; count: number };

@@ -26,6 +26,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       closeReason: row.closeReason,
       resultR: row.resultR !== null ? Number(row.resultR) : null,
       riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
+      rrPreset: row.rrPreset,
     }));
     const insights = computeTradeInsights(
       insightInputs,

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { TradeInsights } from "../../api/types";
+import type { PresetOutcome, TradeInsights } from "../../api/types";
+import { trimTrailingZeros } from "../../lib/format";
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -53,17 +54,30 @@ function formatRange(range: HourRange): string {
   return `${pad2(range.startHour)}:00–${pad2(range.endHour)}:00`;
 }
 
-const VISIBLE_RANGES_LIMIT = 3;
+/** "1/2 — 5/12 (42%), сред. -0.25R" — сколько сделок дошло до тейка и как это отразилось на R в среднем. */
+function formatPresetOutcome(entry: PresetOutcome): string {
+  const hitPct = Math.round(entry.hitRate * 100);
+  const avgSign = entry.avgResultR > 0 ? "+" : "";
+  return `${entry.preset} — ${entry.tpCount}/${entry.totalTrades} по тейку (${hitPct}%), сред. ${avgSign}${trimTrailingZeros(entry.avgResultR)}R`;
+}
 
-/** Список диапазонов с раскрытием по кнопке, если он не влезает в отведённый лимит. */
-function ExpandableRanges({ ranges }: { ranges: HourRange[] }) {
+/** Список строк с раскрытием по кнопке, если он не влезает в отведённый лимит. */
+function ExpandableList<T>({
+  items,
+  limit,
+  formatItem,
+}: {
+  items: T[];
+  limit: number;
+  formatItem: (item: T) => string;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? ranges : ranges.slice(0, VISIBLE_RANGES_LIMIT);
-  const hiddenCount = ranges.length - shown.length;
+  const shown = expanded ? items : items.slice(0, limit);
+  const hiddenCount = items.length - shown.length;
 
   return (
     <>
-      {shown.map(formatRange).join(", ")}
+      {shown.map(formatItem).join(", ")}
       {hiddenCount > 0 && (
         <>
           {" "}
@@ -76,7 +90,7 @@ function ExpandableRanges({ ranges }: { ranges: HourRange[] }) {
           </button>
         </>
       )}
-      {expanded && ranges.length > VISIBLE_RANGES_LIMIT && (
+      {expanded && items.length > limit && (
         <>
           {" "}
           <button
@@ -92,12 +106,16 @@ function ExpandableRanges({ ranges }: { ranges: HourRange[] }) {
   );
 }
 
+const VISIBLE_RANGES_LIMIT = 3;
+const VISIBLE_PRESETS_LIMIT = 4;
+
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
   const hasAnyData =
     insights.topProfitableHours.length > 0 ||
     insights.topStopHours.length > 0 ||
     insights.bestAsset !== null ||
     insights.dailyTargetHour !== null ||
+    insights.presetOutcomes.length > 0 ||
     insights.emptyHours.length < 24;
 
   if (!hasAnyData) return null;
@@ -124,9 +142,21 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
           </li>
         )}
 
+        {insights.presetOutcomes.length > 0 && (
+          <li>
+            По пресетам R/R:{" "}
+            <ExpandableList
+              items={insights.presetOutcomes}
+              limit={VISIBLE_PRESETS_LIMIT}
+              formatItem={formatPresetOutcome}
+            />
+          </li>
+        )}
+
         {emptyRanges.length > 0 && (
           <li>
-            Не было открытых сделок: <ExpandableRanges ranges={emptyRanges} />
+            Не было открытых сделок:{" "}
+            <ExpandableList items={emptyRanges} limit={VISIBLE_RANGES_LIMIT} formatItem={formatRange} />
           </li>
         )}
 

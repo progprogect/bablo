@@ -1,4 +1,5 @@
 import { getLocalDateKey, getLocalHour, getLocalMinuteOfDay } from "../risk/tradingDay.js";
+import { RR_PRESETS } from "../trades/math.js";
 
 export type InsightTradeInput = {
   symbol: string;
@@ -7,6 +8,17 @@ export type InsightTradeInput = {
   closeReason: string | null;
   resultR: number | null;
   riskUsd: number | null;
+  rrPreset: string | null;
+};
+
+export type PresetOutcome = {
+  preset: string;
+  totalTrades: number;
+  tpCount: number;
+  /** tpCount / totalTrades — как часто цена доходит до этого пресета. */
+  hitRate: number;
+  /** Средний resultR по всем сделкам с этим пресетом (не только дошедшим до тейка) — что отвечает на "какой пресет выгоднее по факту". */
+  avgResultR: number;
 };
 
 export type HourBucketStat = { hour: number; total: number; profitable: number };
@@ -22,6 +34,8 @@ export type TradeInsights = {
   bestAsset: { symbol: string; tpCount: number } | null;
   /** Типичный (медианный) час, к которому в удачные дни достигается дневная цель +targetR. Null, если цель ни разу не была достигнута. */
   dailyTargetHour: { targetR: number; hour: number } | null;
+  /** Статистика по пресетам R/R (1/1, 1/2…) среди сделок, у которых пресет был задан — см. presetOutcomes(). */
+  presetOutcomes: PresetOutcome[];
 };
 
 const HOURS_IN_DAY = 24;
@@ -103,6 +117,40 @@ function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsse
   return { symbol: best.symbol, tpCount: best.tpCount };
 }
 
+/**
+ * Статистика "сколько сделок закрылось по тейку" и "какой пресет прибыльнее" в разрезе
+ * пресетов R/R (docs/PROJECT.md). hitRate — доля сделок с этим пресетом, где цена реально
+ * дошла до тейка (обратная величина отвечает на "как часто цена не доходит до, например,
+ * 1/2"); avgResultR — средний R по ВСЕМ сделкам с этим пресетом (включая закрытые по стопу),
+ * а не только успешным — именно это число показывает фактическую прибыльность пресета,
+ * а не только частоту попадания в цель.
+ */
+function presetOutcomes(trades: InsightTradeInput[]): PresetOutcome[] {
+  const byPreset = new Map<string, { total: number; tp: number; sumR: number }>();
+
+  for (const trade of trades) {
+    if (trade.resultR === null || !trade.rrPreset) continue;
+    const entry = byPreset.get(trade.rrPreset) ?? { total: 0, tp: 0, sumR: 0 };
+    entry.total += 1;
+    entry.sumR += trade.resultR;
+    if (trade.closeReason === "tp") {
+      entry.tp += 1;
+    }
+    byPreset.set(trade.rrPreset, entry);
+  }
+
+  return RR_PRESETS.filter((preset) => byPreset.has(preset)).map((preset) => {
+    const stats = byPreset.get(preset)!;
+    return {
+      preset,
+      totalTrades: stats.total,
+      tpCount: stats.tp,
+      hitRate: stats.total > 0 ? stats.tp / stats.total : 0,
+      avgResultR: stats.total > 0 ? stats.sumR / stats.total : 0,
+    };
+  });
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -172,5 +220,6 @@ export function computeTradeInsights(
     topStopHours: topStopHours(slCountsByHour, 2),
     bestAsset: bestAssetBySymbol(trades),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),
+    presetOutcomes: presetOutcomes(trades),
   };
 }
