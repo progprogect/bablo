@@ -2,15 +2,13 @@ import type { Trade } from "../../api/types";
 import { formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
 /**
- * "external" (закрыта на BingX не через приложение, обнаружено постфактум) показываем
- * так же, как "manual" — пользователю не важно, каким способом технически определилась
- * ручная закрытие, важен сам факт.
+ * Только SL/TP показываем явной подписью — для "manual"/"external" (закрыта вручную или
+ * обнаружено постфактум на BingX) не показываем ничего: длительность и R/R уже понятны
+ * без дополнительного слова.
  */
 const CLOSE_REASON_LABELS: Record<string, string> = {
   sl: "По стопу",
   tp: "По тейку",
-  manual: "Вручную",
-  external: "Вручную",
 };
 
 function formatDate(iso: string): string {
@@ -55,6 +53,7 @@ export function TradeRow({ trade }: { trade: Trade }) {
   const pnlUsd = realizedPnlUsd(trade);
   const isProfit = pnlUsd !== null && pnlUsd > 0;
   const isLoss = pnlUsd !== null && pnlUsd < 0;
+  const closeReasonLabel = trade.closeReason ? CLOSE_REASON_LABELS[trade.closeReason] : undefined;
 
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -81,8 +80,8 @@ export function TradeRow({ trade }: { trade: Trade }) {
 
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>
-          {formatDuration(trade.openedAt, trade.closedAt)} · R/R {riskReward(trade)} ·{" "}
-          {CLOSE_REASON_LABELS[trade.closeReason ?? ""] ?? "—"}
+          {formatDuration(trade.openedAt, trade.closedAt)} · R/R {riskReward(trade)}
+          {closeReasonLabel ? ` · ${closeReasonLabel}` : ""}
         </span>
         <span
           className={
