@@ -78,6 +78,24 @@ export const resetAccountData = () =>
     body: JSON.stringify({}),
   });
 
+// --- Админка: корректировки баланса (пополнения/выводы) ---
+
+export type EquityAdjustment = {
+  id: number;
+  date: string;
+  amountUsd: string;
+  note: string | null;
+  createdAt: string;
+};
+
+export const getEquityAdjustments = () => request<EquityAdjustment[]>("/admin/equity-adjustments");
+
+export const createEquityAdjustmentRequest = (input: { date: string; amountUsd: number; note?: string }) =>
+  request<EquityAdjustment>("/admin/equity-adjustments", { method: "POST", body: JSON.stringify(input) });
+
+export const deleteEquityAdjustmentRequest = (id: number) =>
+  request<void>(`/admin/equity-adjustments/${id}`, { method: "DELETE" });
+
 // --- Админка: активы ---
 
 export const getAssets = () => request<Asset[]>("/admin/assets");

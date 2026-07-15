@@ -1,8 +1,15 @@
-import { and, gte, lte } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { equitySnapshots } from "../schema.js";
 
 export type EquitySnapshotRow = typeof equitySnapshots.$inferSelect;
+
+/** Самый свежий снимок эквити — точка отсчёта для восстановления баланса прошлых месяцев (history/monthlyStats.ts). Null, если снимков ещё не было. */
+export async function getLatestEquitySnapshot(): Promise<EquitySnapshotRow | null> {
+  const db = getDb();
+  const [row] = await db.select().from(equitySnapshots).orderBy(desc(equitySnapshots.date)).limit(1);
+  return row ?? null;
+}
 
 /**
  * Создаёт снимок эквити на дату, если его ещё нет — не перезаписывает существующий.
@@ -15,21 +22,6 @@ export async function captureEquitySnapshotIfMissing(dateKey: string, equity: nu
     .insert(equitySnapshots)
     .values({ date: dateKey, equity: String(equity) })
     .onConflictDoNothing();
-}
-
-/** Самый ранний снимок в диапазоне [fromKey, toKey] — база для "% к депозиту" за месяц. */
-export async function getFirstEquitySnapshotInRange(
-  fromKey: string,
-  toKey: string,
-): Promise<EquitySnapshotRow | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(equitySnapshots)
-    .where(and(gte(equitySnapshots.date, fromKey), lte(equitySnapshots.date, toKey)))
-    .orderBy(equitySnapshots.date)
-    .limit(1);
-  return row ?? null;
 }
 
 /** Все снимки эквити по возрастанию даты — для графика роста депозита (docs/PROJECT.md, исключение из принципа "без графиков"). */

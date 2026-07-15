@@ -23,10 +23,8 @@ function trade(input: {
   };
 }
 
-const noBaseline = () => null;
-
 test("computeMonthlyStats: без сделок — пустой список", () => {
-  assert.deepEqual(computeMonthlyStats([], TZ, noBaseline), []);
+  assert.deepEqual(computeMonthlyStats([], TZ, null), []);
 });
 
 test("computeMonthlyStats: сделки без результата или без closedAt игнорируются", () => {
@@ -34,7 +32,7 @@ test("computeMonthlyStats: сделки без результата или бе�
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: null, resultR: null }),
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: null }),
   ];
-  assert.deepEqual(computeMonthlyStats(trades, TZ, noBaseline), []);
+  assert.deepEqual(computeMonthlyStats(trades, TZ, null), []);
 });
 
 test("computeMonthlyStats: группирует по месяцу ЗАКРЫТИЯ, считает базовые агрегаты", () => {
@@ -55,7 +53,7 @@ test("computeMonthlyStats: группирует по месяцу ЗАКРЫТИ
       closeReason: "sl",
     }),
   ];
-  const [stat] = computeMonthlyStats(trades, TZ, noBaseline, new Date("2026-07-20T00:00:00Z"));
+  const [stat] = computeMonthlyStats(trades, TZ, null, [], new Date("2026-07-20T00:00:00Z"));
   assert.ok(stat);
   assert.equal(stat.year, 2026);
   assert.equal(stat.month, 7);
@@ -79,7 +77,7 @@ test("computeMonthlyStats: сделка около нуля результата
   const trades = [
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 0.02, closeReason: "manual" }),
   ];
-  const [stat] = computeMonthlyStats(trades, TZ, noBaseline);
+  const [stat] = computeMonthlyStats(trades, TZ, null);
   assert.ok(stat);
   assert.equal(stat.beCount, 1);
   assert.equal(stat.tpCount, 0);
@@ -89,25 +87,51 @@ test("computeMonthlyStats: сделка около нуля результата
   assert.equal(stat.sumNegativeR, 0);
 });
 
-test("computeMonthlyStats: resultPct null без снимка эквити, иначе — % от базы", () => {
+test("computeMonthlyStats: resultPct null без якоря эквити, иначе — % от базы, восстановленной от якоря", () => {
   const trades = [
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 5, riskUsd: 20 }),
   ];
-  const withoutBaseline = computeMonthlyStats(trades, TZ, noBaseline)[0];
-  assert.ok(withoutBaseline);
-  assert.equal(withoutBaseline.resultPct, null);
+  const withoutAnchor = computeMonthlyStats(trades, TZ, null)[0];
+  assert.ok(withoutAnchor);
+  assert.equal(withoutAnchor.resultPct, null);
 
-  const withBaseline = computeMonthlyStats(trades, TZ, () => 1000)[0];
-  assert.ok(withBaseline);
+  // Якорь ровно на начало месяца — база берётся как есть, без отката PnL.
+  const anchorAtMonthStart = computeMonthlyStats(trades, TZ, { date: "2026-07-01", equity: 1000 })[0];
+  assert.ok(anchorAtMonthStart);
   // 5R * 20$ = 100$ прибыли / 1000$ базы = 10%
-  assert.equal(withBaseline.resultPct, 10);
+  assert.equal(anchorAtMonthStart.resultPct, 10);
+
+  // Якорь через месяц вперёд, после сделки — база на начало июля восстанавливается
+  // "откручиванием" назад дохода этой сделки: 1100 (текущий баланс) − 100$ прибыли = 1000$.
+  const anchorLater = computeMonthlyStats(trades, TZ, { date: "2026-08-01", equity: 1100 })[0];
+  assert.ok(anchorLater);
+  assert.equal(anchorLater.resultPct, 10);
+});
+
+test("computeMonthlyStats: ручное пополнение/вывод учитывается при восстановлении базы от якоря", () => {
+  const trades = [
+    trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 5, riskUsd: 20 }), // +100$
+  ];
+  // Текущий баланс 1150$ на 01.08 — это 1000$ база + 100$ прибыли по сделке + 50$ пополнение 05.07.
+  const anchor = { date: "2026-08-01", equity: 1150 };
+  const adjustments = [{ date: "2026-07-05", amountUsd: 50 }];
+
+  const stat = computeMonthlyStats(trades, TZ, anchor, adjustments)[0];
+  assert.ok(stat);
+  // 1150 − 100 (PnL) − 50 (пополнение) = 1000 → 100$ / 1000$ = 10%, как и без пополнения.
+  assert.equal(stat.resultPct, 10);
+
+  const statIgnoringAdjustment = computeMonthlyStats(trades, TZ, anchor)[0];
+  assert.ok(statIgnoringAdjustment);
+  // Без учёта пополнения база была бы 1050$, а не 1000$ — процент оказался бы ниже реального.
+  assert.ok(Math.abs((statIgnoringAdjustment.resultPct ?? 0) - (100 / 1050) * 100) < 1e-9);
 });
 
 test("computeMonthlyStats: дни без торговли считаются относительно дней, прошедших в текущем месяце", () => {
   const trades = [
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 1 }),
   ];
-  const [stat] = computeMonthlyStats(trades, TZ, noBaseline, new Date("2026-07-10T00:00:00Z"));
+  const [stat] = computeMonthlyStats(trades, TZ, null, [], new Date("2026-07-10T00:00:00Z"));
   assert.ok(stat);
   assert.equal(stat.tradingDays, 1);
   // 10 июля ещё не наступило полностью — locale-day для today в TZ=+3 всё ещё 10-е число
@@ -119,7 +143,7 @@ test("computeMonthlyStats: для прошедшего месяца исполь
   const trades = [
     trade({ openedAt: "2026-06-01T10:00:00Z", closedAt: "2026-06-01T12:00:00Z", resultR: 1 }),
   ];
-  const [stat] = computeMonthlyStats(trades, TZ, noBaseline, new Date("2026-07-10T00:00:00Z"));
+  const [stat] = computeMonthlyStats(trades, TZ, null, [], new Date("2026-07-10T00:00:00Z"));
   assert.ok(stat);
   assert.equal(stat.daysInMonth, 30);
   assert.equal(stat.daysWithoutTrading, 29);
@@ -131,6 +155,6 @@ test("computeMonthlyStats: сортировка — новые месяцы сн
     trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 1 }),
     trade({ openedAt: "2026-06-01T10:00:00Z", closedAt: "2026-06-01T12:00:00Z", resultR: 1 }),
   ];
-  const stats = computeMonthlyStats(trades, TZ, noBaseline, new Date("2026-07-20T00:00:00Z"));
+  const stats = computeMonthlyStats(trades, TZ, null, [], new Date("2026-07-20T00:00:00Z"));
   assert.deepEqual(stats.map((s) => s.month), [7, 6, 5]);
 });

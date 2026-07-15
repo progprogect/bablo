@@ -12,6 +12,11 @@ import { getBingxCredentials, setBingxCredentials, getRiskSettings, setRiskSetti
 import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
+import {
+  createEquityAdjustment,
+  deleteEquityAdjustment,
+  listEquityAdjustments,
+} from "../db/repositories/equityAdjustments.js";
 import { resyncMarketSymbols, restartAccountStream } from "../realtime/manager.js";
 import { stopTracking } from "../tracker/activeTradeTracker.js";
 import { requireAuth } from "./plugins/auth-guard.js";
@@ -26,6 +31,12 @@ function normalizeSymbol(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim().toUpperCase();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDateKey(value: unknown): value is string {
+  return typeof value === "string" && DATE_KEY_PATTERN.test(value) && !Number.isNaN(new Date(value).getTime());
 }
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
@@ -255,5 +266,42 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return setRiskSettings(patch);
+  });
+
+  // --- Корректировки баланса (пополнения/выводы, не связанные с результатом торговли) ---
+  // Нужны для восстановления % к депозиту за прошлые месяцы "в обратную сторону" от
+  // текущего баланса (см. history/monthlyStats.ts) — без них любое пополнение/вывод
+  // искажало бы % за все месяцы до этой операции.
+
+  app.get("/admin/equity-adjustments", async () => {
+    return listEquityAdjustments();
+  });
+
+  app.post<{ Body: { date?: string; amountUsd?: number; note?: string } }>(
+    "/admin/equity-adjustments",
+    async (request, reply) => {
+      const { date, amountUsd, note } = request.body ?? {};
+      if (!isValidDateKey(date)) {
+        reply.code(400).send({ error: "Укажите дату в формате YYYY-MM-DD" });
+        return;
+      }
+      if (!(typeof amountUsd === "number" && Number.isFinite(amountUsd) && amountUsd !== 0)) {
+        reply.code(400).send({ error: "Укажите сумму (положительная — пополнение, отрицательная — вывод)" });
+        return;
+      }
+      const created = await createEquityAdjustment({ date, amountUsd, note: note?.trim() || null });
+      reply.code(201);
+      return created;
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>("/admin/equity-adjustments/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id)) {
+      reply.code(400).send({ error: "Некорректный id" });
+      return;
+    }
+    await deleteEquityAdjustment(id);
+    reply.code(204);
   });
 }

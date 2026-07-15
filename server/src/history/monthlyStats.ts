@@ -26,7 +26,7 @@ export type MonthlyStat = {
   sumPositiveR: number;
   /** Сумма resultR только по убыточным сделкам (resultR < 0, само число отрицательное) — "сколько R потеряно". */
   sumNegativeR: number;
-  /** % к депозиту за месяц. Null, если на начало месяца не было снимка эквити (см. db/repositories/equitySnapshots.ts). */
+  /** % к депозиту за месяц (см. computeBaselineEquity ниже). Null, только если ни одного снимка эквити ещё не было вообще. */
   resultPct: number | null;
   tradingDays: number;
   daysWithoutTrading: number;
@@ -51,8 +51,56 @@ function parseDateKey(dateKey: string): { year: number; month: number; day: numb
   return { year: parts[0]!, month: parts[1]!, day: parts[2]! };
 }
 
-/** Возвращает базу эквити (снимок на начало месяца) для расчёта resultPct. Null — данных нет, месяц был до появления снимков. */
-export type EquityBaselineLookup = (year: number, month: number) => number | null;
+/** Последний известный снимок эквити — точка отсчёта для восстановления баланса прошлых месяцев (см. computeBaselineEquity). */
+export type EquityAnchor = { date: string; equity: number };
+
+/** Ручное пополнение (amountUsd > 0) или вывод (amountUsd < 0) средств — см. db/repositories/equityAdjustments.ts. */
+export type EquityAdjustmentInput = { date: string; amountUsd: number };
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * Восстанавливает баланс на начало месяца (monthStartKey), отталкиваясь от последнего
+ * известного снимка эквити (anchor) и "откручивая" от него назад реализованный PnL всех
+ * сделок и ручные пополнения/выводы за прошедший период: PnL и пополнения увеличивают
+ * эквити, поэтому чтобы получить более РАННИЙ баланс, их нужно вычесть из текущего.
+ * Работает и в обратную сторону (monthStartKey после даты якоря) — на практике не
+ * встречается, так как якорь всегда актуальнее любого начала месяца, но так функция не
+ * даёт неверный результат, если это условие когда-нибудь не выполнится.
+ */
+function computeBaselineEquity(
+  monthStartKey: string,
+  anchor: EquityAnchor,
+  trades: MonthlyStatTradeInput[],
+  adjustments: EquityAdjustmentInput[],
+  tzOffsetMinutes: number,
+): number {
+  if (monthStartKey === anchor.date) return anchor.equity;
+
+  const isPast = monthStartKey < anchor.date;
+  const rangeStart = isPast ? monthStartKey : anchor.date;
+  const rangeEnd = isPast ? anchor.date : monthStartKey;
+
+  let pnlUsd = 0;
+  for (const trade of trades) {
+    if (trade.resultR === null || trade.riskUsd === null || !trade.closedAt) continue;
+    const closedKey = getLocalDateKey(trade.closedAt, tzOffsetMinutes);
+    if (closedKey >= rangeStart && closedKey < rangeEnd) {
+      pnlUsd += trade.resultR * trade.riskUsd;
+    }
+  }
+
+  let adjustmentsUsd = 0;
+  for (const adjustment of adjustments) {
+    if (adjustment.date >= rangeStart && adjustment.date < rangeEnd) {
+      adjustmentsUsd += adjustment.amountUsd;
+    }
+  }
+
+  return isPast ? anchor.equity - pnlUsd - adjustmentsUsd : anchor.equity + pnlUsd + adjustmentsUsd;
+}
 
 /**
  * Месячная статистика для вкладки "Статистика" в Истории (docs/PROJECT.md). Группируем
@@ -60,11 +108,18 @@ export type EquityBaselineLookup = (year: number, month: number) => number | nul
  * сделка фактически завершилась. "Торговые дни" внутри месяца считаем по тому же
  * closedAt, чтобы не было утечки дней за границы месяца при позициях, держащихся через
  * полночь 31/1 числа.
+ *
+ * % к депозиту (resultPct) считается не по снимку РОВНО на начало месяца (такого снимка
+ * для прошлых месяцев может не быть — таблица снимков молодая), а восстановлением от
+ * последнего известного снимка (anchor) назад через накопленный PnL сделок и ручные
+ * пополнения/выводы (adjustments) — см. computeBaselineEquity(). anchor = null (снимков
+ * ещё не было ни одного) — resultPct недоступен для всех месяцев.
  */
 export function computeMonthlyStats(
   trades: MonthlyStatTradeInput[],
   tzOffsetMinutes: number,
-  getEquityBaseline: EquityBaselineLookup,
+  anchor: EquityAnchor | null,
+  adjustments: EquityAdjustmentInput[] = [],
   today: Date = new Date(),
 ): MonthlyStat[] {
   type Bucket = {
@@ -139,7 +194,10 @@ export function computeMonthlyStats(
     const isCurrentMonth = todayKey.year === year && todayKey.month === month;
     const daysElapsed = isCurrentMonth ? todayKey.day : totalDaysInMonth;
 
-    const equityBaseline = getEquityBaseline(year, month);
+    const monthStartKey = `${year}-${pad2(month)}-01`;
+    const equityBaseline = anchor
+      ? computeBaselineEquity(monthStartKey, anchor, trades, adjustments, tzOffsetMinutes)
+      : null;
     const resultPct = equityBaseline && equityBaseline > 0 ? (sumUsd / equityBaseline) * 100 : null;
 
     result.push({

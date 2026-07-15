@@ -102,3 +102,19 @@ export const equitySnapshots = pgTable("equity_snapshots", {
   equity: numeric("equity", { precision: 20, scale: 8 }).notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Ручные пополнения/выводы средств на BingX-аккаунте — не связаны с результатом торговли,
+ * поэтому не отражены в trades.resultR. Нужны, чтобы корректно восстанавливать баланс на
+ * начало прошлых месяцев "в обратную сторону" от последнего известного снимка эквити
+ * (см. history/monthlyStats.ts): equity(месяц назад) = текущий эквити − PnL сделок за
+ * период − сумма пополнений/выводов за тот же период (знак amountUsd: + пополнение,
+ * − вывод).
+ */
+export const equityAdjustments = pgTable("equity_adjustments", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull(),
+  amountUsd: numeric("amount_usd", { precision: 20, scale: 8 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
