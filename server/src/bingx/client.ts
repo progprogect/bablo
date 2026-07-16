@@ -342,6 +342,14 @@ export type BingXOrderStatus = {
   status: string;
   avgPrice: string;
   profit?: string;
+  /**
+   * Ключевой факт про исполнение условных ордеров у BingX: когда STOP_MARKET/
+   * TAKE_PROFIT_MARKET срабатывает, исходный ордер остаётся CANCELLED навсегда,
+   * а BingX создаёт НОВЫЙ market-ордер с ДРУГИМ orderId, у которого triggerOrderId
+   * указывает на orderId исходного условного ордера. Найдено эмпирически 16.07.2026
+   * при разборе диагностики реклассификации — см. docs/ROADMAP.md.
+   */
+  triggerOrderId?: number | string;
 };
 
 type BingXOrderStatusResponse = {

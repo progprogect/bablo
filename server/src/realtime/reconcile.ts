@@ -20,11 +20,14 @@ const MAX_HISTORY_RANGE_MS = 7 * 24 * 60 * 60 * 1000 - 60_000; // BingX: не б
  * Экспортируется также для trades/reclassify.ts — та же логика нужна для повторной
  * сверки уже закрытых "external"-сделок.
  *
- * Сначала сканирует историю ордеров символа (getOrderHistory) — это надёжнее для
- * STOP_MARKET/TAKE_PROFIT_MARKET: BingX иногда не находит условный ордер по orderId
- * через точечный лукап после срабатывания (см. bingx/client.ts). Точечный getOrderStatus
- * — запасной путь, если ордер почему-то не попал в список истории (например, лимит в
- * 500 записей на очень активном символе).
+ * КЛЮЧЕВОЙ факт про BingX (найден эмпирически 16.07.2026 при разборе диагностики
+ * реклассификации — см. docs/ROADMAP.md): когда условный STOP_MARKET/TAKE_PROFIT_MARKET
+ * ордер срабатывает, сам ордер навсегда остаётся в статусе CANCELLED (никогда не
+ * становится FILLED) — BingX создаёт вместо него НОВЫЙ market-ордер с ДРУГИМ orderId,
+ * у которого поле triggerOrderId указывает на orderId исходного условного ордера.
+ * Поэтому совпадение нужно искать не по orderId, а по triggerOrderId среди FILLED-
+ * ордеров истории символа. Прежняя версия (поиск по orderId) никогда не находила
+ * совпадений и все SL/TP-закрытия ошибочно классифицировались как "external".
  */
 export async function findFilledSlOrTp(
   credentials: BingXCredentials,
@@ -86,14 +89,28 @@ export async function findFilledSlOrTpDebug(
   debug.historyOrdersCount = history.length;
   debug.historyOrders = history;
 
+  // Диагностический прямой лукап по orderId — почти всегда найдёт исходный условный
+  // ордер со статусом CANCELLED (он не пропадает из истории), это ожидаемо и не значит,
+  // что SL/TP не сработал — реальное исполнение ищем ниже, по triggerOrderId.
   const findInHistory = (id: string | number | undefined) =>
     id === undefined ? undefined : history.find((o) => String(o.orderId) === String(id));
 
   debug.slInHistory = findInHistory(orderIds.sl);
   debug.tpInHistory = findInHistory(orderIds.tp);
 
-  if (debug.slInHistory?.status === "FILLED") return { result: { key: "sl", order: debug.slInHistory }, debug };
-  if (debug.tpInHistory?.status === "FILLED") return { result: { key: "tp", order: debug.tpInHistory }, debug };
+  // Реальное совпадение: FILLED-ордер, чей triggerOrderId равен нашему сохранённому
+  // orderId условного SL/TP (либо, на всякий случай, прямое совпадение orderId).
+  const findFilledFor = (id: string | number | undefined) =>
+    id === undefined
+      ? undefined
+      : history.find(
+          (o) => o.status === "FILLED" && (String(o.triggerOrderId) === String(id) || String(o.orderId) === String(id)),
+        );
+
+  const slFilled = findFilledFor(orderIds.sl);
+  if (slFilled) return { result: { key: "sl", order: slFilled }, debug };
+  const tpFilled = findFilledFor(orderIds.tp);
+  if (tpFilled) return { result: { key: "tp", order: tpFilled }, debug };
 
   if (orderIds.sl !== undefined) {
     try {

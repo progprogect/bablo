@@ -54,6 +54,44 @@ describe("findFilledSlOrTp", () => {
     assert.equal(call, 1);
   });
 
+  it("находит FILLED SL по triggerOrderId — реальное поведение BingX: исходный условный ордер остаётся CANCELLED, срабатывание создаёт новый ордер с другим orderId", async () => {
+    let call = 0;
+    globalThis.fetch = (async (url: string | URL) => {
+      call += 1;
+      assert.match(String(url), /allOrders/);
+      return jsonResponse({
+        code: 0,
+        msg: "",
+        data: {
+          orders: [
+            // Исходный SL-ордер — навсегда CANCELLED, даже если реально сработал.
+            { orderId: "sl-1", symbol: "TIA-USDT", status: "CANCELLED", avgPrice: "0" },
+            // BingX создаёт НОВЫЙ ордер при срабатывании: другой orderId, но
+            // triggerOrderId указывает на исходный условный ордер.
+            {
+              orderId: "sl-1-executed",
+              symbol: "TIA-USDT",
+              status: "FILLED",
+              avgPrice: "4.5",
+              profit: "-10",
+              triggerOrderId: "sl-1",
+            },
+            { orderId: "tp-1", symbol: "TIA-USDT", status: "CANCELLED", avgPrice: "0" },
+          ],
+        },
+      });
+    }) as typeof fetch;
+
+    const result = await findFilledSlOrTp(
+      { apiKey: "k", secretKey: "s" },
+      fakeTrade(),
+      { sl: "sl-1", tp: "tp-1" },
+    );
+    assert.equal(result?.key, "sl");
+    assert.equal(result?.order.avgPrice, "4.5");
+    assert.equal(call, 1);
+  });
+
   it("падает обратно на точечный getOrderStatus, если ордер не нашёлся в истории", async () => {
     globalThis.fetch = (async (url: string | URL) => {
       if (String(url).includes("allOrders")) {
