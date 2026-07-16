@@ -100,13 +100,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   // повторно сверяет такие сделки с BingX и чинит closeReason/результат там, где это
   // ещё возможно (пока BingX хранит данные по ордеру).
 
-  app.post("/admin/reclassify-trades", async (_request, reply) => {
+  app.post("/admin/reclassify-trades", async (request, reply) => {
     const credentials = await getBingxCredentials();
     if (!credentials) {
       reply.code(400).send({ error: "Не настроены ключи BingX" });
       return;
     }
     const result = await reclassifyExternalTrades(credentials);
+    // Полная диагностика — в логи (Railway), чтобы разобраться, если сделки всё равно
+    // не реклассифицировались; в ответе клиенту детали тоже есть, для отображения в админке.
+    request.log.info({ reclassify: result }, "reclassify-trades: диагностика по сделкам");
     return { ok: true, ...result };
   });
 

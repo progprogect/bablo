@@ -1,42 +1,77 @@
 import type { BingXCredentials } from "../bingx/client.js";
 import { listExternallyClosedTrades, updateTrade } from "../db/repositories/trades.js";
-import { computeResult, findFilledSlOrTp } from "../realtime/reconcile.js";
+import { computeResult, findFilledSlOrTpDebug } from "../realtime/reconcile.js";
+
+export type ReclassifyTradeDetail = {
+  tradeId: number;
+  symbol: string;
+  openedAt: string;
+  fixed: boolean;
+  fixedAs?: "sl" | "tp";
+  /** Сохранённые orderId сделки — чтобы можно было вручную сверить с BingX при необходимости. */
+  orderIds: Record<string, string | number>;
+  historyOrdersCount: number;
+  historyError: string | null;
+  slFoundInHistory: { orderId: string | number; status: string } | null;
+  tpFoundInHistory: { orderId: string | number; status: string } | null;
+  slStatusLookup: { status: string | null; error: string | null } | null;
+  tpStatusLookup: { status: string | null; error: string | null } | null;
+};
 
 export type ReclassifyResult = {
   checked: number;
   fixed: number;
+  details: ReclassifyTradeDetail[];
 };
 
 /**
- * Повторная сверка сделок, закрытых как "external" — до фикса бага в getOrderStatus
- * (16.07.2026, см. docs/ROADMAP.md) reconcilePositionFlat никогда не мог определить
- * FILLED-статус SL/TP-ордера и всегда падал в эту ветку, даже когда сделка реально
- * закрылась по стопу или тейку. Использует ту же логику поиска, что и реалтайм-сверка
- * (findFilledSlOrTp — история ордеров символа, надёжнее точечного лукапа для условных
- * ордеров). Сделки, для которых BingX уже не находит данных по ордеру (истёк срок
- * хранения истории), остаются как есть.
+ * Повторная сверка сделок, закрытых как "external" — до фикса багов в getOrderStatus/
+ * getOrderHistory (16.07.2026, см. docs/ROADMAP.md) реконсиляция никогда не могла
+ * определить FILLED-статус SL/TP-ордера и всегда падала в эту ветку, даже когда сделка
+ * реально закрылась по стопу или тейку. Возвращает подробную диагностику по каждой
+ * проверенной сделке (findFilledSlOrTpDebug) — чтобы при необходимости видеть РЕАЛЬНЫЙ
+ * ответ BingX, а не гадать по документации, если сделка всё равно не реклассифицировалась.
  */
 export async function reclassifyExternalTrades(credentials: BingXCredentials): Promise<ReclassifyResult> {
   const tradesToCheck = await listExternallyClosedTrades();
   let fixed = 0;
+  const details: ReclassifyTradeDetail[] = [];
 
   for (const trade of tradesToCheck) {
     const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-    const filled = await findFilledSlOrTp(credentials, trade, orderIds);
-    if (!filled) continue;
+    const { result, debug } = await findFilledSlOrTpDebug(credentials, trade, orderIds);
 
-    const closePrice = Number(filled.order.avgPrice) || Number(trade.entryPrice);
-    const realizedProfit = filled.order.profit !== undefined ? Number(filled.order.profit) : null;
-    const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
+    if (result) {
+      const closePrice = Number(result.order.avgPrice) || Number(trade.entryPrice);
+      const realizedProfit = result.order.profit !== undefined ? Number(result.order.profit) : null;
+      const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
+      await updateTrade(trade.id, { closeReason: result.key, closePrice, resultR, resultPct });
+      fixed += 1;
+    }
 
-    await updateTrade(trade.id, {
-      closeReason: filled.key,
-      closePrice,
-      resultR,
-      resultPct,
+    details.push({
+      tradeId: trade.id,
+      symbol: trade.symbol,
+      openedAt: trade.openedAt.toISOString(),
+      fixed: result !== null,
+      fixedAs: result?.key,
+      orderIds,
+      historyOrdersCount: debug.historyOrdersCount,
+      historyError: debug.historyError,
+      slFoundInHistory: debug.slInHistory
+        ? { orderId: debug.slInHistory.orderId, status: debug.slInHistory.status }
+        : null,
+      tpFoundInHistory: debug.tpInHistory
+        ? { orderId: debug.tpInHistory.orderId, status: debug.tpInHistory.status }
+        : null,
+      slStatusLookup: debug.slStatusLookup
+        ? { status: debug.slStatusLookup.order?.status ?? null, error: debug.slStatusLookup.error }
+        : null,
+      tpStatusLookup: debug.tpStatusLookup
+        ? { status: debug.tpStatusLookup.order?.status ?? null, error: debug.tpStatusLookup.error }
+        : null,
     });
-    fixed += 1;
   }
 
-  return { checked: tradesToCheck.length, fixed };
+  return { checked: tradesToCheck.length, fixed, details };
 }

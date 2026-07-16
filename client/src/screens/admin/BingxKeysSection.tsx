@@ -1,5 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ApiError, getBingxKeyStatus, reclassifyTrades, resetAccountData, saveBingxKey } from "../../api/client";
+import {
+  ApiError,
+  getBingxKeyStatus,
+  reclassifyTrades,
+  resetAccountData,
+  saveBingxKey,
+  type ReclassifyTradeDetail,
+} from "../../api/client";
 
 type SaveBingxKeyResponse = {
   configured: boolean;
@@ -26,6 +33,7 @@ export function BingxKeysSection() {
   const [isReclassifying, setIsReclassifying] = useState(false);
   const [reclassifyError, setReclassifyError] = useState<string | null>(null);
   const [reclassifySuccess, setReclassifySuccess] = useState<string | null>(null);
+  const [reclassifyDetails, setReclassifyDetails] = useState<ReclassifyTradeDetail[] | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -90,6 +98,7 @@ export function BingxKeysSection() {
   async function handleReclassify() {
     setReclassifyError(null);
     setReclassifySuccess(null);
+    setReclassifyDetails(null);
     setIsReclassifying(true);
     try {
       const result = await reclassifyTrades();
@@ -98,6 +107,7 @@ export function BingxKeysSection() {
           ? `Исправлено ${result.fixed} из ${result.checked} сделок`
           : `Проверено ${result.checked} сделок — исправлений не потребовалось`,
       );
+      setReclassifyDetails(result.details);
     } catch (err) {
       setReclassifyError(err instanceof ApiError ? err.message : "Не удалось пересчитать сделки");
     } finally {
@@ -161,6 +171,14 @@ export function BingxKeysSection() {
         </button>
         {reclassifyError && <p className="text-xs text-red-600">{reclassifyError}</p>}
         {reclassifySuccess && <p className="text-xs text-emerald-600">{reclassifySuccess}</p>}
+        {reclassifyDetails && reclassifyDetails.length > 0 && (
+          <details className="text-xs text-slate-500">
+            <summary className="cursor-pointer select-none text-accent">Диагностика по сделкам</summary>
+            <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-lg bg-surface p-2 text-[10px] leading-tight">
+              {JSON.stringify(reclassifyDetails, null, 2)}
+            </pre>
+          </details>
+        )}
       </div>
 
       <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">

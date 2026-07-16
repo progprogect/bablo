@@ -78,15 +78,31 @@ export const resetAccountData = () =>
     body: JSON.stringify({}),
   });
 
+export type ReclassifyTradeDetail = {
+  tradeId: number;
+  symbol: string;
+  openedAt: string;
+  fixed: boolean;
+  fixedAs?: "sl" | "tp";
+  orderIds: Record<string, string | number>;
+  historyOrdersCount: number;
+  historyError: string | null;
+  slFoundInHistory: { orderId: string | number; status: string } | null;
+  tpFoundInHistory: { orderId: string | number; status: string } | null;
+  slStatusLookup: { status: string | null; error: string | null } | null;
+  tpStatusLookup: { status: string | null; error: string | null } | null;
+};
+
 /**
  * Повторная сверка сделок, закрытых как "external", с BingX — чинит closeReason/результат
  * там, где раньше не удалось точно определить SL/TP (баг в getOrderStatus, исправлен 16.07.2026).
+ * details — диагностика по каждой сделке, на случай если фикс всё равно не сработал.
  */
 export const reclassifyTrades = () =>
-  request<{ ok: boolean; checked: number; fixed: number }>("/admin/reclassify-trades", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
+  request<{ ok: boolean; checked: number; fixed: number; details: ReclassifyTradeDetail[] }>(
+    "/admin/reclassify-trades",
+    { method: "POST", body: JSON.stringify({}) },
+  );
 
 // --- Админка: корректировки баланса (пополнения/выводы) ---
 
