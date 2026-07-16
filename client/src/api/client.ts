@@ -91,6 +91,7 @@ export type ReclassifyTradeDetail = {
   tpFoundInHistory: { orderId: string | number; status: string } | null;
   slStatusLookup: { status: string | null; error: string | null } | null;
   tpStatusLookup: { status: string | null; error: string | null } | null;
+  historyOrders: unknown[];
 };
 
 /**

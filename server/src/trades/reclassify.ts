@@ -16,6 +16,8 @@ export type ReclassifyTradeDetail = {
   tpFoundInHistory: { orderId: string | number; status: string } | null;
   slStatusLookup: { status: string | null; error: string | null } | null;
   tpStatusLookup: { status: string | null; error: string | null } | null;
+  /** Полный дамп истории ордеров символа (все поля, как их вернул BingX) — для ручного анализа. */
+  historyOrders: unknown[];
 };
 
 export type ReclassifyResult = {
@@ -70,6 +72,7 @@ export async function reclassifyExternalTrades(credentials: BingXCredentials): P
       tpStatusLookup: debug.tpStatusLookup
         ? { status: debug.tpStatusLookup.order?.status ?? null, error: debug.tpStatusLookup.error }
         : null,
+      historyOrders: debug.historyOrders,
     });
   }
 

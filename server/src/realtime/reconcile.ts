@@ -44,6 +44,8 @@ export type FindFilledDebugInfo = {
   /** Результат точечного лукапа (запасной путь), если до него дошло. */
   slStatusLookup: { order: BingXOrderStatus | null; error: string | null } | null;
   tpStatusLookup: { order: BingXOrderStatus | null; error: string | null } | null;
+  /** Все ордера из истории за диапазон — чтобы найти те, что не входят в bingxOrderIds сделки. */
+  historyOrders: BingXOrderStatus[];
 };
 
 /**
@@ -64,6 +66,7 @@ export async function findFilledSlOrTpDebug(
     tpInHistory: undefined,
     slStatusLookup: null,
     tpStatusLookup: null,
+    historyOrders: [],
   };
 
   if (orderIds.sl === undefined && orderIds.tp === undefined) {
@@ -81,6 +84,7 @@ export async function findFilledSlOrTpDebug(
     debug.historyError = error instanceof Error ? error.message : String(error);
   }
   debug.historyOrdersCount = history.length;
+  debug.historyOrders = history;
 
   const findInHistory = (id: string | number | undefined) =>
     id === undefined ? undefined : history.find((o) => String(o.orderId) === String(id));
