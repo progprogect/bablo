@@ -349,11 +349,15 @@ type BingXOrderStatusResponse = {
 };
 
 /**
- * Детали конкретного ордера — используется для сверки, какой из SL/TP сработал (Этап 4).
- * Как и placeOrder, BingX оборачивает ответ в `{ order: {...} }` — раньше это не было
- * учтено, из-за чего `status` всегда приходил `undefined`, и reconcilePositionFlat всегда
- * падал в ветку "external", даже когда сделка реально закрылась по SL/TP (баг найден
- * 16.07.2026 — см. docs/ROADMAP.md).
+ * Детали конкретного ордера по orderId. Как и placeOrder, BingX оборачивает ответ в
+ * `{ order: {...} }` — раньше это не было учтено, из-за чего `status` всегда приходил
+ * `undefined` (баг найден и исправлен 16.07.2026 — см. docs/ROADMAP.md).
+ *
+ * ВАЖНО: для STOP_MARKET/TAKE_PROFIT_MARKET (условных/trigger) ордеров этот endpoint
+ * после исполнения иногда отдаёт "order not exist" по исходному orderId — известная
+ * особенность BingX (условный ордер "переоткрывается" как новый при срабатывании).
+ * Для сверки, сработал ли SL/TP, используйте getOrderHistory — она надёжнее для этого
+ * случая, так как сканирует список, а не делает точечный лукап по ID.
  */
 export async function getOrderStatus(
   credentials: BingXCredentials,
@@ -365,6 +369,31 @@ export async function getOrderStatus(
     orderId,
   });
   return order;
+}
+
+type BingXOrderHistoryResponse = {
+  orders: BingXOrderStatus[];
+};
+
+/**
+ * История ордеров символа (завершённые/отменённые) за период — надёжнее getOrderStatus
+ * для сверки SL/TP: BingX может не находить условный ордер по orderId после срабатывания
+ * через одиночный лукап, но он присутствует в этом списке со статусом FILLED/CANCELLED.
+ * Максимальный диапазон запроса — 7 дней (ограничение BingX).
+ */
+export async function getOrderHistory(
+  credentials: BingXCredentials,
+  symbol: string,
+  startTime: number,
+  endTime: number,
+): Promise<BingXOrderStatus[]> {
+  const { orders } = await bingxRequest<BingXOrderHistoryResponse>(
+    credentials,
+    "GET",
+    "/openApi/swap/v2/trade/allOrders",
+    { symbol, startTime, endTime, limit: 500 },
+  );
+  return orders;
 }
 
 // --- Listen Key (для приватного WS account stream) ---

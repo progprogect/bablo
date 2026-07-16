@@ -1,6 +1,6 @@
-import { getOrderStatus, type BingXCredentials } from "../bingx/client.js";
+import type { BingXCredentials } from "../bingx/client.js";
 import { listExternallyClosedTrades, updateTrade } from "../db/repositories/trades.js";
-import { computeResult } from "../realtime/reconcile.js";
+import { computeResult, findFilledSlOrTp } from "../realtime/reconcile.js";
 
 export type ReclassifyResult = {
   checked: number;
@@ -11,10 +11,10 @@ export type ReclassifyResult = {
  * Повторная сверка сделок, закрытых как "external" — до фикса бага в getOrderStatus
  * (16.07.2026, см. docs/ROADMAP.md) reconcilePositionFlat никогда не мог определить
  * FILLED-статус SL/TP-ордера и всегда падал в эту ветку, даже когда сделка реально
- * закрылась по стопу или тейку. Для каждой такой сделки повторно запрашиваем статус
- * сохранённых orderId — если BingX ещё отдаёт данные по ордеру (обычно доступно
- * недолго после закрытия), проставляем настоящую причину закрытия и пересчитываем
- * результат. Сделки, для которых BingX уже не находит ордер, остаются как есть.
+ * закрылась по стопу или тейку. Использует ту же логику поиска, что и реалтайм-сверка
+ * (findFilledSlOrTp — история ордеров символа, надёжнее точечного лукапа для условных
+ * ордеров). Сделки, для которых BingX уже не находит данных по ордеру (истёк срок
+ * хранения истории), остаются как есть.
  */
 export async function reclassifyExternalTrades(credentials: BingXCredentials): Promise<ReclassifyResult> {
   const tradesToCheck = await listExternallyClosedTrades();
@@ -22,21 +22,11 @@ export async function reclassifyExternalTrades(credentials: BingXCredentials): P
 
   for (const trade of tradesToCheck) {
     const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-    const [slStatus, tpStatus] = await Promise.all([
-      orderIds.sl !== undefined ? getOrderStatus(credentials, trade.symbol, orderIds.sl).catch(() => null) : null,
-      orderIds.tp !== undefined ? getOrderStatus(credentials, trade.symbol, orderIds.tp).catch(() => null) : null,
-    ]);
-
-    const filled =
-      slStatus?.status === "FILLED"
-        ? { key: "sl" as const, status: slStatus }
-        : tpStatus?.status === "FILLED"
-          ? { key: "tp" as const, status: tpStatus }
-          : null;
+    const filled = await findFilledSlOrTp(credentials, trade, orderIds);
     if (!filled) continue;
 
-    const closePrice = Number(filled.status.avgPrice) || Number(trade.entryPrice);
-    const realizedProfit = filled.status.profit !== undefined ? Number(filled.status.profit) : null;
+    const closePrice = Number(filled.order.avgPrice) || Number(trade.entryPrice);
+    const realizedProfit = filled.order.profit !== undefined ? Number(filled.order.profit) : null;
     const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
 
     await updateTrade(trade.id, {

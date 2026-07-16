@@ -1,10 +1,60 @@
-import { cancelOrder, getLatestPrice, getOrderStatus } from "../bingx/client.js";
+import {
+  cancelOrder,
+  getLatestPrice,
+  getOrderHistory,
+  getOrderStatus,
+  type BingXCredentials,
+  type BingXOrderStatus,
+} from "../bingx/client.js";
 import { getActiveTrade, updateTrade, type Trade } from "../db/repositories/trades.js";
 import { getBingxCredentials } from "../db/repositories/settings.js";
 import { eventBus } from "../events/bus.js";
 import { computeResultFromPrices, type TradeSide } from "../trades/math.js";
 import { finalizeTradeClose } from "../trades/service.js";
 import type { OrderTradeUpdate } from "./accountStream.js";
+
+const MAX_HISTORY_RANGE_MS = 7 * 24 * 60 * 60 * 1000 - 60_000; // BingX: не больше 7 дней
+
+/**
+ * Ищет, какой из сохранённых SL/TP-ордеров сделки реально исполнился (FILLED).
+ * Экспортируется также для trades/reclassify.ts — та же логика нужна для повторной
+ * сверки уже закрытых "external"-сделок.
+ *
+ * Сначала сканирует историю ордеров символа (getOrderHistory) — это надёжнее для
+ * STOP_MARKET/TAKE_PROFIT_MARKET: BingX иногда не находит условный ордер по orderId
+ * через точечный лукап после срабатывания (см. bingx/client.ts). Точечный getOrderStatus
+ * — запасной путь, если ордер почему-то не попал в список истории (например, лимит в
+ * 500 записей на очень активном символе).
+ */
+export async function findFilledSlOrTp(
+  credentials: BingXCredentials,
+  trade: Trade,
+  orderIds: Record<string, string | number>,
+): Promise<{ key: "sl" | "tp"; order: BingXOrderStatus } | null> {
+  if (orderIds.sl === undefined && orderIds.tp === undefined) return null;
+
+  const now = Date.now();
+  const openedAtMs = trade.openedAt ? new Date(trade.openedAt).getTime() : now;
+  const startTime = Math.max(openedAtMs, now - MAX_HISTORY_RANGE_MS);
+  const history = await getOrderHistory(credentials, trade.symbol, startTime, now).catch(() => []);
+
+  const findInHistory = (id: string | number | undefined) =>
+    id === undefined ? undefined : history.find((o) => String(o.orderId) === String(id));
+
+  const slFromHistory = findInHistory(orderIds.sl);
+  if (slFromHistory?.status === "FILLED") return { key: "sl", order: slFromHistory };
+  const tpFromHistory = findInHistory(orderIds.tp);
+  if (tpFromHistory?.status === "FILLED") return { key: "tp", order: tpFromHistory };
+
+  const [slStatus, tpStatus] = await Promise.all([
+    orderIds.sl !== undefined ? getOrderStatus(credentials, trade.symbol, orderIds.sl).catch(() => null) : null,
+    orderIds.tp !== undefined ? getOrderStatus(credentials, trade.symbol, orderIds.tp).catch(() => null) : null,
+  ]);
+  if (slStatus?.status === "FILLED") return { key: "sl", order: slStatus };
+  if (tpStatus?.status === "FILLED") return { key: "tp", order: tpStatus };
+
+  return null;
+}
 
 /** Экспортируется также для backfill/reclassify.ts — пересчёт результата для уже закрытых сделок. */
 export function computeResult(
@@ -97,21 +147,7 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
   if (!credentials) return;
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-  const [slStatus, tpStatus] = await Promise.all([
-    orderIds.sl !== undefined
-      ? getOrderStatus(credentials, symbol, orderIds.sl).catch(() => null)
-      : Promise.resolve(null),
-    orderIds.tp !== undefined
-      ? getOrderStatus(credentials, symbol, orderIds.tp).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-
-  const filled =
-    slStatus?.status === "FILLED"
-      ? { key: "sl" as const, status: slStatus }
-      : tpStatus?.status === "FILLED"
-        ? { key: "tp" as const, status: tpStatus }
-        : null;
+  const filled = await findFilledSlOrTp(credentials, trade, orderIds);
 
   let closePrice: number;
   let realizedProfit: number | null = null;
@@ -119,8 +155,8 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
 
   if (filled) {
     closeReason = filled.key;
-    closePrice = Number(filled.status.avgPrice) || Number(trade.entryPrice);
-    realizedProfit = filled.status.profit !== undefined ? Number(filled.status.profit) : null;
+    closePrice = Number(filled.order.avgPrice) || Number(trade.entryPrice);
+    realizedProfit = filled.order.profit !== undefined ? Number(filled.order.profit) : null;
   } else {
     // Ни один из наших ордеров не FILLED (например, позицию закрыли вручную в приложении
     // BingX) — точную цену не знаем, берём текущую рыночную как приближение.
@@ -130,8 +166,13 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
 
   const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
 
-  const otherOrderId = orderIds[filled?.key === "sl" ? "tp" : "sl"];
-  for (const pendingId of [otherOrderId, orderIds.partialTp]) {
+  // Если знаем, что сработало — отменяем только другую сторону. Если не знаем (external,
+  // например позицию закрыли вручную на бирже) — отменяем обе, чтобы не оставить висящий
+  // reduceOnly-ордер, который может задеть будущую сделку по этому же символу.
+  const idsToCancel = filled
+    ? [orderIds[filled.key === "sl" ? "tp" : "sl"], orderIds.partialTp]
+    : [orderIds.sl, orderIds.tp, orderIds.partialTp];
+  for (const pendingId of idsToCancel) {
     if (pendingId === undefined) continue;
     await cancelOrder(credentials, trade.symbol, pendingId).catch(() => {
       // ордер мог уже исполниться/отмениться сам — ожидаемо, не критично
