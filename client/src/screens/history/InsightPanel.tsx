@@ -13,14 +13,25 @@ function formatHourRangeShort(hour: number): string {
 }
 
 /**
- * Компактный формат: "1/2 — TP 1/2 · SL −1.07R".
- * Процент и длинные фразы убраны — на маленьком экране мешают читать.
+ * "По пресету R/R 1/2 — по тейку 1/2 (50%). Из них 1/1 закрылись по стопу, в среднем -1R."
+ * hitRate отвечает на "как часто цена доходит до цели", а средний R закрытых по стопу — на
+ * "сколько в среднем стоит промах" (без смешивания с прибыльными исходами, что и было
+ * непонятным в прежней версии одного общего "среднего").
  */
 function formatPresetOutcome(entry: PresetOutcome): string {
-  const base = `${entry.preset} — TP ${entry.tpCount}/${entry.totalTrades}`;
-  if (entry.slCount === 0) return base;
+  const hitPct = Math.round(entry.hitRate * 100);
+  const base = `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
+  const nonTpCount = entry.totalTrades - entry.tpCount;
+
+  if (nonTpCount === 0) {
+    return `${base} Все сделки с этим пресетом дошли до тейка.`;
+  }
+  if (entry.slCount === 0) {
+    return base;
+  }
+
   const avgSign = entry.avgSlResultR > 0 ? "+" : "";
-  return `${base} · SL ${avgSign}${trimTrailingZeros(entry.avgSlResultR)}R`;
+  return `${base} Из них ${entry.slCount}/${nonTpCount} закрылись по стопу, в среднем ${avgSign}${trimTrailingZeros(entry.avgSlResultR)}R.`;
 }
 
 /** Список пресетов R/R с раскрытием по кнопке, если он не влезает в отведённый лимит. */
@@ -74,30 +85,30 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
         {insights.topProfitableHours.length > 0 && (
           <li>
-            Часы:{" "}
+            Самые прибыльные часы:{" "}
             {insights.topProfitableHours
-              .map((bucket) => `${formatHourRangeShort(bucket.hour)} ${bucket.tpCount}/${bucket.total} TP`)
+              .map((bucket) => `${formatHourRangeShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`)
               .join(", ")}
           </li>
         )}
 
         {insights.bestAsset && (
           <li>
-            Актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")}{" "}
-            {insights.bestAsset.tpCount}/{insights.bestAsset.totalTrades} TP
+            Самый прибыльный актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")} —{" "}
+            {insights.bestAsset.tpCount}/{insights.bestAsset.totalTrades} TP (
+            {Math.round((insights.bestAsset.tpCount / insights.bestAsset.totalTrades) * 100)}%)
           </li>
         )}
 
         {insights.presetOutcomes.length > 0 && (
           <li>
-            <p className="mb-0.5 text-slate-500">R/R</p>
             <PresetOutcomesList items={insights.presetOutcomes} limit={VISIBLE_PRESETS_LIMIT} />
           </li>
         )}
 
         {insights.topStopHours.length > 0 && (
           <li>
-            Стоп:{" "}
+            Чаще всего идут в стоп сделки, открытые в:{" "}
             {insights.topStopHours
               .map((bucket) => `${formatHourRangeShort(bucket.hour)} (${bucket.count})`)
               .join(", ")}
@@ -106,7 +117,8 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
 
         {insights.dailyTargetHour && (
           <li>
-            Цель +{insights.dailyTargetHour.targetR}R к {pad2(insights.dailyTargetHour.hour)}:00
+            Обычно закрываю дневную цель +{insights.dailyTargetHour.targetR}R к{" "}
+            {pad2(insights.dailyTargetHour.hour)}:00
           </li>
         )}
       </ul>
