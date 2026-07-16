@@ -136,7 +136,11 @@ export async function checkVolumeRisk(currentPrice: number, slPrice: number, qua
  * агрегат и пересборка активных блокировок (кулдаун + дневные лимиты). Риск-движок
  * никогда не закрывает сделки сам — эта функция вызывается ПОСЛЕ фактического закрытия.
  */
-export async function recordTradeClose(input: { closedAt: Date; resultR: number }): Promise<void> {
+export async function recordTradeClose(input: {
+  closedAt: Date;
+  resultR: number;
+  closeReason: string;
+}): Promise<void> {
   const settings = await getRiskSettings();
   const dayKey = getTradingDayKey(input.closedAt, settings.resetHour, settings.tzOffsetMinutes);
 
@@ -148,9 +152,14 @@ export async function recordTradeClose(input: { closedAt: Date; resultR: number 
   );
   await updateRiskState(stateRow.id, nextState);
 
-  const dailyStatsRow = await addTradeResultToDailyStats(dayKey, input.resultR);
+  const dailyStatsRow = await addTradeResultToDailyStats(dayKey, input.resultR, input.closeReason === "sl");
 
-  const blocks: Block[] = evaluateDailyLimitBlocks(input.closedAt, Number(dailyStatsRow.sumR), settings);
+  const blocks: Block[] = evaluateDailyLimitBlocks(
+    input.closedAt,
+    Number(dailyStatsRow.sumR),
+    dailyStatsRow.slCount,
+    settings,
+  );
   const cooldownBlock = evaluateCooldownBlock(input.closedAt, input.closedAt, settings.cooldownMinutes);
   if (cooldownBlock) {
     blocks.push(cooldownBlock);

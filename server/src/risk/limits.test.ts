@@ -4,27 +4,47 @@ import { evaluateCooldownBlock, evaluateDailyLimitBlocks, pickEffectiveBlock } f
 
 const CONFIG = { cooldownMinutes: 60, dailyLossLimitR: -2, dailyProfitLimitR: 3, resetHour: 7, tzOffsetMinutes: 180 };
 
-test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R — блоков нет", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -1, CONFIG);
+test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R, меньше 2 стопов — блоков нет", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -1, 1, CONFIG);
   assert.deepEqual(blocks, []);
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла -2R — блок до следующего сброса", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -2, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -2, 1, CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_loss");
 });
 
 test("evaluateDailyLimitBlocks: сумма превысила -2R (например -3R) — блок сохраняется", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -3, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -3, 1, CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_loss");
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла +3R — блок до следующего сброса", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 3, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 3, 0, CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_profit");
+});
+
+test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по стопу — блок независимо от суммы R", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 0.5, 2, CONFIG);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0]?.type, "daily_stop_losses");
+});
+
+test("evaluateDailyLimitBlocks: 1 сделка по стопу — блока по этому правилу нет", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 0.5, 1, CONFIG);
+  assert.deepEqual(blocks, []);
+});
+
+test("evaluateDailyLimitBlocks: несколько условий одновременно — несколько блоков", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -2, 2, CONFIG);
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(
+    blocks.map((b) => b.type).sort(),
+    ["daily_loss", "daily_stop_losses"],
+  );
 });
 
 test("evaluateCooldownBlock: нет предыдущей сделки — блока нет", () => {

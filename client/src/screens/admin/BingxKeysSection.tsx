@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ApiError, getBingxKeyStatus, resetAccountData, saveBingxKey } from "../../api/client";
+import { ApiError, getBingxKeyStatus, reclassifyTrades, resetAccountData, saveBingxKey } from "../../api/client";
 
 type SaveBingxKeyResponse = {
   configured: boolean;
@@ -23,6 +23,9 @@ export function BingxKeysSection() {
   const [isResetting, setIsResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [isReclassifying, setIsReclassifying] = useState(false);
+  const [reclassifyError, setReclassifyError] = useState<string | null>(null);
+  const [reclassifySuccess, setReclassifySuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -84,6 +87,24 @@ export function BingxKeysSection() {
     }
   }
 
+  async function handleReclassify() {
+    setReclassifyError(null);
+    setReclassifySuccess(null);
+    setIsReclassifying(true);
+    try {
+      const result = await reclassifyTrades();
+      setReclassifySuccess(
+        result.fixed > 0
+          ? `Исправлено ${result.fixed} из ${result.checked} сделок`
+          : `Проверено ${result.checked} сделок — исправлений не потребовалось`,
+      );
+    } catch (err) {
+      setReclassifyError(err instanceof ApiError ? err.message : "Не удалось пересчитать сделки");
+    } finally {
+      setIsReclassifying(false);
+    }
+  }
+
   return (
     <section className="flex flex-col gap-3 border-b border-line pb-6">
       <div>
@@ -124,6 +145,23 @@ export function BingxKeysSection() {
           Проверить и сохранить
         </button>
       </form>
+
+      <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
+        <p className="text-xs text-slate-500">
+          Пересверить закрытые сделки с BingX — исправит причину закрытия (SL/TP) у тех
+          сделок, что раньше записались как «внешние» из-за бага сверки.
+        </p>
+        <button
+          type="button"
+          disabled={isReclassifying}
+          onClick={handleReclassify}
+          className="self-start rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
+        >
+          {isReclassifying ? "Проверяю…" : "Пересверить закрытые сделки"}
+        </button>
+        {reclassifyError && <p className="text-xs text-red-600">{reclassifyError}</p>}
+        {reclassifySuccess && <p className="text-xs text-emerald-600">{reclassifySuccess}</p>}
+      </div>
 
       <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
         <p className="text-xs text-slate-500">

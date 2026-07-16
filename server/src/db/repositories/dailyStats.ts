@@ -15,15 +15,23 @@ export async function getDailySumR(dateKey: string): Promise<number> {
   return row ? Number(row.sumR) : 0;
 }
 
-/** Прибавляет результат сделки (в R) к дневному агрегату, создавая строку при необходимости. */
-export async function addTradeResultToDailyStats(dateKey: string, resultR: number): Promise<DailyStatsRow> {
+/**
+ * Прибавляет результат сделки (в R) к дневному агрегату, создавая строку при необходимости.
+ * `isStopLoss` учитывает закрытие именно по стопу — нужно для правила "2 сделки по стопу за
+ * день блокируют торговлю до следующего дня" (не путать с дневным лимитом -2R по сумме).
+ */
+export async function addTradeResultToDailyStats(
+  dateKey: string,
+  resultR: number,
+  isStopLoss: boolean,
+): Promise<DailyStatsRow> {
   const db = getDb();
   const existing = await getDailyStats(dateKey);
 
   if (!existing) {
     const [created] = await db
       .insert(dailyStats)
-      .values({ date: dateKey, sumR: String(resultR), tradesCount: 1 })
+      .values({ date: dateKey, sumR: String(resultR), tradesCount: 1, slCount: isStopLoss ? 1 : 0 })
       .returning();
     if (!created) {
       throw new Error("Не удалось создать daily_stats");
@@ -36,6 +44,7 @@ export async function addTradeResultToDailyStats(dateKey: string, resultR: numbe
     .set({
       sumR: String(Number(existing.sumR) + resultR),
       tradesCount: existing.tradesCount + 1,
+      slCount: existing.slCount + (isStopLoss ? 1 : 0),
     })
     .where(eq(dailyStats.date, dateKey))
     .returning();

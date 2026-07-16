@@ -53,7 +53,7 @@ export function MonthlyStatCard({ stat }: { stat: MonthlyStat }) {
         <Row label="Всего сделок" value={String(stat.totalTrades)} />
         <Row label="Винрейт" value={`${trimTrailingZeros(stat.winRate * 100)}%`} />
         <Row label="TP / SL / Б/У" value={`${stat.tpCount} / ${stat.slCount} / ${stat.beCount}`} />
-        <Row label="Торговых дней" value={`${stat.tradingDays} торговых дней`} />
+        <Row label="Торговых дней" value={String(stat.tradingDays)} />
       </dl>
 
       {stat.byRRPreset.length > 0 && (

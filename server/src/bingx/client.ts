@@ -344,16 +344,27 @@ export type BingXOrderStatus = {
   profit?: string;
 };
 
-/** Детали конкретного ордера — используется для сверки, какой из SL/TP сработал (Этап 4). */
+type BingXOrderStatusResponse = {
+  order: BingXOrderStatus;
+};
+
+/**
+ * Детали конкретного ордера — используется для сверки, какой из SL/TP сработал (Этап 4).
+ * Как и placeOrder, BingX оборачивает ответ в `{ order: {...} }` — раньше это не было
+ * учтено, из-за чего `status` всегда приходил `undefined`, и reconcilePositionFlat всегда
+ * падал в ветку "external", даже когда сделка реально закрылась по SL/TP (баг найден
+ * 16.07.2026 — см. docs/ROADMAP.md).
+ */
 export async function getOrderStatus(
   credentials: BingXCredentials,
   symbol: string,
   orderId: string | number,
 ): Promise<BingXOrderStatus> {
-  return bingxRequest<BingXOrderStatus>(credentials, "GET", "/openApi/swap/v2/trade/order", {
+  const { order } = await bingxRequest<BingXOrderStatusResponse>(credentials, "GET", "/openApi/swap/v2/trade/order", {
     symbol,
     orderId,
   });
+  return order;
 }
 
 // --- Listen Key (для приватного WS account stream) ---

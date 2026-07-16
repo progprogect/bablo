@@ -6,10 +6,10 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-/** "15" → "15:00–16:00" (перенос через полночь показываем как "23:00–00:00"). */
-function formatHourRange(hour: number): string {
+/** "9" → "9-10ч" (перенос через полночь — "23-0ч"). */
+function formatHourRangeShort(hour: number): string {
   const next = (hour + 1) % 24;
-  return `${pad2(hour)}:00–${pad2(next)}:00`;
+  return `${hour}-${next}ч`;
 }
 
 /**
@@ -85,17 +85,18 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
         {insights.topProfitableHours.length > 0 && (
           <li>
-            Чаще всего прибыльные сделки открыты в:{" "}
+            Самые прибыльные часы:{" "}
             {insights.topProfitableHours
-              .map((bucket) => `${formatHourRange(bucket.hour)} ${bucket.profitable}/${bucket.total}`)
+              .map((bucket) => `${formatHourRangeShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`)
               .join(", ")}
           </li>
         )}
 
         {insights.bestAsset && (
           <li>
-            Самый прибыльный актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")} (
-            {insights.bestAsset.tpCount} {insights.bestAsset.tpCount === 1 ? "сделка" : "сделок"} по тейку)
+            Самый прибыльный актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")} —{" "}
+            {insights.bestAsset.tpCount}/{insights.bestAsset.totalTrades} TP (
+            {Math.round((insights.bestAsset.tpCount / insights.bestAsset.totalTrades) * 100)}%)
           </li>
         )}
 
@@ -109,7 +110,7 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
           <li>
             Чаще всего идут в стоп сделки, открытые в:{" "}
             {insights.topStopHours
-              .map((bucket) => `${formatHourRange(bucket.hour)} (${bucket.count})`)
+              .map((bucket) => `${formatHourRangeShort(bucket.hour)} (${bucket.count})`)
               .join(", ")}
           </li>
         )}

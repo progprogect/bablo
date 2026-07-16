@@ -1,0 +1,1 @@
+ALTER TABLE "daily_stats" ADD COLUMN "sl_count" integer DEFAULT 0 NOT NULL;

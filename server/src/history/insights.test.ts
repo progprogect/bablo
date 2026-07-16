@@ -43,24 +43,33 @@ test("computeTradeInsights: пустой список — всё пустое/nu
   assert.deepEqual(insights.presetOutcomes, []);
 });
 
-test("computeTradeInsights: топ часов открытия по числу прибыльных сделок", () => {
+test("computeTradeInsights: топ часов открытия — больше половины сделок дошли до тейка", () => {
   const trades = [
-    trade({ openedHourUtc: 4, resultR: 1 }), // 07:00 локально
-    trade({ openedHourUtc: 4, resultR: 1 }),
-    trade({ openedHourUtc: 10, resultR: 1 }), // 13:00 локально
-    trade({ openedHourUtc: 10, resultR: -1 }),
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }), // 07:00 локально
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 10, resultR: 1, closeReason: "tp" }), // 13:00 локально
+    trade({ openedHourUtc: 10, resultR: -1, closeReason: "sl" }),
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
   assert.equal(insights.topProfitableHours[0]?.hour, 7);
-  assert.equal(insights.topProfitableHours[0]?.profitable, 2);
-  assert.equal(insights.topProfitableHours[0]?.total, 2);
-  assert.equal(insights.topProfitableHours[1]?.hour, 13);
-  assert.equal(insights.topProfitableHours[1]?.profitable, 1);
-  assert.equal(insights.topProfitableHours[1]?.total, 2);
+  assert.equal(insights.topProfitableHours[0]?.tpCount, 3);
+  assert.equal(insights.topProfitableHours[0]?.total, 3);
+  // 13:00 — 1/2 (ровно 50%), не строго больше половины — в топ не входит.
+  assert.equal(insights.topProfitableHours.length, 1);
 });
 
-test("computeTradeInsights: безубыточная сделка (resultR = 0) не считается прибыльной", () => {
-  const insights = computeTradeInsights([trade({ openedHourUtc: 4, resultR: 0 })], TZ, 3);
+test("computeTradeInsights: ровно половина сделок по тейку — час не считается прибыльным", () => {
+  const trades = [
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+  assert.deepEqual(insights.topProfitableHours, []);
+});
+
+test("computeTradeInsights: сделки без тейка (даже прибыльные external) не делают час прибыльным", () => {
+  const insights = computeTradeInsights([trade({ openedHourUtc: 4, resultR: 1, closeReason: "external" })], TZ, 3);
   assert.deepEqual(insights.topProfitableHours, []);
 });
 
@@ -87,6 +96,7 @@ test("computeTradeInsights: самый прибыльный актив выби�
   const insights = computeTradeInsights(trades, TZ, 3);
   assert.equal(insights.bestAsset?.symbol, "TIA-USDT");
   assert.equal(insights.bestAsset?.tpCount, 1);
+  assert.equal(insights.bestAsset?.totalTrades, 1);
 });
 
 test("computeTradeInsights: актив без прибыли (сумма ≤ 0) не считается лучшим", () => {

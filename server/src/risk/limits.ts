@@ -1,6 +1,6 @@
 import { getNextResetAt } from "./tradingDay.js";
 
-export type BlockType = "cooldown" | "daily_loss" | "daily_profit";
+export type BlockType = "cooldown" | "daily_loss" | "daily_profit" | "daily_stop_losses";
 
 export type Block = {
   type: BlockType;
@@ -18,8 +18,22 @@ export type RiskLimitsConfig = {
   tzOffsetMinutes: number;
 };
 
-/** Дневные лимиты (-2R/+3R) считаются по сумме результатов всех закрытых сделок дня. */
-export function evaluateDailyLimitBlocks(now: Date, dailySumR: number, config: RiskLimitsConfig): Block[] {
+/**
+ * Сколько сделок за день, закрытых по стопу, блокируют торговлю до следующего дня —
+ * независимо от суммы R и от того, шли эти сделки подряд или нет.
+ */
+export const DAILY_STOP_LOSS_LIMIT = 2;
+
+/**
+ * Дневные лимиты считаются по сумме результатов всех закрытых сделок дня (-2R/+3R), а
+ * также отдельно — по количеству сделок, закрытых именно по стопу (см. DAILY_STOP_LOSS_LIMIT).
+ */
+export function evaluateDailyLimitBlocks(
+  now: Date,
+  dailySumR: number,
+  dailySlCount: number,
+  config: RiskLimitsConfig,
+): Block[] {
   const blocks: Block[] = [];
   const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
 
@@ -34,6 +48,13 @@ export function evaluateDailyLimitBlocks(now: Date, dailySumR: number, config: R
     blocks.push({
       type: "daily_profit",
       reason: `Дневная цель прибыли (+${config.dailyProfitLimitR}R) достигнута — торговля возобновится после сброса дня`,
+      until,
+    });
+  }
+  if (dailySlCount >= DAILY_STOP_LOSS_LIMIT) {
+    blocks.push({
+      type: "daily_stop_losses",
+      reason: `${dailySlCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
       until,
     });
   }

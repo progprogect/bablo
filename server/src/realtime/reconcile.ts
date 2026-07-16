@@ -6,7 +6,8 @@ import { computeResultFromPrices, type TradeSide } from "../trades/math.js";
 import { finalizeTradeClose } from "../trades/service.js";
 import type { OrderTradeUpdate } from "./accountStream.js";
 
-function computeResult(
+/** Экспортируется также для backfill/reclassify.ts — пересчёт результата для уже закрытых сделок. */
+export function computeResult(
   trade: Trade,
   closePrice: number,
   realizedProfit: number | null,

@@ -23,15 +23,19 @@ export type PresetOutcome = {
   avgSlResultR: number;
 };
 
-export type HourBucketStat = { hour: number; total: number; profitable: number };
+export type HourBucketStat = { hour: number; total: number; tpCount: number };
 
 export type TradeInsights = {
-  /** Часы открытия с наибольшим числом прибыльных сделок (топ-3, только ненулевые). */
-  topProfitableHours: { hour: number; profitable: number; total: number }[];
+  /**
+   * Часы открытия, в которые больше половины открытых сделок закрылись по тейку
+   * (hitRate > 50% — именно это и означает "прибыльный час", а не resultR > 0 у отдельной
+   * сделки). Топ-3 по числу сделок, закрытых по тейку.
+   */
+  topProfitableHours: { hour: number; tpCount: number; total: number }[];
   /** Часы открытия, после которых сделка чаще всего закрывалась по стопу (топ-2, только ненулевые). */
   topStopHours: { hour: number; count: number }[];
-  /** Самый прибыльный по сумме $ актив и число его сделок, закрытых по тейку. Null, если данных нет. */
-  bestAsset: { symbol: string; tpCount: number } | null;
+  /** Самый прибыльный по сумме $ актив и его статистика по тейку (сколько из всех его сделок). Null, если данных нет. */
+  bestAsset: { symbol: string; tpCount: number; totalTrades: number } | null;
   /** Типичный (медианный) час, к которому в удачные дни достигается дневная цель +targetR. Null, если цель ни разу не была достигнута. */
   dailyTargetHour: { targetR: number; hour: number } | null;
   /** Статистика по пресетам R/R (1/1, 1/2…) среди сделок, у которых пресет был задан — см. presetOutcomes(). */
@@ -41,12 +45,7 @@ export type TradeInsights = {
 const HOURS_IN_DAY = 24;
 
 function emptyHourBuckets(): HourBucketStat[] {
-  return Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({ hour, total: 0, profitable: 0 }));
-}
-
-/** Считаем сделку прибыльной строго при resultR > 0 — ноль (безубыток) не считается прибылью. */
-function isProfitable(resultR: number): boolean {
-  return resultR > 0;
+  return Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({ hour, total: 0, tpCount: 0 }));
 }
 
 function bucketByOpenHour(
@@ -61,8 +60,8 @@ function bucketByOpenHour(
     const hour = getLocalHour(trade.openedAt, tzOffsetMinutes);
     const bucket = buckets[hour]!;
     bucket.total += 1;
-    if (isProfitable(trade.resultR)) {
-      bucket.profitable += 1;
+    if (trade.closeReason === "tp") {
+      bucket.tpCount += 1;
     }
     if (trade.closeReason === "sl") {
       slCountsByHour[hour] = (slCountsByHour[hour] ?? 0) + 1;
@@ -72,12 +71,13 @@ function bucketByOpenHour(
   return { buckets, slCountsByHour };
 }
 
+/** "Прибыльный час" — больше половины сделок, открытых в этот час, дошли до тейка. */
 function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsights["topProfitableHours"] {
   return buckets
-    .filter((bucket) => bucket.profitable > 0)
-    .sort((a, b) => b.profitable - a.profitable)
+    .filter((bucket) => bucket.total > 0 && bucket.tpCount / bucket.total > 0.5)
+    .sort((a, b) => b.tpCount - a.tpCount)
     .slice(0, limit)
-    .map((bucket) => ({ hour: bucket.hour, profitable: bucket.profitable, total: bucket.total }));
+    .map((bucket) => ({ hour: bucket.hour, tpCount: bucket.tpCount, total: bucket.total }));
 }
 
 function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["topStopHours"] {
@@ -90,19 +90,20 @@ function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["t
 
 /** Самый прибыльный актив по сумме реализованного $ (resultR × riskUsd), а не по числу сделок. */
 function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsset"] {
-  const bySymbol = new Map<string, { pnlUsd: number; tpCount: number }>();
+  const bySymbol = new Map<string, { pnlUsd: number; tpCount: number; totalTrades: number }>();
 
   for (const trade of trades) {
     if (trade.resultR === null || trade.riskUsd === null) continue;
-    const entry = bySymbol.get(trade.symbol) ?? { pnlUsd: 0, tpCount: 0 };
+    const entry = bySymbol.get(trade.symbol) ?? { pnlUsd: 0, tpCount: 0, totalTrades: 0 };
     entry.pnlUsd += trade.resultR * trade.riskUsd;
+    entry.totalTrades += 1;
     if (trade.closeReason === "tp") {
       entry.tpCount += 1;
     }
     bySymbol.set(trade.symbol, entry);
   }
 
-  let best: { symbol: string; pnlUsd: number; tpCount: number } | null = null;
+  let best: { symbol: string; pnlUsd: number; tpCount: number; totalTrades: number } | null = null;
   for (const [symbol, stats] of bySymbol) {
     if (!best || stats.pnlUsd > best.pnlUsd) {
       best = { symbol, ...stats };
@@ -110,7 +111,7 @@ function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsse
   }
 
   if (!best || best.pnlUsd <= 0) return null;
-  return { symbol: best.symbol, tpCount: best.tpCount };
+  return { symbol: best.symbol, tpCount: best.tpCount, totalTrades: best.totalTrades };
 }
 
 /**

@@ -88,6 +88,8 @@ export const dailyStats = pgTable("daily_stats", {
   date: date("date").primaryKey(),
   sumR: numeric("sum_r", { precision: 10, scale: 4 }).notNull().default("0"),
   tradesCount: integer("trades_count").notNull().default(0),
+  /** Кол-во сделок дня, закрытых по стопу — 2 и больше блокируют торговлю до конца дня. */
+  slCount: integer("sl_count").notNull().default(0),
 });
 
 /**

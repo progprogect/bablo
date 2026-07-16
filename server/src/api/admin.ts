@@ -12,6 +12,7 @@ import { getBingxCredentials, setBingxCredentials, getRiskSettings, setRiskSetti
 import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
+import { reclassifyExternalTrades } from "../trades/reclassify.js";
 import {
   createEquityAdjustment,
   deleteEquityAdjustment,
@@ -89,6 +90,23 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
     const result = await resetAccountData();
     stopTracking();
+    return { ok: true, ...result };
+  });
+
+  // --- Реклассификация закрытых сделок ---
+  // До 16.07.2026 баг в getOrderStatus (не распаковывался `{ order: {...} }`) приводил
+  // к тому, что резервная сверка (reconcilePositionFlat) никогда не могла определить
+  // FILLED-статус SL/TP и всегда помечала закрытие как "external". Этот эндпоинт
+  // повторно сверяет такие сделки с BingX и чинит closeReason/результат там, где это
+  // ещё возможно (пока BingX хранит данные по ордеру).
+
+  app.post("/admin/reclassify-trades", async (_request, reply) => {
+    const credentials = await getBingxCredentials();
+    if (!credentials) {
+      reply.code(400).send({ error: "Не настроены ключи BingX" });
+      return;
+    }
+    const result = await reclassifyExternalTrades(credentials);
     return { ok: true, ...result };
   });
 

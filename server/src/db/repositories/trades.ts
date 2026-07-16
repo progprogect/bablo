@@ -164,3 +164,18 @@ export async function listAllClosedTrades(): Promise<Trade[]> {
   const db = getDb();
   return db.select().from(trades).where(eq(trades.status, "closed"));
 }
+
+/**
+ * Закрытые сделки с closeReason "external" — то есть которые не удалось точно
+ * атрибутировать к SL/TP в момент закрытия (см. reconcile.ts). Используется
+ * реклассификацией (trades/reclassify.ts) для повторной сверки по сохранённым
+ * bingxOrderIds — баг getOrderStatus (см. docs/ROADMAP.md, 16.07.2026) до фикса
+ * приводил к тому, что вообще все закрытия попадали в эту ветку.
+ */
+export async function listExternallyClosedTrades(): Promise<Trade[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.status, "closed"), eq(trades.closeReason, "external")));
+}
