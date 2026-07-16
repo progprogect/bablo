@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { PresetOutcome, TradeInsights } from "../../api/types";
-import { trimTrailingZeros } from "../../lib/format";
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -12,26 +11,10 @@ function formatHourRangeShort(hour: number): string {
   return `${hour}-${next}ч`;
 }
 
-/**
- * "По пресету R/R 1/2 — по тейку 1/2 (50%). Из них 1/1 закрылись по стопу, в среднем -1R."
- * hitRate отвечает на "как часто цена доходит до цели", а средний R закрытых по стопу — на
- * "сколько в среднем стоит промах" (без смешивания с прибыльными исходами, что и было
- * непонятным в прежней версии одного общего "среднего").
- */
+/** "R/R 1/2 — по тейку 1/2 (50%)." — без разбора причины промаха, чтобы не повторять её в каждой строке. */
 function formatPresetOutcome(entry: PresetOutcome): string {
   const hitPct = Math.round(entry.hitRate * 100);
-  const base = `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
-  const nonTpCount = entry.totalTrades - entry.tpCount;
-
-  if (nonTpCount === 0) {
-    return `${base} Все сделки с этим пресетом дошли до тейка.`;
-  }
-  if (entry.slCount === 0) {
-    return base;
-  }
-
-  const avgSign = entry.avgSlResultR > 0 ? "+" : "";
-  return `${base} Из них ${entry.slCount}/${nonTpCount} закрылись по стопу, в среднем ${avgSign}${trimTrailingZeros(entry.avgSlResultR)}R.`;
+  return `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
 }
 
 /** Список пресетов R/R с раскрытием по кнопке, если он не влезает в отведённый лимит. */
@@ -108,7 +91,7 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
 
         {insights.topStopHours.length > 0 && (
           <li>
-            Чаще всего идут в стоп сделки, открытые в:{" "}
+            Чаще убыточные сделки в:{" "}
             {insights.topStopHours
               .map((bucket) => `${formatHourRangeShort(bucket.hour)} (${bucket.count})`)
               .join(", ")}
