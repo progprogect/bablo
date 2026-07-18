@@ -1,57 +1,112 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateCooldownBlock, evaluateDailyLimitBlocks, pickEffectiveBlock } from "./limits.js";
+import {
+  evaluateCooldownBlock,
+  evaluateDailyLimitBlocks,
+  isStrongTakeProfit,
+  pickEffectiveBlock,
+  type DailyLimitCounters,
+} from "./limits.js";
 
 const CONFIG = { cooldownMinutes: 60, dailyLossLimitR: -2, dailyProfitLimitR: 3, resetHour: 7, tzOffsetMinutes: 180 };
 
-test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R (с учётом допуска 0.05), меньше 2 стопов — блоков нет", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -1, 1, CONFIG);
+function counters(partial: Partial<DailyLimitCounters> = {}): DailyLimitCounters {
+  return {
+    sumR: 0,
+    slCount: 0,
+    tpCount: 0,
+    strongRecoveryAfterSl: false,
+    ...partial,
+  };
+}
+
+test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R, меньше 2 стопов/тейков — блоков нет", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -1, slCount: 1, tpCount: 1 }), CONFIG);
   assert.deepEqual(blocks, []);
 });
 
-
 test("evaluateDailyLimitBlocks: сумма 2.96R — выше порога с допуском (3 - 0.05 = 2.95R), daily_profit срабатывает", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 2.96, 0, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.96 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_profit");
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла -2R — блок до следующего сброса", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -2, 1, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -2, slCount: 1 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_loss");
 });
 
 test("evaluateDailyLimitBlocks: сумма превысила -2R (например -3R) — блок сохраняется", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -3, 1, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -3, slCount: 1 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_loss");
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла +3R — блок до следующего сброса", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 3, 0, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 3 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_profit");
 });
 
 test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по стопу — блок независимо от суммы R", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 0.5, 2, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 0.5, slCount: 2 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_stop_losses");
 });
 
 test("evaluateDailyLimitBlocks: 1 сделка по стопу — блока по этому правилу нет", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 0.5, 1, CONFIG);
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 0.5, slCount: 1 }), CONFIG);
+  assert.deepEqual(blocks, []);
+});
+
+test("evaluateDailyLimitBlocks: 2 тейка за день — блок даже если сумма < +3R", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2, tpCount: 2 }), CONFIG);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0]?.type, "daily_take_profits");
+});
+
+test("evaluateDailyLimitBlocks: 1 тейк — блока по числу тейков нет", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2, tpCount: 1 }), CONFIG);
+  assert.deepEqual(blocks, []);
+});
+
+test("evaluateDailyLimitBlocks: сильный тейк после стопа — блок независимо от суммы R", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-07-13T10:00:00Z"),
+    counters({ sumR: 1, slCount: 1, tpCount: 1, strongRecoveryAfterSl: true }),
+    CONFIG,
+  );
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0]?.type, "daily_recovery_after_sl");
+});
+
+test("evaluateDailyLimitBlocks: тейк потом стоп без сильного откупа — блока recovery нет", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-07-13T10:00:00Z"),
+    counters({ sumR: 1, slCount: 1, tpCount: 1, strongRecoveryAfterSl: false }),
+    CONFIG,
+  );
   assert.deepEqual(blocks, []);
 });
 
 test("evaluateDailyLimitBlocks: несколько условий одновременно — несколько блоков", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -2, 2, CONFIG);
-  assert.equal(blocks.length, 2);
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-07-13T10:00:00Z"),
+    counters({ sumR: -2, slCount: 2, tpCount: 2 }),
+    CONFIG,
+  );
+  assert.equal(blocks.length, 3);
   assert.deepEqual(
     blocks.map((b) => b.type).sort(),
-    ["daily_loss", "daily_stop_losses"],
+    ["daily_loss", "daily_stop_losses", "daily_take_profits"],
   );
+});
+
+test("isStrongTakeProfit: 1.96R проходит допуск, 1.9R — нет", () => {
+  assert.equal(isStrongTakeProfit(1.96), true);
+  assert.equal(isStrongTakeProfit(2), true);
+  assert.equal(isStrongTakeProfit(1.9), false);
 });
 
 test("evaluateCooldownBlock: нет предыдущей сделки — блока нет", () => {

@@ -5,7 +5,14 @@ import type { Block, BlockType } from "../../risk/limits.js";
 
 export type RiskLockRow = typeof riskLocks.$inferSelect;
 
-const MANAGED_TYPES: BlockType[] = ["cooldown", "daily_loss", "daily_profit", "daily_stop_losses"];
+const MANAGED_TYPES: BlockType[] = [
+  "cooldown",
+  "daily_loss",
+  "daily_profit",
+  "daily_stop_losses",
+  "daily_take_profits",
+  "daily_recovery_after_sl",
+];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
   const db = getDb();
@@ -13,9 +20,9 @@ export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockR
 }
 
 /**
- * Полностью пересобирает управляемые типы блокировок (cooldown/daily_loss/daily_profit)
- * из свежего расчёта чистой risk-логики. Вызывается один раз после закрытия сделки —
- * гарантирует отсутствие рассинхронизации со старыми записями.
+ * Полностью пересобирает управляемые типы блокировок из свежего расчёта чистой
+ * risk-логики. Вызывается один раз после закрытия сделки — гарантирует отсутствие
+ * рассинхронизации со старыми записями.
  */
 export async function replaceManagedLocks(blocks: Block[]): Promise<void> {
   const db = getDb();

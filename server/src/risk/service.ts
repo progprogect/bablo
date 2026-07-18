@@ -152,12 +152,19 @@ export async function recordTradeClose(input: {
   );
   await updateRiskState(stateRow.id, nextState);
 
-  const dailyStatsRow = await addTradeResultToDailyStats(dayKey, input.resultR, input.closeReason === "sl");
+  const dailyStatsRow = await addTradeResultToDailyStats(dayKey, {
+    resultR: input.resultR,
+    closeReason: input.closeReason,
+  });
 
   const blocks: Block[] = evaluateDailyLimitBlocks(
     input.closedAt,
-    Number(dailyStatsRow.sumR),
-    dailyStatsRow.slCount,
+    {
+      sumR: Number(dailyStatsRow.sumR),
+      slCount: dailyStatsRow.slCount,
+      tpCount: dailyStatsRow.tpCount,
+      strongRecoveryAfterSl: dailyStatsRow.strongRecoveryAfterSl,
+    },
     settings,
   );
   const cooldownBlock = evaluateCooldownBlock(input.closedAt, input.closedAt, settings.cooldownMinutes);

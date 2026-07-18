@@ -90,6 +90,13 @@ export const dailyStats = pgTable("daily_stats", {
   tradesCount: integer("trades_count").notNull().default(0),
   /** Кол-во сделок дня, закрытых по стопу — 2 и больше блокируют торговлю до конца дня. */
   slCount: integer("sl_count").notNull().default(0),
+  /** Кол-во сделок дня, закрытых по тейку — 2 и больше блокируют торговлю до конца дня. */
+  tpCount: integer("tp_count").notNull().default(0),
+  /**
+   * Был стоп, а после него — тейк ≥ 2R (пресет 1:2+). Закрывает день отдельно от суммы R:
+   * например SL (−1R) + TP 1:2 (+2R) = +1R суммарно, но день уже «удался».
+   */
+  strongRecoveryAfterSl: boolean("strong_recovery_after_sl").notNull().default(false),
 });
 
 /**

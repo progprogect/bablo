@@ -1,6 +1,12 @@
 import { getNextResetAt } from "./tradingDay.js";
 
-export type BlockType = "cooldown" | "daily_loss" | "daily_profit" | "daily_stop_losses";
+export type BlockType =
+  | "cooldown"
+  | "daily_loss"
+  | "daily_profit"
+  | "daily_stop_losses"
+  | "daily_take_profits"
+  | "daily_recovery_after_sl";
 
 export type Block = {
   type: BlockType;
@@ -18,6 +24,14 @@ export type RiskLimitsConfig = {
   tzOffsetMinutes: number;
 };
 
+export type DailyLimitCounters = {
+  sumR: number;
+  slCount: number;
+  tpCount: number;
+  /** Был стоп, а после него — тейк с результатом ≥ STRONG_TP_MIN_R. */
+  strongRecoveryAfterSl: boolean;
+};
+
 /**
  * Сколько сделок за день, закрытых по стопу, блокируют торговлю до следующего дня —
  * независимо от суммы R и от того, шли эти сделки подряд или нет.
@@ -25,43 +39,72 @@ export type RiskLimitsConfig = {
 export const DAILY_STOP_LOSS_LIMIT = 2;
 
 /**
- * Дневные лимиты считаются по сумме результатов всех закрытых сделок дня (-2R/+3R), а
- * также отдельно — по количеству сделок, закрытых именно по стопу (см. DAILY_STOP_LOSS_LIMIT).
+ * Сколько тейков за день достаточно, чтобы зафиксировать результат и остановиться —
+ * независимо от суммы R (например, два тейка 1:1 дают только +2R, но день уже «удался»).
+ */
+export const DAILY_TAKE_PROFIT_LIMIT = 2;
+
+/**
+ * Минимальный результат тейка (в R), который после предшествующего стопа закрывает день.
+ * 2R = пресет 1:2 и выше.
+ */
+export const STRONG_TP_MIN_R = 2;
+
+/**
+ * Дневные лимиты считаются по сумме результатов всех закрытых сделок дня (−2R/+3R), а
+ * также по отдельным счётчикам исходов (стопы, тейки, сильный откуп после стопа).
  *
- * Допуск 0.05R на каждую сторону нужен, чтобы незначительный слиппаж при исполнении
- * TP/SL (fill по чуть худшей цене, чем стоп-уровень) не приводил к тому, что сделка,
- * давшая практически ровно +3R или -2R, не запускала нужный блок из-за floating-point
- * разницы в пределах 0.01–0.04R.
+ * Допуск 0.05R на стороне прибыли нужен, чтобы незначительный слиппаж при исполнении
+ * TP (fill чуть хуже стоп-цены) не пропускал блок +3R / сильный тейк из-за разницы
+ * в пределах 0.01–0.04R.
  */
 const LIMIT_EPSILON = 0.05;
 
+/** Тейк считается «сильным» (1:2+), если resultR почти достиг STRONG_TP_MIN_R. */
+export function isStrongTakeProfit(resultR: number): boolean {
+  return resultR >= STRONG_TP_MIN_R - LIMIT_EPSILON;
+}
+
 export function evaluateDailyLimitBlocks(
   now: Date,
-  dailySumR: number,
-  dailySlCount: number,
+  counters: DailyLimitCounters,
   config: RiskLimitsConfig,
 ): Block[] {
   const blocks: Block[] = [];
   const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
 
-  if (dailySumR <= config.dailyLossLimitR) {
+  if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
       type: "daily_loss",
       reason: `Дневной лимит убытка (${config.dailyLossLimitR}R) достигнут — торговля возобновится после сброса дня`,
       until,
     });
   }
-  if (dailySumR >= config.dailyProfitLimitR - LIMIT_EPSILON) {
+  if (counters.sumR >= config.dailyProfitLimitR - LIMIT_EPSILON) {
     blocks.push({
       type: "daily_profit",
       reason: `Дневная цель прибыли (+${config.dailyProfitLimitR}R) достигнута — торговля возобновится после сброса дня`,
       until,
     });
   }
-  if (dailySlCount >= DAILY_STOP_LOSS_LIMIT) {
+  if (counters.slCount >= DAILY_STOP_LOSS_LIMIT) {
     blocks.push({
       type: "daily_stop_losses",
-      reason: `${dailySlCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
+      reason: `${counters.slCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
+      until,
+    });
+  }
+  if (counters.tpCount >= DAILY_TAKE_PROFIT_LIMIT) {
+    blocks.push({
+      type: "daily_take_profits",
+      reason: `${counters.tpCount} сделки за день закрыты по тейку — достаточно на сегодня, торговля возобновится после сброса дня`,
+      until,
+    });
+  }
+  if (counters.strongRecoveryAfterSl) {
+    blocks.push({
+      type: "daily_recovery_after_sl",
+      reason: `После стопа закрыт тейк ≥ ${STRONG_TP_MIN_R}R — день удался, торговля возобновится после сброса дня`,
       until,
     });
   }

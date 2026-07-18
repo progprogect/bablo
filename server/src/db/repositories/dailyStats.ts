@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { dailyStats } from "../schema.js";
+import { isStrongTakeProfit } from "../../risk/limits.js";
 
 export type DailyStatsRow = typeof dailyStats.$inferSelect;
 
@@ -15,23 +16,39 @@ export async function getDailySumR(dateKey: string): Promise<number> {
   return row ? Number(row.sumR) : 0;
 }
 
+export type TradeCloseForDailyStats = {
+  resultR: number;
+  closeReason: string;
+};
+
 /**
- * Прибавляет результат сделки (в R) к дневному агрегату, создавая строку при необходимости.
- * `isStopLoss` учитывает закрытие именно по стопу — нужно для правила "2 сделки по стопу за
- * день блокируют торговлю до следующего дня" (не путать с дневным лимитом -2R по сумме).
+ * Прибавляет результат сделки к дневному агрегату, создавая строку при необходимости.
+ * Обновляет счётчики стопов/тейков и флаг «сильный откуп после стопа» — они нужны
+ * правилам остановки торговли на день (см. risk/limits.ts).
  */
 export async function addTradeResultToDailyStats(
   dateKey: string,
-  resultR: number,
-  isStopLoss: boolean,
+  trade: TradeCloseForDailyStats,
 ): Promise<DailyStatsRow> {
   const db = getDb();
   const existing = await getDailyStats(dateKey);
+  const isStopLoss = trade.closeReason === "sl";
+  const isTakeProfit = trade.closeReason === "tp";
+  // Сильный откуп: тейк ≥ 2R, и к этому моменту за день уже был хотя бы один стоп.
+  const strongRecovery =
+    isTakeProfit && isStrongTakeProfit(trade.resultR) && (existing?.slCount ?? 0) > 0;
 
   if (!existing) {
     const [created] = await db
       .insert(dailyStats)
-      .values({ date: dateKey, sumR: String(resultR), tradesCount: 1, slCount: isStopLoss ? 1 : 0 })
+      .values({
+        date: dateKey,
+        sumR: String(trade.resultR),
+        tradesCount: 1,
+        slCount: isStopLoss ? 1 : 0,
+        tpCount: isTakeProfit ? 1 : 0,
+        strongRecoveryAfterSl: strongRecovery,
+      })
       .returning();
     if (!created) {
       throw new Error("Не удалось создать daily_stats");
@@ -42,9 +59,12 @@ export async function addTradeResultToDailyStats(
   const [updated] = await db
     .update(dailyStats)
     .set({
-      sumR: String(Number(existing.sumR) + resultR),
+      sumR: String(Number(existing.sumR) + trade.resultR),
       tradesCount: existing.tradesCount + 1,
       slCount: existing.slCount + (isStopLoss ? 1 : 0),
+      tpCount: existing.tpCount + (isTakeProfit ? 1 : 0),
+      // Флаг только включается (никогда не сбрасывается внутри дня).
+      strongRecoveryAfterSl: existing.strongRecoveryAfterSl || strongRecovery,
     })
     .where(eq(dailyStats.date, dateKey))
     .returning();
