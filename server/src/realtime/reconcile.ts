@@ -221,6 +221,11 @@ export async function reconcileOrderUpdate(order: OrderTradeUpdate): Promise<voi
  * STOP_MARKET/TAKE_PROFIT_MARKET не всегда приходит в ORDER_TRADE_UPDATE). Триггерится
  * из ACCOUNT_UPDATE, когда позиция по символу активной сделки обнулилась. Одиночная
  * (не циклическая) REST-сверка статусов SL/TP-ордеров — чтобы понять, что сработало.
+ *
+ * Если первый запрос к BingX не нашёл исполненный ордер (API временно недоступен или
+ * история ещё не синхронизирована), делается ещё одна попытка через 15 секунд —
+ * прямо здесь, до записи результата. Это единственное место, где сделка получает
+ * closeReason; отдельная пост-фактум реклассификация больше не нужна.
  */
 export async function reconcilePositionFlat(symbol: string): Promise<void> {
   const trade = await getActiveTrade();
@@ -230,7 +235,15 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
   if (!credentials) return;
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
-  const filled = await findFilledSlOrTp(credentials, trade, orderIds);
+
+  let filled = await findFilledSlOrTp(credentials, trade, orderIds);
+
+  if (!filled && (orderIds.sl !== undefined || orderIds.tp !== undefined)) {
+    // BingX иногда не успевает обновить историю ордеров к моменту, когда ACCOUNT_UPDATE
+    // уже прилетел. Ждём 15 секунд и пробуем ещё раз — до того как ставить "external".
+    await new Promise((resolve) => setTimeout(resolve, 15_000));
+    filled = await findFilledSlOrTp(credentials, trade, orderIds).catch(() => null);
+  }
 
   let closePrice: number;
   let realizedProfit: number | null = null;
