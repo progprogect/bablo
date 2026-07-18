@@ -5,7 +5,7 @@ import type { Block, BlockType } from "../../risk/limits.js";
 
 export type RiskLockRow = typeof riskLocks.$inferSelect;
 
-const MANAGED_TYPES: BlockType[] = ["cooldown", "daily_loss", "daily_profit"];
+const MANAGED_TYPES: BlockType[] = ["cooldown", "daily_loss", "daily_profit", "daily_stop_losses"];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
   const db = getDb();

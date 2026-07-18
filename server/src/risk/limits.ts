@@ -27,7 +27,14 @@ export const DAILY_STOP_LOSS_LIMIT = 2;
 /**
  * Дневные лимиты считаются по сумме результатов всех закрытых сделок дня (-2R/+3R), а
  * также отдельно — по количеству сделок, закрытых именно по стопу (см. DAILY_STOP_LOSS_LIMIT).
+ *
+ * Допуск 0.05R на каждую сторону нужен, чтобы незначительный слиппаж при исполнении
+ * TP/SL (fill по чуть худшей цене, чем стоп-уровень) не приводил к тому, что сделка,
+ * давшая практически ровно +3R или -2R, не запускала нужный блок из-за floating-point
+ * разницы в пределах 0.01–0.04R.
  */
+const LIMIT_EPSILON = 0.05;
+
 export function evaluateDailyLimitBlocks(
   now: Date,
   dailySumR: number,
@@ -44,7 +51,7 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (dailySumR >= config.dailyProfitLimitR) {
+  if (dailySumR >= config.dailyProfitLimitR - LIMIT_EPSILON) {
     blocks.push({
       type: "daily_profit",
       reason: `Дневная цель прибыли (+${config.dailyProfitLimitR}R) достигнута — торговля возобновится после сброса дня`,

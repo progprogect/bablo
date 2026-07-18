@@ -4,9 +4,16 @@ import { evaluateCooldownBlock, evaluateDailyLimitBlocks, pickEffectiveBlock } f
 
 const CONFIG = { cooldownMinutes: 60, dailyLossLimitR: -2, dailyProfitLimitR: 3, resetHour: 7, tzOffsetMinutes: 180 };
 
-test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R, меньше 2 стопов — блоков нет", () => {
+test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R (с учётом допуска 0.05), меньше 2 стопов — блоков нет", () => {
   const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), -1, 1, CONFIG);
   assert.deepEqual(blocks, []);
+});
+
+
+test("evaluateDailyLimitBlocks: сумма 2.96R — выше порога с допуском (3 - 0.05 = 2.95R), daily_profit срабатывает", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), 2.96, 0, CONFIG);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0]?.type, "daily_profit");
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла -2R — блок до следующего сброса", () => {
