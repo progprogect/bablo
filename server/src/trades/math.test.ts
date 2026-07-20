@@ -35,11 +35,13 @@ test("computeResultFromPrices: riskUsd = 0 не делит на ноль", () =>
 test("parseRRRatio распознаёт стандартные пресеты", () => {
   assert.equal(parseRRRatio("1/2"), 2);
   assert.equal(parseRRRatio("1/1.5"), 1.5);
+  assert.equal(parseRRRatio("1/10"), 10);
   assert.equal(parseRRRatio("2/1"), null);
 });
 
 test("parseRRRatio отклоняет пресеты вне согласованного списка (RR_PRESETS)", () => {
   assert.equal(parseRRRatio("1/2.5"), null);
+  assert.equal(parseRRRatio("1/11"), null);
   assert.equal(parseRRRatio("1/100"), null);
 });
 

@@ -3,7 +3,7 @@ import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/cli
 import type { ActiveTradeView, TradeSide } from "../../api/types";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
-const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7"];
+const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
 
 /** "1/2" → 2, "1/1.5" → 1.5. Держим в синхроне с server/src/trades/math.ts. */
 function parseRRRatio(preset: string): number | null {

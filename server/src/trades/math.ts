@@ -1,7 +1,19 @@
 export type TradeSide = "long" | "short";
 
 /** Пресеты соотношения риск/прибыль из docs/PROJECT.md. */
-export const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7"] as const;
+export const RR_PRESETS = [
+  "1/1",
+  "1/1.5",
+  "1/2",
+  "1/3",
+  "1/4",
+  "1/5",
+  "1/6",
+  "1/7",
+  "1/8",
+  "1/9",
+  "1/10",
+] as const;
 export type RRPreset = (typeof RR_PRESETS)[number];
 
 /** "1/2" → 2 (прибыль вдвое больше риска). Только пресеты из RR_PRESETS — иначе null. */
