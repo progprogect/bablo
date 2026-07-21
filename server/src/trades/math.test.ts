@@ -6,6 +6,7 @@ import {
   computeRiskRewardRatio,
   computeTakeProfitPrice,
   decimalsOf,
+  isPartialTakeProfitWithinMaxRatio,
   isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
@@ -79,6 +80,13 @@ test("computeRiskRewardRatio: считает R/R по ценам", () => {
   assert.equal(computeRiskRewardRatio(100, 95, 110), 2); // риск 5, прибыль 10
   assert.equal(computeRiskRewardRatio(100, 95, 125), 5);
   assert.equal(computeRiskRewardRatio(100, 100, 110), null); // нулевой риск
+});
+
+test("isPartialTakeProfitWithinMaxRatio: не дальше 1/3", () => {
+  assert.equal(isPartialTakeProfitWithinMaxRatio(100, 95, 110), true); // 2R
+  assert.equal(isPartialTakeProfitWithinMaxRatio(100, 95, 115), true); // 3R
+  assert.equal(isPartialTakeProfitWithinMaxRatio(100, 95, 115.1), false); // > 3R
+  assert.equal(isPartialTakeProfitWithinMaxRatio(100, 95, 120), false); // 4R
 });
 
 test("decimalsOf: считает знаки после запятой у строки", () => {

@@ -4,6 +4,10 @@ import type { ActiveTradeView, TradeSide } from "../../api/types";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
 const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
+/** Пресеты частичной фиксации — синхрон с server PARTIAL_TP_PRESETS (не дальше 1/3). */
+const PARTIAL_TP_PRESETS = ["1/1", "1/2", "1/3"];
+const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
+const PARTIAL_TP_MAX_RATIO = 3;
 
 /** "1/2" → 2, "1/1.5" → 1.5. Держим в синхроне с server/src/trades/math.ts. */
 function parseRRRatio(preset: string): number | null {
@@ -218,36 +222,65 @@ function TakeProfitForm({
 }) {
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [tpPrice, setTpPrice] = useState("");
+  const [selectedPartialPreset, setSelectedPartialPreset] = useState<string | null>(null);
   const [partialTpPrice, setPartialTpPrice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /** Эффективный R/R: из выбранного пресета или из введённой цены TP относительно entry/SL. */
+  const entry = Number(trade.entryPrice);
+  const sl = Number(trade.slPrice);
+
+  /** Эффективный R/R основного TP: из пресета или из введённой цены. */
   const effectiveRatio = (() => {
     if (selectedPreset) return parseRRRatio(selectedPreset);
     const tp = Number(tpPrice);
-    const entry = Number(trade.entryPrice);
-    const sl = Number(trade.slPrice);
     if (!Number.isFinite(tp) || !Number.isFinite(entry) || !Number.isFinite(sl)) return null;
     const risk = Math.abs(entry - sl);
     if (!(risk > 0)) return null;
     return Math.abs(tp - entry) / risk;
   })();
-  // Синхрон с server PARTIAL_TP_REQUIRED_MIN_RATIO = 5 (пресет 1/5 и выше).
-  const partialTpRequired = effectiveRatio !== null && effectiveRatio >= 5;
+
+  const partialTpRequired = effectiveRatio !== null && effectiveRatio >= PARTIAL_TP_REQUIRED_MIN_RATIO;
   const partialTpFilled = partialTpPrice.trim() !== "" && Number.isFinite(Number(partialTpPrice));
+
+  const partialRatio = (() => {
+    if (!partialTpFilled) return null;
+    if (selectedPartialPreset) return parseRRRatio(selectedPartialPreset);
+    if (!Number.isFinite(entry) || !Number.isFinite(sl)) return null;
+    const risk = Math.abs(entry - sl);
+    if (!(risk > 0)) return null;
+    return Math.abs(Number(partialTpPrice) - entry) / risk;
+  })();
+
+  const partialExceedsMax =
+    partialRatio !== null && partialRatio > PARTIAL_TP_MAX_RATIO;
+  // Пресеты частичной фиксации, которые ещё строго раньше основного TP.
+  const availablePartialPresets = PARTIAL_TP_PRESETS.filter((preset) => {
+    const ratio = parseRRRatio(preset);
+    if (ratio === null) return false;
+    if (effectiveRatio === null) return true;
+    return ratio < effectiveRatio;
+  });
+
   const canSave =
-    Boolean(selectedPreset || tpPrice) && (!partialTpRequired || partialTpFilled) && !isSubmitting;
+    Boolean(selectedPreset || tpPrice) &&
+    (!partialTpRequired || partialTpFilled) &&
+    !partialExceedsMax &&
+    !isSubmitting;
 
   function pickPreset(preset: string) {
     const ratio = parseRRRatio(preset);
-    const entry = Number(trade.entryPrice);
-    const sl = Number(trade.slPrice);
     setSelectedPreset(preset);
     if (ratio !== null && Number.isFinite(entry) && Number.isFinite(sl)) {
       setTpPrice(formatComputedPrice(computeTakeProfitPrice(entry, sl, trade.side, ratio)));
     } else {
       setTpPrice("");
+    }
+    // Если выбранный partial-пресет стал недоступен (например, TP сменили на 1/2) — сбросим.
+    const partialRatioSelected = selectedPartialPreset ? parseRRRatio(selectedPartialPreset) : null;
+    if (partialRatioSelected !== null && ratio !== null && partialRatioSelected >= ratio) {
+      setSelectedPartialPreset(null);
+      setPartialTpPrice("");
     }
   }
 
@@ -256,10 +289,29 @@ function TakeProfitForm({
     setSelectedPreset(null);
   }
 
+  function pickPartialPreset(preset: string) {
+    const ratio = parseRRRatio(preset);
+    setSelectedPartialPreset(preset);
+    if (ratio !== null && Number.isFinite(entry) && Number.isFinite(sl)) {
+      setPartialTpPrice(formatComputedPrice(computeTakeProfitPrice(entry, sl, trade.side, ratio)));
+    } else {
+      setPartialTpPrice("");
+    }
+  }
+
+  function editPartialTpPrice(value: string) {
+    setPartialTpPrice(value);
+    setSelectedPartialPreset(null);
+  }
+
   async function handleSave() {
     if (!canSave) return;
     if (partialTpRequired && !partialTpFilled) {
       setError("При R/R 1/5 и выше укажите цену частичной фиксации");
+      return;
+    }
+    if (partialExceedsMax) {
+      setError("Частичная фиксация не должна быть дальше R/R 1/3");
       return;
     }
     setError(null);
@@ -315,26 +367,58 @@ function TakeProfitForm({
         className={inputClass}
       />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-xs text-slate-500">
+            Частичная фиксация 70%
+            {partialTpRequired ? " · обязательно при 1/5+" : " · необязательно"}
+          </p>
+          <span className="text-[10px] text-slate-400">не дальше 1/3</span>
+        </div>
+
+        {availablePartialPresets.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {availablePartialPresets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => pickPartialPreset(preset)}
+                className={`rounded-full border px-2.5 py-1 text-xs disabled:opacity-50 ${
+                  selectedPartialPreset === preset
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-line text-slate-600"
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        )}
+
         <input
           type="number"
           inputMode="decimal"
           placeholder={
             partialTpRequired
-              ? "Частичная фиксация (обязательно при 1/5+)"
-              : "Частичная фиксация (необязательно)"
+              ? "Цена частичной фиксации (или пресет выше)"
+              : "Цена частичной фиксации (необязательно)"
           }
           value={partialTpPrice}
-          onChange={(event) => setPartialTpPrice(event.target.value)}
-          className={`flex-1 ${inputClass}${
-            partialTpRequired && !partialTpFilled ? " border-red-400 focus:border-red-500" : ""
+          onChange={(event) => editPartialTpPrice(event.target.value)}
+          className={`${inputClass}${
+            (partialTpRequired && !partialTpFilled) || partialExceedsMax
+              ? " border-red-400 focus:border-red-500"
+              : ""
           }`}
         />
-        <span className="shrink-0 text-xs text-slate-500">70%</span>
+        {partialTpRequired && !partialTpFilled && (
+          <p className="text-xs text-red-600">При R/R 1/5 и выше укажите уровень частичной фиксации</p>
+        )}
+        {partialExceedsMax && (
+          <p className="text-xs text-red-600">Частичная фиксация не должна быть дальше R/R 1/3</p>
+        )}
       </div>
-      {partialTpRequired && !partialTpFilled && (
-        <p className="text-xs text-red-600">При R/R 1/5 и выше укажите уровень частичной фиксации 70%</p>
-      )}
 
       <button
         type="button"

@@ -60,16 +60,25 @@ export const PARTIAL_TP_PERCENT = 70;
  */
 export const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
 
-/** Нужна ли частичная фиксация при данном соотношении риск/прибыль. */
+/**
+ * Потолок R/R для уровня частичной фиксации: не дальше 1/3 от входа.
+ * Дальше — уже зона основного тейка; промежуточная фиксация должна быть ближе.
+ */
+export const PARTIAL_TP_MAX_RATIO = 3;
+
+/** Пресеты цены частичной фиксации (как у TP, но только до 1/3). */
+export const PARTIAL_TP_PRESETS = ["1/1", "1/2", "1/3"] as const;
+
+/** Нужна ли частичная фиксация при данном соотношении риск/прибыль основного TP. */
 export function requiresPartialTakeProfit(ratio: number): boolean {
   return Number.isFinite(ratio) && ratio >= PARTIAL_TP_REQUIRED_MIN_RATIO;
 }
 
-/** Фактическое R/R по ценам входа, SL и TP (null, если риск нулевой). */
-export function computeRiskRewardRatio(entryPrice: number, slPrice: number, tpPrice: number): number | null {
+/** Фактическое R/R по ценам входа, SL и целевого уровня (null, если риск нулевой). */
+export function computeRiskRewardRatio(entryPrice: number, slPrice: number, targetPrice: number): number | null {
   const risk = Math.abs(entryPrice - slPrice);
   if (!(risk > 0)) return null;
-  return Math.abs(tpPrice - entryPrice) / risk;
+  return Math.abs(targetPrice - entryPrice) / risk;
 }
 
 /**
@@ -85,6 +94,19 @@ export function isValidPartialTakeProfit(
   return side === "long"
     ? partialTpPrice > entryPrice && partialTpPrice < tpPrice
     : partialTpPrice < entryPrice && partialTpPrice > tpPrice;
+}
+
+/**
+ * Частичная фиксация не должна быть дальше 1/3 R от входа (PARTIAL_TP_MAX_RATIO) —
+ * даже если основной TP ещё дальше и «между входом и TP» формально выполняется.
+ */
+export function isPartialTakeProfitWithinMaxRatio(
+  entryPrice: number,
+  slPrice: number,
+  partialTpPrice: number,
+): boolean {
+  const ratio = computeRiskRewardRatio(entryPrice, slPrice, partialTpPrice);
+  return ratio !== null && ratio <= PARTIAL_TP_MAX_RATIO;
 }
 
 /**

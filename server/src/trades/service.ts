@@ -35,6 +35,7 @@ import {
   PARTIAL_TP_PERCENT,
   requiresPartialTakeProfit,
   computeRiskRewardRatio,
+  isPartialTakeProfitWithinMaxRatio,
   type TradeSide,
 } from "./math.js";
 
@@ -295,6 +296,13 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
         ? "Цена частичной фиксации должна быть между входом и TP"
         : "Цена частичной фиксации должна быть между входом и TP (ниже входа, выше TP)",
     );
+  }
+
+  if (
+    input.partialTpPrice !== undefined &&
+    !isPartialTakeProfitWithinMaxRatio(entryPrice, slPrice, input.partialTpPrice)
+  ) {
+    throw new TradeError("Частичная фиксация не должна быть дальше R/R 1/3 от входа");
   }
 
   const credentials = await getBingxCredentials();
