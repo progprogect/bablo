@@ -55,6 +55,24 @@ export function isValidTakeProfit(entryPrice: number, tpPrice: number, side: Tra
 export const PARTIAL_TP_PERCENT = 70;
 
 /**
+ * Начиная с этого R/R (пресет 1/5 и выше) частичная фиксация обязательна —
+ * дальние тейки без промежуточной фиксации слишком легко «отдают» уже взятую прибыль.
+ */
+export const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
+
+/** Нужна ли частичная фиксация при данном соотношении риск/прибыль. */
+export function requiresPartialTakeProfit(ratio: number): boolean {
+  return Number.isFinite(ratio) && ratio >= PARTIAL_TP_REQUIRED_MIN_RATIO;
+}
+
+/** Фактическое R/R по ценам входа, SL и TP (null, если риск нулевой). */
+export function computeRiskRewardRatio(entryPrice: number, slPrice: number, tpPrice: number): number | null {
+  const risk = Math.abs(entryPrice - slPrice);
+  if (!(risk > 0)) return null;
+  return Math.abs(tpPrice - entryPrice) / risk;
+}
+
+/**
  * Цена частичной фиксации должна лежать строго между входом и основным TP — так частичный
  * ордер срабатывает раньше основного по мере движения цены в прибыль, а не после него.
  */

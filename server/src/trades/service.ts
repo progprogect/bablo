@@ -33,6 +33,8 @@ import {
   isValidTakeProfit,
   parseRRRatio,
   PARTIAL_TP_PERCENT,
+  requiresPartialTakeProfit,
+  computeRiskRewardRatio,
   type TradeSide,
 } from "./math.js";
 
@@ -272,6 +274,19 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
 
   if (!isValidTakeProfit(entryPrice, tpPrice, side)) {
     throw new TradeError(side === "long" ? "TP должен быть выше цены входа" : "TP должен быть ниже цены входа");
+  }
+
+  const effectiveRatio =
+    (rrPreset !== undefined ? parseRRRatio(rrPreset) : null) ??
+    computeRiskRewardRatio(entryPrice, slPrice, tpPrice);
+  if (
+    effectiveRatio !== null &&
+    requiresPartialTakeProfit(effectiveRatio) &&
+    input.partialTpPrice === undefined
+  ) {
+    throw new TradeError(
+      "При R/R 1/5 и выше укажите цену частичной фиксации 70% — без неё дальнюю цель ставить нельзя",
+    );
   }
 
   if (input.partialTpPrice !== undefined && !isValidPartialTakeProfit(entryPrice, tpPrice, input.partialTpPrice, side)) {

@@ -222,6 +222,23 @@ function TakeProfitForm({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  /** Эффективный R/R: из выбранного пресета или из введённой цены TP относительно entry/SL. */
+  const effectiveRatio = (() => {
+    if (selectedPreset) return parseRRRatio(selectedPreset);
+    const tp = Number(tpPrice);
+    const entry = Number(trade.entryPrice);
+    const sl = Number(trade.slPrice);
+    if (!Number.isFinite(tp) || !Number.isFinite(entry) || !Number.isFinite(sl)) return null;
+    const risk = Math.abs(entry - sl);
+    if (!(risk > 0)) return null;
+    return Math.abs(tp - entry) / risk;
+  })();
+  // Синхрон с server PARTIAL_TP_REQUIRED_MIN_RATIO = 5 (пресет 1/5 и выше).
+  const partialTpRequired = effectiveRatio !== null && effectiveRatio >= 5;
+  const partialTpFilled = partialTpPrice.trim() !== "" && Number.isFinite(Number(partialTpPrice));
+  const canSave =
+    Boolean(selectedPreset || tpPrice) && (!partialTpRequired || partialTpFilled) && !isSubmitting;
+
   function pickPreset(preset: string) {
     const ratio = parseRRRatio(preset);
     const entry = Number(trade.entryPrice);
@@ -240,7 +257,11 @@ function TakeProfitForm({
   }
 
   async function handleSave() {
-    if (!selectedPreset && !tpPrice) return;
+    if (!canSave) return;
+    if (partialTpRequired && !partialTpFilled) {
+      setError("При R/R 1/5 и выше укажите цену частичной фиксации");
+      return;
+    }
     setError(null);
     onWarning(null);
     setIsSubmitting(true);
@@ -298,17 +319,26 @@ function TakeProfitForm({
         <input
           type="number"
           inputMode="decimal"
-          placeholder="Частичная фиксация (необязательно)"
+          placeholder={
+            partialTpRequired
+              ? "Частичная фиксация (обязательно при 1/5+)"
+              : "Частичная фиксация (необязательно)"
+          }
           value={partialTpPrice}
           onChange={(event) => setPartialTpPrice(event.target.value)}
-          className={`flex-1 ${inputClass}`}
+          className={`flex-1 ${inputClass}${
+            partialTpRequired && !partialTpFilled ? " border-red-400 focus:border-red-500" : ""
+          }`}
         />
         <span className="shrink-0 text-xs text-slate-500">70%</span>
       </div>
+      {partialTpRequired && !partialTpFilled && (
+        <p className="text-xs text-red-600">При R/R 1/5 и выше укажите уровень частичной фиксации 70%</p>
+      )}
 
       <button
         type="button"
-        disabled={isSubmitting || (!selectedPreset && !tpPrice)}
+        disabled={!canSave}
         onClick={handleSave}
         className="rounded-xl bg-accent py-3 text-sm font-medium text-white disabled:opacity-50"
       >

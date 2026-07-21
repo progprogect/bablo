@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import {
   computePartialTpQuantity,
   computeResultFromPrices,
+  computeRiskRewardRatio,
   computeTakeProfitPrice,
   decimalsOf,
   isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
   parseRRRatio,
+  requiresPartialTakeProfit,
 } from "./math.js";
 
 test("computeResultFromPrices: long в плюсе даёт положительный R", () => {
@@ -64,6 +66,19 @@ test("isValidPartialTakeProfit: цена должна лежать строго 
   assert.equal(isValidPartialTakeProfit(100, 120, 130, "long"), false); // за TP
   assert.equal(isValidPartialTakeProfit(100, 80, 90, "short"), true);
   assert.equal(isValidPartialTakeProfit(100, 80, 70, "short"), false); // за TP
+});
+
+test("requiresPartialTakeProfit: с 1/5 и выше — обязательно", () => {
+  assert.equal(requiresPartialTakeProfit(4), false);
+  assert.equal(requiresPartialTakeProfit(4.99), false);
+  assert.equal(requiresPartialTakeProfit(5), true);
+  assert.equal(requiresPartialTakeProfit(10), true);
+});
+
+test("computeRiskRewardRatio: считает R/R по ценам", () => {
+  assert.equal(computeRiskRewardRatio(100, 95, 110), 2); // риск 5, прибыль 10
+  assert.equal(computeRiskRewardRatio(100, 95, 125), 5);
+  assert.equal(computeRiskRewardRatio(100, 100, 110), null); // нулевой риск
 });
 
 test("decimalsOf: считает знаки после запятой у строки", () => {
