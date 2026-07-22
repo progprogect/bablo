@@ -407,7 +407,12 @@ export async function finalizeTradeClose(
     return null;
   }
 
-  await recordTradeClose({ closedAt, resultR: input.resultR, closeReason: input.closeReason }).catch(() => {
+  await recordTradeClose({
+    closedAt,
+    resultR: input.resultR,
+    closeReason: input.closeReason,
+    rrPreset: updated.rrPreset,
+  }).catch(() => {
     // не удалось обновить risk_state/лимиты — стоит проверить вручную через админку
   });
   stopTracking();

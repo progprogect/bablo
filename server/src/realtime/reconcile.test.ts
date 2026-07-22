@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { findFilledSlOrTp } from "./reconcile.js";
+import { findFilledSlOrTp, computeResult } from "./reconcile.js";
 import type { Trade } from "../db/repositories/trades.js";
 
 function fakeTrade(overrides: Partial<Trade> = {}): Trade {
@@ -135,5 +135,37 @@ describe("findFilledSlOrTp", () => {
   it("null, если у сделки нет ни sl, ни tp orderId", async () => {
     const result = await findFilledSlOrTp({ apiKey: "k", secretKey: "s" }, fakeTrade(), {});
     assert.equal(result, null);
+  });
+});
+
+describe("computeResult с частичной фиксацией", () => {
+  it("складывает PnL partial (70% @ 1/3) и остатка (30% @ 1/5) — иначе дневной +3R не сработал бы", () => {
+    // entry=100, sl=95 → risk distance=5, riskUsd=5*10=50
+    // partial 7 @ 115 (3R): pnl = 15*7 = 105 → 2.1R
+    // remainder rp = 25*3 = 75 → 1.5R
+    // total = 180 / 50 = 3.6R
+    const trade = fakeTrade({
+      entryPrice: "100",
+      quantity: "10",
+      riskUsd: "50",
+      side: "long",
+      partialTpFilledAt: new Date("2026-07-22T10:00:00Z"),
+      partialTpQuantity: "7",
+      partialTpFillPrice: "115",
+    });
+    const { resultR } = computeResult(trade, 125, 75);
+    assert.ok(Math.abs(resultR - 3.6) < 1e-9, `expected 3.6, got ${resultR}`);
+  });
+
+  it("без partial использует только realizedProfit финального ордера", () => {
+    const trade = fakeTrade({
+      entryPrice: "100",
+      quantity: "10",
+      riskUsd: "50",
+      side: "long",
+    });
+    // pnl 150 / risk 50 = 3R
+    const { resultR } = computeResult(trade, 115, 150);
+    assert.equal(resultR, 3);
   });
 });

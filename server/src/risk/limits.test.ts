@@ -25,10 +25,15 @@ test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R, мен�
   assert.deepEqual(blocks, []);
 });
 
-test("evaluateDailyLimitBlocks: сумма 2.96R — выше порога с допуском (3 - 0.05 = 2.95R), daily_profit срабатывает", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.96 }), CONFIG);
+test("evaluateDailyLimitBlocks: сумма 2.85R — выше порога с допуском (3 - 0.2 = 2.8R), daily_profit срабатывает", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.85 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_profit");
+});
+
+test("evaluateDailyLimitBlocks: сумма 2.7R — ниже порога с допуском, блока нет", () => {
+  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.7 }), CONFIG);
+  assert.deepEqual(blocks, []);
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла -2R — блок до следующего сброса", () => {
@@ -103,10 +108,10 @@ test("evaluateDailyLimitBlocks: несколько условий одновре
   );
 });
 
-test("isStrongTakeProfit: 1.96R проходит допуск, 1.9R — нет", () => {
-  assert.equal(isStrongTakeProfit(1.96), true);
+test("isStrongTakeProfit: 1.85R проходит допуск 0.2, 1.7R — нет", () => {
+  assert.equal(isStrongTakeProfit(1.85), true);
   assert.equal(isStrongTakeProfit(2), true);
-  assert.equal(isStrongTakeProfit(1.9), false);
+  assert.equal(isStrongTakeProfit(1.7), false);
 });
 
 test("evaluateCooldownBlock: нет предыдущей сделки — блока нет", () => {

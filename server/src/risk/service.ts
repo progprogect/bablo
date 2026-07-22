@@ -9,6 +9,7 @@ import { computeRiskUsd } from "../trades/math.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef } from "./ladder.js";
 import { evaluateCooldownBlock, evaluateDailyLimitBlocks, pickEffectiveBlock, type Block, type BlockType } from "./limits.js";
 import { getTradingDayKey } from "./tradingDay.js";
+import { parseRRRatio } from "../trades/math.js";
 
 export class RiskBlockedError extends Error {
   constructor(
@@ -140,6 +141,8 @@ export async function recordTradeClose(input: {
   closedAt: Date;
   resultR: number;
   closeReason: string;
+  /** Пресет R/R сделки — для страховки дневного лимита +3R при тейке по плану ≥ 1:3. */
+  rrPreset?: string | null;
 }): Promise<void> {
   const settings = await getRiskSettings();
   const dayKey = getTradingDayKey(input.closedAt, settings.resetHour, settings.tzOffsetMinutes);
@@ -152,8 +155,21 @@ export async function recordTradeClose(input: {
   );
   await updateRiskState(stateRow.id, nextState);
 
+  /**
+   * Для дневного лимита +3R: если закрылись по TP с планом ≥ цели дня (пресет 1/3+),
+   * а фактический resultR недотянул из-за комиссий или старого недоучёта partial —
+   * в агрегат дня кладём не меньше цели. Лестница уровней выше уже получила фактический R.
+   */
+  const plannedRatio = input.rrPreset ? parseRRRatio(input.rrPreset) : null;
+  const resultRForDaily =
+    input.closeReason === "tp" &&
+    plannedRatio !== null &&
+    plannedRatio >= settings.dailyProfitLimitR
+      ? Math.max(input.resultR, settings.dailyProfitLimitR)
+      : input.resultR;
+
   const dailyStatsRow = await addTradeResultToDailyStats(dayKey, {
-    resultR: input.resultR,
+    resultR: resultRForDaily,
     closeReason: input.closeReason,
   });
 
