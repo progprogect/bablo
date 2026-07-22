@@ -38,7 +38,8 @@ test("computeTradeInsights: пустой список — всё пустое/nu
   const insights = computeTradeInsights([], TZ, 3);
   assert.deepEqual(insights.topProfitableHours, []);
   assert.deepEqual(insights.topStopHours, []);
-  assert.equal(insights.bestAsset, null);
+  assert.deepEqual(insights.assetOutcomes, []);
+  assert.deepEqual(insights.topStopAssets, []);
   assert.equal(insights.dailyTargetHour, null);
   assert.deepEqual(insights.presetOutcomes, []);
 });
@@ -93,22 +94,45 @@ test("computeTradeInsights: топ часов открытия сделок, з�
   assert.equal(insights.topStopHours[1]?.count, 1);
 });
 
-test("computeTradeInsights: самый прибыльный актив выбирается по сумме $, а не по числу сделок", () => {
+test("computeTradeInsights: assetOutcomes — все активы с долей TP, сортировка по hitRate", () => {
   const trades = [
-    trade({ symbol: "TIA-USDT", openedHourUtc: 4, resultR: 5, riskUsd: 10, closeReason: "tp" }), // +50$
-    trade({ symbol: "TAO-USDT", openedHourUtc: 4, resultR: 1, riskUsd: 5, closeReason: "tp" }), // +5$
-    trade({ symbol: "TAO-USDT", openedHourUtc: 4, resultR: 1, riskUsd: 5, closeReason: "tp" }), // +5$ (больше сделок, меньше $)
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 4, resultR: -1, closeReason: "sl" }), // 1/5 = 20%
+    trade({ symbol: "TIA-USDT", openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ symbol: "TIA-USDT", openedHourUtc: 4, resultR: -1, closeReason: "sl" }), // 1/2 = 50%
+    trade({ symbol: "TAO-USDT", openedHourUtc: 4, resultR: 1, closeReason: "tp" }), // 1/1 = 100%
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
-  assert.equal(insights.bestAsset?.symbol, "TIA-USDT");
-  assert.equal(insights.bestAsset?.tpCount, 1);
-  assert.equal(insights.bestAsset?.totalTrades, 1);
+  assert.deepEqual(
+    insights.assetOutcomes.map((entry) => ({
+      symbol: entry.symbol,
+      tpCount: entry.tpCount,
+      totalTrades: entry.totalTrades,
+    })),
+    [
+      { symbol: "TAO-USDT", tpCount: 1, totalTrades: 1 },
+      { symbol: "TIA-USDT", tpCount: 1, totalTrades: 2 },
+      { symbol: "VIRTUAL-USDT", tpCount: 1, totalTrades: 5 },
+    ],
+  );
 });
 
-test("computeTradeInsights: актив без прибыли (сумма ≤ 0) не считается лучшим", () => {
-  const trades = [trade({ symbol: "TIA-USDT", openedHourUtc: 4, resultR: -1, riskUsd: 10 })];
+test("computeTradeInsights: topStopAssets — топ активов по числу стопов", () => {
+  const trades = [
+    trade({ symbol: "TIA-USDT", openedHourUtc: 5, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "TIA-USDT", openedHourUtc: 5, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "VIRTUAL-USDT", openedHourUtc: 9, resultR: -1, closeReason: "sl" }),
+    trade({ symbol: "TAO-USDT", openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+  ];
   const insights = computeTradeInsights(trades, TZ, 3);
-  assert.equal(insights.bestAsset, null);
+  assert.equal(insights.topStopAssets[0]?.symbol, "TIA-USDT");
+  assert.equal(insights.topStopAssets[0]?.count, 2);
+  assert.equal(insights.topStopAssets[1]?.symbol, "VIRTUAL-USDT");
+  assert.equal(insights.topStopAssets[1]?.count, 1);
+  assert.equal(insights.topStopAssets.length, 2);
 });
 
 test("computeTradeInsights: dailyTargetHour null, если цель не задана или не достигнута", () => {

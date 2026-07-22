@@ -5,16 +5,24 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-/** "9" → "9-10ч" (перенос через полночь — "23-0ч"). */
-function formatHourRangeShort(hour: number): string {
-  const next = (hour + 1) % 24;
-  return `${hour}-${next}ч`;
+/** "9" → "9ч". */
+function formatHourShort(hour: number): string {
+  return `${hour}ч`;
+}
+
+function displaySymbol(symbol: string): string {
+  return symbol.replace(/-USDT$/, "");
 }
 
 /** "R/R 1/2 — по тейку 1/2 (50%)." — без разбора причины промаха, чтобы не повторять её в каждой строке. */
 function formatPresetOutcome(entry: PresetOutcome): string {
   const hitPct = Math.round(entry.hitRate * 100);
   return `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
+}
+
+function formatAssetOutcome(entry: { symbol: string; tpCount: number; totalTrades: number }): string {
+  const hitPct = Math.round((entry.tpCount / entry.totalTrades) * 100);
+  return `${displaySymbol(entry.symbol)} - ${entry.tpCount}/${entry.totalTrades} TP (${hitPct}%)`;
 }
 
 /** Список пресетов R/R с раскрытием по кнопке, если он не влезает в отведённый лимит. */
@@ -53,10 +61,14 @@ function PresetOutcomesList({ items, limit }: { items: PresetOutcome[]; limit: n
 const VISIBLE_PRESETS_LIMIT = 2;
 
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
+  const assetOutcomes = insights.assetOutcomes ?? [];
+  const topStopAssets = insights.topStopAssets ?? [];
+
   const hasAnyData =
     insights.topProfitableHours.length > 0 ||
     insights.topStopHours.length > 0 ||
-    insights.bestAsset !== null ||
+    assetOutcomes.length > 0 ||
+    topStopAssets.length > 0 ||
     insights.dailyTargetHour !== null ||
     insights.presetOutcomes.length > 0;
 
@@ -68,18 +80,21 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
         {insights.topProfitableHours.length > 0 && (
           <li>
-            Самые прибыльные часы:{" "}
+            Прибыльные часы:{" "}
             {insights.topProfitableHours
-              .map((bucket) => `${formatHourRangeShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`)
+              .map((bucket) => `${formatHourShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`)
               .join(", ")}
           </li>
         )}
 
-        {insights.bestAsset && (
+        {assetOutcomes.length > 0 && (
           <li>
-            Самый прибыльный актив: {insights.bestAsset.symbol.replace(/-USDT$/, "")} —{" "}
-            {insights.bestAsset.tpCount}/{insights.bestAsset.totalTrades} TP (
-            {Math.round((insights.bestAsset.tpCount / insights.bestAsset.totalTrades) * 100)}%)
+            <div className="flex flex-col gap-1">
+              <p>% прибыльности активов:</p>
+              {assetOutcomes.map((entry) => (
+                <p key={entry.symbol}>{formatAssetOutcome(entry)}</p>
+              ))}
+            </div>
           </li>
         )}
 
@@ -93,7 +108,16 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
           <li>
             Чаще убыточные сделки в:{" "}
             {insights.topStopHours
-              .map((bucket) => `${formatHourRangeShort(bucket.hour)} (${bucket.count})`)
+              .map((bucket) => `${formatHourShort(bucket.hour)} (${bucket.count})`)
+              .join(", ")}
+          </li>
+        )}
+
+        {topStopAssets.length > 0 && (
+          <li>
+            Чаще убыточные сделки по:{" "}
+            {topStopAssets
+              .map((entry) => `${displaySymbol(entry.symbol)} (${entry.count})`)
               .join(", ")}
           </li>
         )}

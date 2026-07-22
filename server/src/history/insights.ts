@@ -34,8 +34,13 @@ export type TradeInsights = {
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
   /** Часы открытия, после которых сделка чаще всего закрывалась по стопу (топ-2, только ненулевые). */
   topStopHours: { hour: number; count: number }[];
-  /** Самый прибыльный по сумме $ актив и его статистика по тейку (сколько из всех его сделок). Null, если данных нет. */
-  bestAsset: { symbol: string; tpCount: number; totalTrades: number } | null;
+  /**
+   * % прибыльности по каждому активу с хотя бы одной закрытой сделкой:
+   * доля closeReason === "tp" среди всех сделок актива. Сортировка: hitRate ↓, затем total ↓.
+   */
+  assetOutcomes: { symbol: string; tpCount: number; totalTrades: number }[];
+  /** Активы с наибольшим числом закрытий по стопу (топ-2, только ненулевые). */
+  topStopAssets: { symbol: string; count: number }[];
   /** Типичный (медианный) час, к которому в удачные дни достигается дневная цель +targetR. Null, если цель ни разу не была достигнута. */
   dailyTargetHour: { targetR: number; hour: number } | null;
   /** Статистика по пресетам R/R (1/1, 1/2…) среди сделок, у которых пресет был задан — см. presetOutcomes(). */
@@ -88,14 +93,13 @@ function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["t
     .slice(0, limit);
 }
 
-/** Самый прибыльный актив по сумме реализованного $ (resultR × riskUsd), а не по числу сделок. */
-function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsset"] {
-  const bySymbol = new Map<string, { pnlUsd: number; tpCount: number; totalTrades: number }>();
+/** % прибыльности по каждому активу: tpCount/total среди сделок с известным resultR. */
+function assetOutcomes(trades: InsightTradeInput[]): TradeInsights["assetOutcomes"] {
+  const bySymbol = new Map<string, { tpCount: number; totalTrades: number }>();
 
   for (const trade of trades) {
-    if (trade.resultR === null || trade.riskUsd === null) continue;
-    const entry = bySymbol.get(trade.symbol) ?? { pnlUsd: 0, tpCount: 0, totalTrades: 0 };
-    entry.pnlUsd += trade.resultR * trade.riskUsd;
+    if (trade.resultR === null) continue;
+    const entry = bySymbol.get(trade.symbol) ?? { tpCount: 0, totalTrades: 0 };
     entry.totalTrades += 1;
     if (trade.closeReason === "tp") {
       entry.tpCount += 1;
@@ -103,15 +107,31 @@ function bestAssetBySymbol(trades: InsightTradeInput[]): TradeInsights["bestAsse
     bySymbol.set(trade.symbol, entry);
   }
 
-  let best: { symbol: string; pnlUsd: number; tpCount: number; totalTrades: number } | null = null;
-  for (const [symbol, stats] of bySymbol) {
-    if (!best || stats.pnlUsd > best.pnlUsd) {
-      best = { symbol, ...stats };
-    }
+  return [...bySymbol.entries()]
+    .map(([symbol, stats]) => ({ symbol, tpCount: stats.tpCount, totalTrades: stats.totalTrades }))
+    .sort((a, b) => {
+      const hitA = a.tpCount / a.totalTrades;
+      const hitB = b.tpCount / b.totalTrades;
+      if (hitB !== hitA) return hitB - hitA;
+      if (b.totalTrades !== a.totalTrades) return b.totalTrades - a.totalTrades;
+      return a.symbol.localeCompare(b.symbol);
+    });
+}
+
+/** Активы с наибольшим числом стопов — зеркало topStopHours для символов. */
+function topStopAssets(trades: InsightTradeInput[], limit: number): TradeInsights["topStopAssets"] {
+  const slBySymbol = new Map<string, number>();
+
+  for (const trade of trades) {
+    if (trade.resultR === null || trade.closeReason !== "sl") continue;
+    slBySymbol.set(trade.symbol, (slBySymbol.get(trade.symbol) ?? 0) + 1);
   }
 
-  if (!best || best.pnlUsd <= 0) return null;
-  return { symbol: best.symbol, tpCount: best.tpCount, totalTrades: best.totalTrades };
+  return [...slBySymbol.entries()]
+    .map(([symbol, count]) => ({ symbol, count }))
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count || a.symbol.localeCompare(b.symbol))
+    .slice(0, limit);
 }
 
 /**
@@ -216,7 +236,8 @@ export function computeTradeInsights(
   return {
     topProfitableHours: topProfitableHours(buckets, 3),
     topStopHours: topStopHours(slCountsByHour, 2),
-    bestAsset: bestAssetBySymbol(trades),
+    assetOutcomes: assetOutcomes(trades),
+    topStopAssets: topStopAssets(trades, 2),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),
     presetOutcomes: presetOutcomes(trades),
   };

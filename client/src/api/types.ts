@@ -142,7 +142,8 @@ export type PresetOutcome = {
 export type TradeInsights = {
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
   topStopHours: { hour: number; count: number }[];
-  bestAsset: { symbol: string; tpCount: number; totalTrades: number } | null;
+  assetOutcomes: { symbol: string; tpCount: number; totalTrades: number }[];
+  topStopAssets: { symbol: string; count: number }[];
   dailyTargetHour: { targetR: number; hour: number } | null;
   presetOutcomes: PresetOutcome[];
 };
