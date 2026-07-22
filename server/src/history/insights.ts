@@ -27,8 +27,8 @@ export type HourBucketStat = { hour: number; total: number; tpCount: number };
 
 export type TradeInsights = {
   /**
-   * Часы открытия, в которые больше половины открытых сделок закрылись по тейку
-   * (hitRate > 50% — именно это и означает "прибыльный час", а не resultR > 0 у отдельной
+   * Часы открытия, в которые не меньше половины открытых сделок закрылись по тейку
+   * (hitRate ≥ 50% — именно это и означает "прибыльный час", а не resultR > 0 у отдельной
    * сделки). Топ-3 по числу сделок, закрытых по тейку.
    */
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
@@ -71,10 +71,10 @@ function bucketByOpenHour(
   return { buckets, slCountsByHour };
 }
 
-/** "Прибыльный час" — больше половины сделок, открытых в этот час, дошли до тейка. */
+/** "Прибыльный час" — не меньше половины сделок, открытых в этот час, дошли до тейка. */
 function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsights["topProfitableHours"] {
   return buckets
-    .filter((bucket) => bucket.total > 0 && bucket.tpCount / bucket.total > 0.5)
+    .filter((bucket) => bucket.total > 0 && bucket.tpCount / bucket.total >= 0.5)
     .sort((a, b) => b.tpCount - a.tpCount)
     .slice(0, limit)
     .map((bucket) => ({ hour: bucket.hour, tpCount: bucket.tpCount, total: bucket.total }));

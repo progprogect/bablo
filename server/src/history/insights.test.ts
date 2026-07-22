@@ -43,7 +43,7 @@ test("computeTradeInsights: пустой список — всё пустое/nu
   assert.deepEqual(insights.presetOutcomes, []);
 });
 
-test("computeTradeInsights: топ часов открытия — больше половины сделок дошли до тейка", () => {
+test("computeTradeInsights: топ часов открытия — доля тейков ≥ 50%", () => {
   const trades = [
     trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }), // 07:00 локально
     trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
@@ -55,17 +55,23 @@ test("computeTradeInsights: топ часов открытия — больше 
   assert.equal(insights.topProfitableHours[0]?.hour, 7);
   assert.equal(insights.topProfitableHours[0]?.tpCount, 3);
   assert.equal(insights.topProfitableHours[0]?.total, 3);
-  // 13:00 — 1/2 (ровно 50%), не строго больше половины — в топ не входит.
-  assert.equal(insights.topProfitableHours.length, 1);
+  // 13:00 — 1/2 (ровно 50%) — входит; ниже по tpCount, поэтому вторым.
+  assert.equal(insights.topProfitableHours[1]?.hour, 13);
+  assert.equal(insights.topProfitableHours[1]?.tpCount, 1);
+  assert.equal(insights.topProfitableHours[1]?.total, 2);
+  assert.equal(insights.topProfitableHours.length, 2);
 });
 
-test("computeTradeInsights: ровно половина сделок по тейку — час не считается прибыльным", () => {
+test("computeTradeInsights: ровно половина сделок по тейку — час считается прибыльным", () => {
   const trades = [
     trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
     trade({ openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
-  assert.deepEqual(insights.topProfitableHours, []);
+  assert.equal(insights.topProfitableHours.length, 1);
+  assert.equal(insights.topProfitableHours[0]?.hour, 7);
+  assert.equal(insights.topProfitableHours[0]?.tpCount, 1);
+  assert.equal(insights.topProfitableHours[0]?.total, 2);
 });
 
 test("computeTradeInsights: сделки без тейка (даже прибыльные external) не делают час прибыльным", () => {
