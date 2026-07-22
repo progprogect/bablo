@@ -13,8 +13,10 @@ import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
 import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef } from "./ladder.js";
 import {
+  evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
+  isGlobalBlock,
   isStrongTakeProfit,
   pickEffectiveBlock,
   type Block,
@@ -37,6 +39,13 @@ export async function ensureRiskSeeded(): Promise<void> {
   await getOrCreateRiskState();
 }
 
+export type RiskLockView = {
+  type: string;
+  reason: string;
+  until: string;
+  symbol?: string;
+};
+
 export type RiskSnapshot = {
   currentLevel: number;
   levelRiskUsd: number;
@@ -44,8 +53,25 @@ export type RiskSnapshot = {
   requiredR: number | null;
   dailySumR: number;
   hasActiveTrade: boolean;
-  activeLocks: Array<{ type: string; reason: string; until: string }>;
+  /** Глобальные блокировки — скрывают форму открытия. */
+  activeLocks: RiskLockView[];
+  /** Per-asset: символы со стопом сегодня — форма остаётся, вход в эти активы запрещён. */
+  assetSlLocks: RiskLockView[];
 };
+
+function toLockView(lock: {
+  type: string;
+  reason: string;
+  until: Date;
+  symbol: string | null;
+}): RiskLockView {
+  return {
+    type: lock.type,
+    reason: lock.reason,
+    until: lock.until.toISOString(),
+    ...(lock.symbol ? { symbol: lock.symbol } : {}),
+  };
+}
 
 export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   const now = new Date();
@@ -61,6 +87,9 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   const dailySumR = await getDailySumR(dayKey);
   const levelDef = getLevelDef(levels, stateRow.currentLevel);
 
+  const globalLocks = locks.filter((l) => isGlobalBlock(l));
+  const assetSlLocks = locks.filter((l) => l.type === "asset_sl_today");
+
   return {
     currentLevel: stateRow.currentLevel,
     levelRiskUsd: levelDef?.riskUsd ?? 0,
@@ -68,7 +97,8 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     requiredR: levelDef?.requiredR ?? null,
     dailySumR,
     hasActiveTrade: activeTrade !== null,
-    activeLocks: locks.map((l) => ({ type: l.type, reason: l.reason, until: l.until.toISOString() })),
+    activeLocks: globalLocks.map(toLockView),
+    assetSlLocks: assetSlLocks.map(toLockView),
   };
 }
 
@@ -80,8 +110,13 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
  * новую нельзя — иначе фактический риск на счету перестанет соответствовать риск-плану.
  * Проверка BingX best-effort: если REST недоступен, не блокируем открытие только из-за
  * этого — остальные проверки (БД, локи) продолжают действовать как обычно.
+ *
+ * @param symbol — актив, который пользователь пытается открыть (нужен для правила #9).
  */
-export async function checkCanOpenTrade(credentials: BingXCredentials | null): Promise<void> {
+export async function checkCanOpenTrade(
+  credentials: BingXCredentials | null,
+  symbol: string,
+): Promise<void> {
   const activeTrade = await getActiveTrade();
   if (activeTrade) {
     throw new RiskBlockedError("Уже есть активная сделка");
@@ -89,10 +124,20 @@ export async function checkCanOpenTrade(credentials: BingXCredentials | null): P
 
   const locks = await listActiveLocks();
   const effective = pickEffectiveBlock(
-    locks.map((l) => ({ type: l.type as BlockType, reason: l.reason, until: l.until })),
+    locks.map((l) => ({
+      type: l.type as BlockType,
+      reason: l.reason,
+      until: l.until,
+      symbol: l.symbol ?? undefined,
+    })),
   );
   if (effective) {
     throw new RiskBlockedError(effective.reason, effective.until);
+  }
+
+  const assetLock = locks.find((l) => l.type === "asset_sl_today" && l.symbol === symbol);
+  if (assetLock) {
+    throw new RiskBlockedError(assetLock.reason, assetLock.until);
   }
 
   if (credentials) {
@@ -145,13 +190,16 @@ export async function checkVolumeRisk(currentPrice: number, slPrice: number, qua
 
 /**
  * Постфактум-учёт результата закрытой сделки: прогресс лестницы уровней, дневной
- * агрегат и пересборка активных блокировок (кулдаун + дневные лимиты). Риск-движок
- * никогда не закрывает сделки сам — эта функция вызывается ПОСЛЕ фактического закрытия.
+ * агрегат и пересборка активных блокировок (кулдаун + дневные лимиты + per-asset SL).
+ * Риск-движок никогда не закрывает сделки сам — эта функция вызывается ПОСЛЕ
+ * фактического закрытия.
  */
 export async function recordTradeClose(input: {
   closedAt: Date;
   resultR: number;
   closeReason: string;
+  /** Символ закрытой сделки — для правила #9 (повторный вход после стопа). */
+  symbol: string;
   /** Пресет R/R сделки — для страховки дневного лимита +3R при тейке по плану ≥ 1:3. */
   rrPreset?: string | null;
 }): Promise<void> {
@@ -178,20 +226,19 @@ export async function recordTradeClose(input: {
     closeReason: input.closeReason,
   });
 
-  const blocks: Block[] = evaluateDailyLimitBlocks(
-    input.closedAt,
-    {
+  const slSymbols = await listDaySlSymbols(dayKey, settings.resetHour, settings.tzOffsetMinutes);
+  const blocks = buildManagedBlocks({
+    now: input.closedAt,
+    counters: {
       sumR: Number(dailyStatsRow.sumR),
       slCount: dailyStatsRow.slCount,
       tpCount: dailyStatsRow.tpCount,
       strongRecoveryAfterSl: dailyStatsRow.strongRecoveryAfterSl,
     },
+    lastTradeClosedAt: input.closedAt,
+    slSymbols,
     settings,
-  );
-  const cooldownBlock = evaluateCooldownBlock(input.closedAt, input.closedAt, settings.cooldownMinutes);
-  if (cooldownBlock) {
-    blocks.push(cooldownBlock);
-  }
+  });
   await replaceManagedLocks(blocks);
 }
 
@@ -210,6 +257,50 @@ function resultRForDailyStats(
     return Math.max(resultR, dailyProfitLimitR);
   }
   return resultR;
+}
+
+type RiskSettingsLike = {
+  cooldownMinutes: number;
+  dailyLossLimitR: number;
+  dailyProfitLimitR: number;
+  resetHour: number;
+  tzOffsetMinutes: number;
+};
+
+/** Собирает управляемые локи: дневные лимиты + кулдаун + per-asset стопы дня. */
+function buildManagedBlocks(input: {
+  now: Date;
+  counters: { sumR: number; slCount: number; tpCount: number; strongRecoveryAfterSl: boolean };
+  lastTradeClosedAt: Date | null;
+  slSymbols: string[];
+  settings: RiskSettingsLike;
+}): Block[] {
+  const blocks: Block[] = evaluateDailyLimitBlocks(input.now, input.counters, input.settings);
+  const cooldownBlock = evaluateCooldownBlock(
+    input.now,
+    input.lastTradeClosedAt,
+    input.settings.cooldownMinutes,
+  );
+  if (cooldownBlock) {
+    blocks.push(cooldownBlock);
+  }
+  blocks.push(...evaluateAssetSlBlocks(input.now, input.slSymbols, input.settings));
+  return blocks;
+}
+
+/** Символы сделок текущего торгового дня, закрытых именно по стопу (closeReason === "sl"). */
+async function listDaySlSymbols(
+  dayKey: string,
+  resetHour: number,
+  tzOffsetMinutes: number,
+): Promise<string[]> {
+  const allClosed = await listAllClosedTrades();
+  return allClosed
+    .filter((trade) => {
+      if (!trade.closedAt || trade.closeReason !== "sl") return false;
+      return getTradingDayKey(trade.closedAt, resetHour, tzOffsetMinutes) === dayKey;
+    })
+    .map((trade) => trade.symbol);
 }
 
 /**
@@ -257,6 +348,7 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   let slCount = 0;
   let tpCount = 0;
   let strongRecoveryAfterSl = false;
+  const slSymbols: string[] = [];
 
   for (const trade of dayTrades) {
     const rawResultR = trade.resultR !== null ? Number(trade.resultR) : 0;
@@ -268,7 +360,10 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
       settings.dailyProfitLimitR,
     );
     sumR += resultR;
-    if (trade.closeReason === "sl") slCount += 1;
+    if (trade.closeReason === "sl") {
+      slCount += 1;
+      slSymbols.push(trade.symbol);
+    }
     if (trade.closeReason === "tp") {
       tpCount += 1;
       if (isStrongTakeProfit(resultR) && slCount > 0) {
@@ -285,20 +380,14 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     strongRecoveryAfterSl,
   });
 
-  const blocks: Block[] = evaluateDailyLimitBlocks(
-    now,
-    { sumR, slCount, tpCount, strongRecoveryAfterSl },
-    settings,
-  );
   const lastClosedAt = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]!.closedAt : null;
-  const cooldownBlock = evaluateCooldownBlock(
+  const blocks = buildManagedBlocks({
     now,
-    lastClosedAt ? new Date(lastClosedAt) : null,
-    settings.cooldownMinutes,
-  );
-  if (cooldownBlock) {
-    blocks.push(cooldownBlock);
-  }
+    counters: { sumR, slCount, tpCount, strongRecoveryAfterSl },
+    lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
+    slSymbols,
+    settings,
+  });
   await replaceManagedLocks(blocks);
 
   return {

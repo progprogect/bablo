@@ -98,7 +98,7 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
   // позиции на BingX (см. checkCanOpenTrade), чтобы не открыть вторую позицию
   // параллельно с уже открытой вручную на бирже.
   try {
-    await checkCanOpenTrade(credentials);
+    await checkCanOpenTrade(credentials, input.symbol);
   } catch (error) {
     if (error instanceof RiskBlockedError) {
       throw new TradeError(error.message, 409);
@@ -411,6 +411,7 @@ export async function finalizeTradeClose(
     closedAt,
     resultR: input.resultR,
     closeReason: input.closeReason,
+    symbol: updated.symbol,
     rrPreset: updated.rrPreset,
   }).catch(() => {
     // не удалось обновить risk_state/лимиты — стоит проверить вручную через админку

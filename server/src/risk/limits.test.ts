@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
+  isGlobalBlock,
   isStrongTakeProfit,
   pickEffectiveBlock,
   type DailyLimitCounters,
@@ -141,4 +143,47 @@ test("pickEffectiveBlock: выбирает блокировку с самым п
 
 test("pickEffectiveBlock: пустой список — null", () => {
   assert.equal(pickEffectiveBlock([]), null);
+});
+
+test("pickEffectiveBlock: игнорирует asset_sl_today — день целиком не закрывает", () => {
+  const assetOnly = {
+    type: "asset_sl_today" as const,
+    reason: "По TIA уже был стоп сегодня — повторный вход завтра",
+    until: new Date("2026-07-14T04:00:00Z"),
+    symbol: "TIA-USDT",
+  };
+  assert.equal(pickEffectiveBlock([assetOnly]), null);
+
+  const withGlobal = {
+    type: "cooldown" as const,
+    reason: "a",
+    until: new Date("2026-07-13T11:00:00Z"),
+  };
+  assert.equal(pickEffectiveBlock([assetOnly, withGlobal])?.type, "cooldown");
+});
+
+test("evaluateAssetSlBlocks: пустой список — блоков нет", () => {
+  assert.deepEqual(evaluateAssetSlBlocks(new Date("2026-07-13T10:00:00Z"), [], CONFIG), []);
+});
+
+test("evaluateAssetSlBlocks: уникальные символы со стопом — по блоку на каждый до сброса дня", () => {
+  const blocks = evaluateAssetSlBlocks(
+    new Date("2026-07-13T10:00:00Z"),
+    ["TIA-USDT", "TAO-USDT", "TIA-USDT"],
+    CONFIG,
+  );
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(
+    blocks.map((b) => b.symbol).sort(),
+    ["TAO-USDT", "TIA-USDT"],
+  );
+  assert.ok(blocks.every((b) => b.type === "asset_sl_today"));
+  assert.ok(blocks.every((b) => b.until.toISOString() === "2026-07-14T04:00:00.000Z"));
+  assert.equal(blocks.find((b) => b.symbol === "TIA-USDT")?.reason.includes("TIA"), true);
+});
+
+test("isGlobalBlock: asset_sl_today — false, остальные — true", () => {
+  assert.equal(isGlobalBlock({ type: "asset_sl_today" }), false);
+  assert.equal(isGlobalBlock({ type: "cooldown" }), true);
+  assert.equal(isGlobalBlock({ type: "daily_stop_losses" }), true);
 });

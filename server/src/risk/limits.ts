@@ -6,13 +6,28 @@ export type BlockType =
   | "daily_profit"
   | "daily_stop_losses"
   | "daily_take_profits"
-  | "daily_recovery_after_sl";
+  | "daily_recovery_after_sl"
+  | "asset_sl_today";
+
+/** Глобальные блокировки — скрывают форму открытия целиком. */
+export type GlobalBlockType = Exclude<BlockType, "asset_sl_today">;
 
 export type Block = {
   type: BlockType;
   reason: string;
   until: Date;
+  /** Только для asset_sl_today — символ, по которому сегодня уже был стоп. */
+  symbol?: string;
 };
+
+export function isGlobalBlock(block: { type: string }): boolean {
+  return block.type !== "asset_sl_today";
+}
+
+/** Короткое имя актива для UI: TIA-USDT → TIA. */
+export function displaySymbol(symbol: string): string {
+  return symbol.replace(/-USDT$/, "");
+}
 
 export type RiskLimitsConfig = {
   cooldownMinutes: number;
@@ -126,8 +141,33 @@ export function evaluateCooldownBlock(
   };
 }
 
-/** При нескольких активных блокировках действует самая длинная (docs/RISK_ENGINE.md). */
+/**
+ * Правило #9: по активу, закрытому сегодня по стопу (closeReason === "sl"), повторный
+ * вход запрещён до сброса торгового дня. Другие активы остаются доступны. Manual / TP /
+ * external это правило не включают.
+ */
+export function evaluateAssetSlBlocks(
+  now: Date,
+  slSymbols: string[],
+  config: Pick<RiskLimitsConfig, "resetHour" | "tzOffsetMinutes">,
+): Block[] {
+  if (slSymbols.length === 0) return [];
+  const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
+  const unique = [...new Set(slSymbols.filter((s) => s.length > 0))];
+  return unique.map((symbol) => ({
+    type: "asset_sl_today" as const,
+    symbol,
+    reason: `По ${displaySymbol(symbol)} уже был стоп сегодня — повторный вход завтра`,
+    until,
+  }));
+}
+
+/**
+ * При нескольких ГЛОБАЛЬНЫХ блокировках действует самая длинная (docs/RISK_ENGINE.md).
+ * asset_sl_today сюда не передавать — они per-asset и не закрывают день целиком.
+ */
 export function pickEffectiveBlock(blocks: Block[]): Block | null {
-  if (blocks.length === 0) return null;
-  return blocks.reduce((longest, current) => (current.until > longest.until ? current : longest));
+  const global = blocks.filter(isGlobalBlock);
+  if (global.length === 0) return null;
+  return global.reduce((longest, current) => (current.until > longest.until ? current : longest));
 }

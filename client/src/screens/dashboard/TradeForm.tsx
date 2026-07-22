@@ -144,12 +144,15 @@ export function TradeForm({
   leverage,
   levelRiskUsd,
   livePrice,
+  blockedReason = null,
   onOpened,
 }: {
   symbol: string;
   leverage: number;
   levelRiskUsd: number;
   livePrice?: number;
+  /** Если задан — вход в этот актив запрещён (правило #9: стоп по активу сегодня). */
+  blockedReason?: string | null;
   onOpened: (result: OpenTradeResult) => void;
 }) {
   const [restPrice, setRestPrice] = useState<number | null>(null);
@@ -247,12 +250,35 @@ export function TradeForm({
           <p className="mt-1 text-xs text-slate-400">
             План риска: {levelRiskUsd} USDT (±{TOLERANCE_PCT_LABEL}%)
           </p>
+          {blockedReason ? (
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+              {blockedReason}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPhase("side")}
+              className="mt-4 w-full rounded-xl bg-accent py-3.5 text-sm font-medium text-white transition-transform active:scale-[0.98]"
+            >
+              Открыть сделку
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (blockedReason) {
+    return (
+      <div className="flex flex-col gap-3 px-4">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+          <p className="text-sm text-amber-700">{blockedReason}</p>
           <button
             type="button"
-            onClick={() => setPhase("side")}
-            className="mt-4 w-full rounded-xl bg-accent py-3.5 text-sm font-medium text-white transition-transform active:scale-[0.98]"
+            onClick={resetToIdle}
+            className="mt-3 text-xs text-amber-700 underline-offset-2 hover:underline"
           >
-            Открыть сделку
+            Назад
           </button>
         </div>
       </div>

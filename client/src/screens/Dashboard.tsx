@@ -7,6 +7,7 @@ import { TradeForm } from "./dashboard/TradeForm";
 import { ActiveTradeCard } from "./dashboard/ActiveTradeCard";
 import { ExternalPositionsPanel } from "./dashboard/ExternalPositionsPanel";
 import { BlockedPanel } from "./dashboard/BlockedPanel";
+import { AssetSlBlockedPanel } from "./dashboard/AssetSlBlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
 import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
 
@@ -82,7 +83,12 @@ export function Dashboard() {
   }
 
   const hasExternalPositions = data.externalPositions.length > 0;
+  // Только глобальные локи скрывают форму. assetSlLocks — отдельная плашка, форма остаётся.
   const isBlocked = !data.activeTrade && !hasExternalPositions && data.risk.activeLocks.length > 0;
+  const assetSlLocks = data.risk.assetSlLocks ?? [];
+  const selectedAssetSlLock = selectedSymbol
+    ? assetSlLocks.find((lock) => lock.symbol === selectedSymbol)
+    : undefined;
 
   return (
     <section className="flex flex-1 flex-col gap-6 pt-10">
@@ -123,6 +129,9 @@ export function Dashboard() {
           <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
         ) : (
           <>
+            {assetSlLocks.length > 0 && (
+              <AssetSlBlockedPanel locks={assetSlLocks} onExpired={loadDashboard} />
+            )}
             <AssetTabs assets={data.assets} selected={selectedSymbol} onSelect={setSelectedSymbol} />
             {selectedSymbol && (
               <TradeForm
@@ -130,6 +139,7 @@ export function Dashboard() {
                 leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
                 levelRiskUsd={data.risk.levelRiskUsd}
                 livePrice={livePrices[selectedSymbol]}
+                blockedReason={selectedAssetSlLock?.reason ?? null}
                 onOpened={(result) => {
                   setNotice(result.slWarning);
                   handleTradeUpdated({

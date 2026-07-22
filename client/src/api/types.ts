@@ -71,6 +71,7 @@ export type RiskLock = {
   type: string;
   reason: string;
   until: string;
+  symbol?: string;
 };
 
 export type RiskSnapshot = {
@@ -80,7 +81,10 @@ export type RiskSnapshot = {
   requiredR: number | null;
   dailySumR: number;
   hasActiveTrade: boolean;
+  /** Глобальные блокировки — скрывают форму. */
   activeLocks: RiskLock[];
+  /** Per-asset стопы дня — форма остаётся, вход в эти активы запрещён. */
+  assetSlLocks: RiskLock[];
 };
 
 export type DashboardResponse = {

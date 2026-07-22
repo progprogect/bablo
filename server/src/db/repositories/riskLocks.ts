@@ -12,6 +12,7 @@ const MANAGED_TYPES: BlockType[] = [
   "daily_stop_losses",
   "daily_take_profits",
   "daily_recovery_after_sl",
+  "asset_sl_today",
 ];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
@@ -31,6 +32,11 @@ export async function replaceManagedLocks(blocks: Block[]): Promise<void> {
     return;
   }
   await db.insert(riskLocks).values(
-    blocks.map((b) => ({ type: b.type, reason: b.reason, until: b.until })),
+    blocks.map((b) => ({
+      type: b.type,
+      reason: b.reason,
+      until: b.until,
+      symbol: b.symbol ?? null,
+    })),
   );
 }

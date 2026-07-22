@@ -42,12 +42,14 @@ export const riskState = pgTable("risk_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Активные блокировки открытия сделки (кулдаун, дневные лимиты). */
+/** Активные блокировки открытия сделки (кулдаун, дневные лимиты, per-asset стоп дня). */
 export const riskLocks = pgTable("risk_locks", {
   id: serial("id").primaryKey(),
   type: text("type").notNull(),
   reason: text("reason").notNull(),
   until: timestamp("until", { withTimezone: true }).notNull(),
+  /** Для asset_sl_today — символ (TIA-USDT); у глобальных локов null. */
+  symbol: text("symbol"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

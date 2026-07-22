@@ -43,6 +43,13 @@
       "when": 1784390000000,
       "tag": "0005_daily_tp_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784739000000,
+      "tag": "0006_asset_sl_day_lock",
+      "breakpoints": true
     }
   ]
 }
