@@ -1,15 +1,26 @@
 import { getPositions, type BingXCredentials } from "../bingx/client.js";
 import { ensureSeedRiskLevels, listRiskLevelDefs } from "../db/repositories/riskLevels.js";
 import { getOrCreateRiskState, updateRiskState } from "../db/repositories/riskState.js";
-import { getDailySumR, addTradeResultToDailyStats } from "../db/repositories/dailyStats.js";
+import {
+  getDailySumR,
+  addTradeResultToDailyStats,
+  replaceDailyStats,
+} from "../db/repositories/dailyStats.js";
 import { listActiveLocks, replaceManagedLocks } from "../db/repositories/riskLocks.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
-import { getActiveTrade } from "../db/repositories/trades.js";
-import { computeRiskUsd } from "../trades/math.js";
+import { getActiveTrade, listAllClosedTrades, updateTrade } from "../db/repositories/trades.js";
+import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
+import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef } from "./ladder.js";
-import { evaluateCooldownBlock, evaluateDailyLimitBlocks, pickEffectiveBlock, type Block, type BlockType } from "./limits.js";
+import {
+  evaluateCooldownBlock,
+  evaluateDailyLimitBlocks,
+  isStrongTakeProfit,
+  pickEffectiveBlock,
+  type Block,
+  type BlockType,
+} from "./limits.js";
 import { getTradingDayKey } from "./tradingDay.js";
-import { parseRRRatio } from "../trades/math.js";
 
 export class RiskBlockedError extends Error {
   constructor(
@@ -155,18 +166,12 @@ export async function recordTradeClose(input: {
   );
   await updateRiskState(stateRow.id, nextState);
 
-  /**
-   * Для дневного лимита +3R: если закрылись по TP с планом ≥ цели дня (пресет 1/3+),
-   * а фактический resultR недотянул из-за комиссий или старого недоучёта partial —
-   * в агрегат дня кладём не меньше цели. Лестница уровней выше уже получила фактический R.
-   */
-  const plannedRatio = input.rrPreset ? parseRRRatio(input.rrPreset) : null;
-  const resultRForDaily =
-    input.closeReason === "tp" &&
-    plannedRatio !== null &&
-    plannedRatio >= settings.dailyProfitLimitR
-      ? Math.max(input.resultR, settings.dailyProfitLimitR)
-      : input.resultR;
+  const resultRForDaily = resultRForDailyStats(
+    input.closeReason,
+    input.resultR,
+    input.rrPreset,
+    settings.dailyProfitLimitR,
+  );
 
   const dailyStatsRow = await addTradeResultToDailyStats(dayKey, {
     resultR: resultRForDaily,
@@ -188,4 +193,119 @@ export async function recordTradeClose(input: {
     blocks.push(cooldownBlock);
   }
   await replaceManagedLocks(blocks);
+}
+
+/**
+ * R для дневного агрегата: при тейке с планом ≥ цели дня (+3R) не меньше цели —
+ * страховка от комиссий и старого недоучёта partial.
+ */
+function resultRForDailyStats(
+  closeReason: string | null,
+  resultR: number,
+  rrPreset: string | null | undefined,
+  dailyProfitLimitR: number,
+): number {
+  const plannedRatio = rrPreset ? parseRRRatio(rrPreset) : null;
+  if (closeReason === "tp" && plannedRatio !== null && plannedRatio >= dailyProfitLimitR) {
+    return Math.max(resultR, dailyProfitLimitR);
+  }
+  return resultR;
+}
+
+/**
+ * Пересчитывает дневной агрегат и блокировки за текущий торговый день по факту
+ * закрытых сделок. Нужен, чтобы применить исправленный расчёт R (partial) и правило
+ * +3R постфактум — без ожидания новой сделки. Идемпотентно, безопасно при каждом старте.
+ */
+export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
+  dayKey: string;
+  tradesCount: number;
+  sumR: number;
+  tradesFixed: number;
+  lockTypes: string[];
+}> {
+  const settings = await getRiskSettings();
+  const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
+
+  const allClosed = await listAllClosedTrades();
+  const dayTrades = allClosed
+    .filter((trade) => {
+      if (!trade.closedAt) return false;
+      return getTradingDayKey(trade.closedAt, settings.resetHour, settings.tzOffsetMinutes) === dayKey;
+    })
+    .sort((a, b) => {
+      const aMs = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+      const bMs = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+      return aMs - bMs;
+    });
+
+  let tradesFixed = 0;
+  for (const trade of dayTrades) {
+    if (!trade.partialTpFilledAt || trade.closePrice == null) continue;
+    const closePrice = Number(trade.closePrice);
+    if (!Number.isFinite(closePrice)) continue;
+    const { resultR, resultPct } = computeResult(trade, closePrice, null);
+    const previous = trade.resultR !== null ? Number(trade.resultR) : null;
+    if (previous !== null && Math.abs(previous - resultR) < 0.01) continue;
+    await updateTrade(trade.id, { resultR, resultPct });
+    trade.resultR = String(resultR);
+    trade.resultPct = String(resultPct);
+    tradesFixed += 1;
+  }
+
+  let sumR = 0;
+  let slCount = 0;
+  let tpCount = 0;
+  let strongRecoveryAfterSl = false;
+
+  for (const trade of dayTrades) {
+    const rawResultR = trade.resultR !== null ? Number(trade.resultR) : 0;
+    if (!Number.isFinite(rawResultR)) continue;
+    const resultR = resultRForDailyStats(
+      trade.closeReason,
+      rawResultR,
+      trade.rrPreset,
+      settings.dailyProfitLimitR,
+    );
+    sumR += resultR;
+    if (trade.closeReason === "sl") slCount += 1;
+    if (trade.closeReason === "tp") {
+      tpCount += 1;
+      if (isStrongTakeProfit(resultR) && slCount > 0) {
+        strongRecoveryAfterSl = true;
+      }
+    }
+  }
+
+  await replaceDailyStats(dayKey, {
+    sumR,
+    tradesCount: dayTrades.length,
+    slCount,
+    tpCount,
+    strongRecoveryAfterSl,
+  });
+
+  const blocks: Block[] = evaluateDailyLimitBlocks(
+    now,
+    { sumR, slCount, tpCount, strongRecoveryAfterSl },
+    settings,
+  );
+  const lastClosedAt = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]!.closedAt : null;
+  const cooldownBlock = evaluateCooldownBlock(
+    now,
+    lastClosedAt ? new Date(lastClosedAt) : null,
+    settings.cooldownMinutes,
+  );
+  if (cooldownBlock) {
+    blocks.push(cooldownBlock);
+  }
+  await replaceManagedLocks(blocks);
+
+  return {
+    dayKey,
+    tradesCount: dayTrades.length,
+    sumR,
+    tradesFixed,
+    lockTypes: blocks.map((b) => b.type),
+  };
 }

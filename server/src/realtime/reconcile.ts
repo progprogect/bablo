@@ -9,9 +9,11 @@ import {
 import { getActiveTrade, updateTrade, type Trade } from "../db/repositories/trades.js";
 import { getBingxCredentials } from "../db/repositories/settings.js";
 import { eventBus } from "../events/bus.js";
-import { computeResultFromPrices, type TradeSide } from "../trades/math.js";
+import { computeResult } from "../trades/result.js";
 import { finalizeTradeClose } from "../trades/service.js";
 import type { OrderTradeUpdate } from "./accountStream.js";
+
+export { computeResult } from "../trades/result.js";
 
 const MAX_HISTORY_RANGE_MS = 7 * 24 * 60 * 60 * 1000 - 60_000; // BingX: не больше 7 дней
 
@@ -137,58 +139,6 @@ export async function findFilledSlOrTpDebug(
   }
 
   return { result: null, debug };
-}
-
-/** Экспортируется также для backfill/reclassify.ts — пересчёт результата для уже закрытых сделок. */
-export function computeResult(
-  trade: Trade,
-  closePrice: number,
-  realizedProfit: number | null,
-): { resultR: number; resultPct: number } {
-  const entryPrice = Number(trade.entryPrice);
-  const quantity = Number(trade.quantity);
-  const riskUsd = Number(trade.riskUsd) || 0;
-  const side = trade.side as TradeSide;
-  const notional = entryPrice * quantity;
-
-  /**
-   * Если частичная фиксация уже исполнилась, финальный ордер (TP/SL) закрывает только
-   * остаток (~30%). `realizedProfit` / `order.profit` с биржи — PnL ИМЕННО этого ордера,
-   * без уже зафиксированных 70%. Без сложения частичного PnL сделка 1/5 с partial 1/3
-   * могла записаться как ~1.5R вместо ~3.6R — и дневной лимит +3R не срабатывал.
-   */
-  const partialFilled = trade.partialTpFilledAt != null;
-  const partialQtyRaw = Number(trade.partialTpQuantity);
-  const partialPriceRaw =
-    Number(trade.partialTpFillPrice) || Number(trade.partialTpPrice) || NaN;
-  const partialQty =
-    Number.isFinite(partialQtyRaw) && partialQtyRaw > 0 && partialQtyRaw < quantity
-      ? partialQtyRaw
-      : null;
-  const partialPrice = Number.isFinite(partialPriceRaw) && partialPriceRaw > 0 ? partialPriceRaw : null;
-
-  if (partialFilled && partialQty !== null && partialPrice !== null) {
-    const priceDelta = (close: number) =>
-      side === "long" ? close - entryPrice : entryPrice - close;
-    const partialPnl = priceDelta(partialPrice) * partialQty;
-    const remainderQty = quantity - partialQty;
-    const remainderPnl =
-      realizedProfit !== null && Number.isFinite(realizedProfit)
-        ? realizedProfit
-        : priceDelta(closePrice) * remainderQty;
-    const totalPnl = partialPnl + remainderPnl;
-    const resultR = riskUsd > 0 ? totalPnl / riskUsd : 0;
-    const resultPct = notional > 0 ? (totalPnl / notional) * 100 : 0;
-    return { resultR, resultPct };
-  }
-
-  if (realizedProfit !== null && Number.isFinite(realizedProfit)) {
-    const resultR = riskUsd > 0 ? realizedProfit / riskUsd : 0;
-    const resultPct = notional > 0 ? (realizedProfit / notional) * 100 : 0;
-    return { resultR, resultPct };
-  }
-
-  return computeResultFromPrices(side, entryPrice, closePrice, quantity, riskUsd);
 }
 
 /**

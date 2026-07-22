@@ -13,6 +13,7 @@ import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.j
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
+import { resyncTradingDayRisk } from "../risk/service.js";
 import {
   createEquityAdjustment,
   deleteEquityAdjustment,
@@ -110,6 +111,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     // Полная диагностика — в логи (Railway), чтобы разобраться, если сделки всё равно
     // не реклассифицировались; в ответе клиенту детали тоже есть, для отображения в админке.
     request.log.info({ reclassify: result }, "reclassify-trades: диагностика по сделкам");
+    return { ok: true, ...result };
+  });
+
+  /**
+   * Пересчитать дневной агрегат и блокировки за текущий торговый день
+   * (после фикса недоучёта R при partial / правила +3R).
+   */
+  app.post("/admin/resync-daily-limits", async (request) => {
+    const result = await resyncTradingDayRisk();
+    request.log.info({ resync: result }, "resync-daily-limits");
     return { ok: true, ...result };
   });
 

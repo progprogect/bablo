@@ -2,7 +2,7 @@ import { buildApp } from "./app.js";
 import { env } from "./config/env.js";
 import { runMigrations } from "./db/runMigrations.js";
 import { ensureSeedAssets } from "./db/repositories/assets.js";
-import { ensureRiskSeeded } from "./risk/service.js";
+import { ensureRiskSeeded, resyncTradingDayRisk } from "./risk/service.js";
 import { startRealtime } from "./realtime/manager.js";
 
 const app = buildApp();
@@ -34,7 +34,17 @@ async function bootstrap() {
     app.log.error({ error }, "Не удалось запустить реалтайм-стримы BingX");
   }
 
-
+  // Пересчитать дневные лимиты по уже закрытым сделкам текущего дня (идемпотентно).
+  // Нужно, чтобы фикс недоучёта R при partial и правило +3R применились сразу после
+  // деплоя, без ожидания новой сделки.
+  try {
+    const result = await resyncTradingDayRisk();
+    if (result.lockTypes.length > 0 || result.tradesFixed > 0) {
+      app.log.info({ resync: result }, "Дневные лимиты пересчитаны при старте");
+    }
+  } catch (error) {
+    app.log.error({ error }, "Не удалось пересчитать дневные лимиты при старте (некритично)");
+  }
 }
 
 bootstrap().catch((error) => {

@@ -105,6 +105,20 @@ export const reclassifyTrades = () =>
     { method: "POST", body: JSON.stringify({}) },
   );
 
+/**
+ * Пересчитать дневной агрегат и блокировки за текущий торговый день
+ * (после фикса недоучёта R при partial / правила +3R).
+ */
+export const resyncDailyLimits = () =>
+  request<{
+    ok: boolean;
+    dayKey: string;
+    tradesCount: number;
+    sumR: number;
+    tradesFixed: number;
+    lockTypes: string[];
+  }>("/admin/resync-daily-limits", { method: "POST", body: JSON.stringify({}) });
+
 // --- Админка: корректировки баланса (пополнения/выводы) ---
 
 export type EquityAdjustment = {

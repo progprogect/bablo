@@ -73,3 +73,44 @@ export async function addTradeResultToDailyStats(
   }
   return updated;
 }
+
+/**
+ * Полностью перезаписывает дневной агрегат (для resync после исправления расчёта R).
+ */
+export async function replaceDailyStats(
+  dateKey: string,
+  values: {
+    sumR: number;
+    tradesCount: number;
+    slCount: number;
+    tpCount: number;
+    strongRecoveryAfterSl: boolean;
+  },
+): Promise<DailyStatsRow> {
+  const db = getDb();
+  const existing = await getDailyStats(dateKey);
+  const payload = {
+    sumR: String(values.sumR),
+    tradesCount: values.tradesCount,
+    slCount: values.slCount,
+    tpCount: values.tpCount,
+    strongRecoveryAfterSl: values.strongRecoveryAfterSl,
+  };
+
+  if (!existing) {
+    const [created] = await db
+      .insert(dailyStats)
+      .values({ date: dateKey, ...payload })
+      .returning();
+    if (!created) throw new Error("Не удалось создать daily_stats");
+    return created;
+  }
+
+  const [updated] = await db
+    .update(dailyStats)
+    .set(payload)
+    .where(eq(dailyStats.date, dateKey))
+    .returning();
+  if (!updated) throw new Error("Не удалось обновить daily_stats");
+  return updated;
+}

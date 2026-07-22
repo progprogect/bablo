@@ -3,6 +3,7 @@ import {
   ApiError,
   getBingxKeyStatus,
   reclassifyTrades,
+  resyncDailyLimits,
   resetAccountData,
   saveBingxKey,
   type ReclassifyTradeDetail,
@@ -34,6 +35,9 @@ export function BingxKeysSection() {
   const [reclassifyError, setReclassifyError] = useState<string | null>(null);
   const [reclassifySuccess, setReclassifySuccess] = useState<string | null>(null);
   const [reclassifyDetails, setReclassifyDetails] = useState<ReclassifyTradeDetail[] | null>(null);
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [resyncError, setResyncError] = useState<string | null>(null);
+  const [resyncSuccess, setResyncSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -115,6 +119,26 @@ export function BingxKeysSection() {
     }
   }
 
+  async function handleResyncDaily() {
+    setResyncError(null);
+    setResyncSuccess(null);
+    setIsResyncing(true);
+    try {
+      const result = await resyncDailyLimits();
+      const locks =
+        result.lockTypes.length > 0 ? result.lockTypes.join(", ") : "нет активных блокировок";
+      setResyncSuccess(
+        `День ${result.dayKey}: ${result.tradesCount} сделок, сумма ${result.sumR.toFixed(2)}R` +
+          (result.tradesFixed > 0 ? `, исправлено R у ${result.tradesFixed}` : "") +
+          ` → ${locks}`,
+      );
+    } catch (err) {
+      setResyncError(err instanceof ApiError ? err.message : "Не удалось пересчитать дневные лимиты");
+    } finally {
+      setIsResyncing(false);
+    }
+  }
+
   return (
     <section className="flex flex-col gap-3 border-b border-line pb-6">
       <div>
@@ -179,6 +203,23 @@ export function BingxKeysSection() {
             </pre>
           </details>
         )}
+      </div>
+
+      <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
+        <p className="text-xs text-slate-500">
+          Пересчитать дневные лимиты за сегодня (сумма R, блокировки +3R / 2 стопа / 2 тейка) —
+          после исправления расчёта с частичной фиксацией.
+        </p>
+        <button
+          type="button"
+          disabled={isResyncing}
+          onClick={handleResyncDaily}
+          className="self-start rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
+        >
+          {isResyncing ? "Пересчитываю…" : "Пересчитать дневные лимиты"}
+        </button>
+        {resyncError && <p className="text-xs text-red-600">{resyncError}</p>}
+        {resyncSuccess && <p className="text-xs text-emerald-600">{resyncSuccess}</p>}
       </div>
 
       <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">

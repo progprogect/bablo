@@ -1,6 +1,7 @@
 import type { BingXCredentials } from "../bingx/client.js";
 import { listExternallyClosedTrades, updateTrade } from "../db/repositories/trades.js";
-import { computeResult, findFilledSlOrTpDebug } from "../realtime/reconcile.js";
+import { findFilledSlOrTpDebug } from "../realtime/reconcile.js";
+import { computeResult } from "./result.js";
 
 export type ReclassifyTradeDetail = {
   tradeId: number;
