@@ -117,7 +117,7 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
           <li>
             Чаще убыточные сделки в:{" "}
             {insights.topStopHours
-              .map((bucket) => `${formatHourShort(bucket.hour)} (${bucket.count})`)
+              .map((bucket) => `${formatHourShort(bucket.hour)} — ${bucket.slCount}/${bucket.total} SL`)
               .join(", ")}
           </li>
         )}

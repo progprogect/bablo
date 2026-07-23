@@ -23,7 +23,7 @@ export type PresetOutcome = {
   avgSlResultR: number;
 };
 
-export type HourBucketStat = { hour: number; total: number; tpCount: number };
+export type HourBucketStat = { hour: number; total: number; tpCount: number; slCount: number };
 
 export type TradeInsights = {
   /**
@@ -32,8 +32,11 @@ export type TradeInsights = {
    * сделки). Топ-3 по числу сделок, закрытых по тейку.
    */
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
-  /** Часы открытия, после которых сделка чаще всего закрывалась по стопу (топ-2, только ненулевые). */
-  topStopHours: { hour: number; count: number }[];
+  /**
+   * Часы открытия, в которые не меньше половины открытых сделок закрылись по стопу
+   * (slRate ≥ 50% — зеркало прибыльных часов). Топ-3 по числу стопов. Формат: `14ч — 3/3 SL`.
+   */
+  topStopHours: { hour: number; slCount: number; total: number }[];
   /**
    * % прибыльности по каждому активу с хотя бы одной закрытой сделкой:
    * доля closeReason === "tp" среди всех сделок актива. Сортировка: hitRate ↓, затем total ↓.
@@ -56,15 +59,11 @@ export type TradeInsights = {
 const HOURS_IN_DAY = 24;
 
 function emptyHourBuckets(): HourBucketStat[] {
-  return Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({ hour, total: 0, tpCount: 0 }));
+  return Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({ hour, total: 0, tpCount: 0, slCount: 0 }));
 }
 
-function bucketByOpenHour(
-  trades: InsightTradeInput[],
-  tzOffsetMinutes: number,
-): { buckets: HourBucketStat[]; slCountsByHour: number[] } {
+function bucketByOpenHour(trades: InsightTradeInput[], tzOffsetMinutes: number): HourBucketStat[] {
   const buckets = emptyHourBuckets();
-  const slCountsByHour = Array.from({ length: HOURS_IN_DAY }, () => 0);
 
   for (const trade of trades) {
     if (trade.resultR === null) continue;
@@ -75,11 +74,11 @@ function bucketByOpenHour(
       bucket.tpCount += 1;
     }
     if (trade.closeReason === "sl") {
-      slCountsByHour[hour] = (slCountsByHour[hour] ?? 0) + 1;
+      bucket.slCount += 1;
     }
   }
 
-  return { buckets, slCountsByHour };
+  return buckets;
 }
 
 /** "Прибыльный час" — не меньше половины сделок, открытых в этот час, дошли до тейка. */
@@ -91,12 +90,13 @@ function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsi
     .map((bucket) => ({ hour: bucket.hour, tpCount: bucket.tpCount, total: bucket.total }));
 }
 
-function topStopHours(slCountsByHour: number[], limit: number): TradeInsights["topStopHours"] {
-  return slCountsByHour
-    .map((count, hour) => ({ hour, count }))
-    .filter((bucket) => bucket.count > 0)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
+/** "Убыточный час" — не меньше половины сделок, открытых в этот час, закрылись по стопу. */
+function topStopHours(buckets: HourBucketStat[], limit: number): TradeInsights["topStopHours"] {
+  return buckets
+    .filter((bucket) => bucket.total > 0 && bucket.slCount / bucket.total >= 0.5)
+    .sort((a, b) => b.slCount - a.slCount)
+    .slice(0, limit)
+    .map((bucket) => ({ hour: bucket.hour, slCount: bucket.slCount, total: bucket.total }));
 }
 
 /** % прибыльности по каждому активу: tpCount/total среди сделок с известным resultR. */
@@ -278,10 +278,10 @@ export function computeTradeInsights(
   tzOffsetMinutes: number,
   dailyProfitLimitR: number,
 ): TradeInsights {
-  const { buckets, slCountsByHour } = bucketByOpenHour(trades, tzOffsetMinutes);
+  const buckets = bucketByOpenHour(trades, tzOffsetMinutes);
   return {
     topProfitableHours: topProfitableHours(buckets, 3),
-    topStopHours: topStopHours(slCountsByHour, 2),
+    topStopHours: topStopHours(buckets, 3),
     assetOutcomes: assetOutcomes(trades),
     topStopAssets: topStopAssets(trades, 2),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),
