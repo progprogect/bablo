@@ -10,7 +10,7 @@ import { getActiveTrade, updateTrade, type Trade } from "../db/repositories/trad
 import { getBingxCredentials } from "../db/repositories/settings.js";
 import { eventBus } from "../events/bus.js";
 import { computeResult } from "../trades/result.js";
-import { finalizeTradeClose } from "../trades/service.js";
+import { finalizeTradeClose, moveStopLossToOneRAfterPartialOneToThree } from "../trades/service.js";
 import type { OrderTradeUpdate } from "./accountStream.js";
 
 export { computeResult } from "../trades/result.js";
@@ -159,7 +159,8 @@ export async function reconcileOrderUpdate(order: OrderTradeUpdate): Promise<voi
   if (!isSl && !isTp && !isPartialTp) return;
 
   // Частичная фиксация закрывает только часть объёма — сделка остаётся активной,
-  // SL и основной TP на остаток продолжают действовать (см. docs/PROJECT.md).
+  // основной TP на остаток продолжает действовать. Если partial была на ≈1/3 —
+  // подтягиваем SL на R/R 1/1 (вариант B, docs/PROJECT.md).
   if (isPartialTp) {
     const fillPrice = order.ap && Number(order.ap) > 0 ? Number(order.ap) : Number(trade.partialTpPrice) || null;
     await updateTrade(trade.id, {
@@ -168,6 +169,13 @@ export async function reconcileOrderUpdate(order: OrderTradeUpdate): Promise<voi
     }).catch(() => {
       // best-effort — статус частичной фиксации не критичен для риск-движка
     });
+    const moveResult = await moveStopLossToOneRAfterPartialOneToThree(trade.id).catch((error) => {
+      console.error("[realtime] не удалось подтянуть SL после partial:", error);
+      return { moved: false, warning: "ошибка подтягивания SL" };
+    });
+    if (moveResult.warning && !moveResult.moved) {
+      console.warn("[realtime] SL после partial не подтянут:", moveResult.warning);
+    }
     eventBus.emitTyped("refresh", { reason: "trade.partialFilled" });
     return;
   }

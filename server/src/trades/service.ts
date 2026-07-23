@@ -35,6 +35,7 @@ import {
   computeRiskUsd,
   computeTakeProfitPrice,
   decimalsOf,
+  decideMoveSlAfterPartialOneToThree,
   isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
@@ -470,6 +471,98 @@ export async function setTradeCloseReasonManual(
 
 export async function listTradesNeedingCloseReason(): Promise<Trade[]> {
   return listUnclassifiedClosedTrades();
+}
+
+/**
+ * После исполненной partial на ≈1/3: заменить SL на стоп по R/R 1/1 на остаток объёма
+ * (лонг — стоп выше входа, шорт — ниже). Идемпотентно: если SL уже на стороне прибыли —
+ * ничего не делает. Не бросает наружу при сбое биржи — возвращает warning (сделка жива).
+ */
+export async function moveStopLossToOneRAfterPartialOneToThree(
+  tradeId: number,
+): Promise<{ moved: boolean; warning: string | null }> {
+  const trade = await getTradeById(tradeId);
+  if (!trade || trade.status !== "active") {
+    return { moved: false, warning: "активная сделка не найдена" };
+  }
+
+  const decision = decideMoveSlAfterPartialOneToThree({
+    side: trade.side as TradeSide,
+    entryPrice: Number(trade.entryPrice),
+    slPrice: Number(trade.slPrice),
+    partialTpPrice: trade.partialTpPrice !== null ? Number(trade.partialTpPrice) : null,
+    partialTpFilledAt: trade.partialTpFilledAt,
+    quantity: Number(trade.quantity),
+    partialTpQuantity: trade.partialTpQuantity !== null ? Number(trade.partialTpQuantity) : null,
+  });
+
+  if (decision.action === "skip") {
+    return { moved: false, warning: decision.reason };
+  }
+
+  const credentials = await getBingxCredentials();
+  if (!credentials) {
+    return { moved: false, warning: "нет ключей BingX — SL не подтянут" };
+  }
+
+  const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
+  const exitSide: OrderSide = trade.side === "long" ? "SELL" : "BUY";
+  const oldSlId = orderIds.sl;
+
+  if (oldSlId !== undefined) {
+    try {
+      await cancelOrder(credentials, trade.symbol, oldSlId);
+    } catch (error) {
+      // Ордер мог уже исчезнуть после partial — пробуем всё равно выставить новый.
+      console.warn(
+        "[trades] не удалось отменить старый SL перед подтягиванием на 1/1:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  try {
+    const slOrder = await placeOrder(credentials, {
+      symbol: trade.symbol,
+      side: exitSide,
+      type: "STOP_MARKET",
+      stopPrice: decision.newSlPrice,
+      quantity: decision.remainderQuantity,
+      reduceOnly: true,
+    });
+
+    const nextOrderIds = { ...orderIds, sl: slOrder.orderId };
+    await updateTrade(trade.id, {
+      slPrice: decision.newSlPrice,
+      bingxOrderIds: nextOrderIds,
+    });
+    eventBus.emitTyped("refresh", { reason: "trade.slMovedAfterPartial" });
+    return { moved: true, warning: null };
+  } catch (error) {
+    const message = bingxMessage(
+      error,
+      "Не удалось выставить SL на 1/1 после partial — проверьте стоп на BingX вручную",
+    );
+    console.error("[trades] moveStopLossToOneRAfterPartialOneToThree:", message);
+    return { moved: false, warning: message };
+  }
+}
+
+/**
+ * Для уже открытой сделки: если partial на 1/3 уже исполнена, а SL ещё исходный —
+ * подтянуть на 1/1. Вызывается при старте сервера (деплой) без поллинга.
+ */
+export async function repairActiveTradeSlAfterPartial(): Promise<{
+  attempted: boolean;
+  moved: boolean;
+  warning: string | null;
+}> {
+  const trade = await getActiveTrade();
+  if (!trade || !trade.partialTpFilledAt) {
+    return { attempted: false, moved: false, warning: null };
+  }
+  const result = await moveStopLossToOneRAfterPartialOneToThree(trade.id);
+  return { attempted: true, ...result };
 }
 
 /**

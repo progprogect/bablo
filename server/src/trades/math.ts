@@ -110,6 +110,104 @@ export function isPartialTakeProfitWithinMaxRatio(
 }
 
 /**
+ * Целевое R/R частичной фиксации, после которого подтягиваем SL на 1/1 (вариант B).
+ * Совпадает с потолком partial (1/3).
+ */
+export const PARTIAL_TP_TRIGGER_MOVE_SL_RATIO = PARTIAL_TP_MAX_RATIO;
+
+/** Новый стоп после partial на 1/3 — защита остатка на +1R. */
+export const SL_AFTER_PARTIAL_RATIO = 1;
+
+/**
+ * Допуск при сравнении фактического R/R partial с целевым 1/3.
+ * 0.2 отделяет 1/3 (3) от 1/2 (2) и 1/1 (1) с запасом на округление цены.
+ */
+export const PARTIAL_RATIO_MATCH_EPSILON = 0.2;
+
+/** Partial-цена близка к заданному R/R (для правила «только 1/3»). */
+export function isPartialTakeProfitNearRatio(
+  entryPrice: number,
+  slPrice: number,
+  partialTpPrice: number,
+  targetRatio: number,
+  epsilon: number = PARTIAL_RATIO_MATCH_EPSILON,
+): boolean {
+  const ratio = computeRiskRewardRatio(entryPrice, slPrice, partialTpPrice);
+  if (ratio === null) return false;
+  return Math.abs(ratio - targetRatio) <= epsilon;
+}
+
+/**
+ * SL уже на стороне прибыли относительно входа (безубыток или +1R) —
+ * значит подтягивание после partial уже сделано (или стоп не исходный защитный).
+ */
+export function isStopOnProfitSide(entryPrice: number, slPrice: number, side: TradeSide): boolean {
+  return side === "long" ? slPrice >= entryPrice : slPrice <= entryPrice;
+}
+
+/** Остаток объёма после partial (неотрицательный). */
+export function computeRemainderQuantity(totalQuantity: number, partialQuantity: number): number {
+  if (!(totalQuantity > 0)) return 0;
+  const remainder = totalQuantity - Math.max(0, partialQuantity);
+  return remainder > 0 ? remainder : 0;
+}
+
+/**
+ * Решение: нужно ли после исполненной partial на ~1/3 заменить SL на 1/1.
+ * Чистая функция без I/O — покрывается тестами; I/O живёт в trades/service.
+ */
+export type MoveSlAfterPartialDecision =
+  | { action: "skip"; reason: string }
+  | { action: "move"; newSlPrice: number; remainderQuantity: number };
+
+export function decideMoveSlAfterPartialOneToThree(input: {
+  side: TradeSide;
+  entryPrice: number;
+  slPrice: number;
+  partialTpPrice: number | null;
+  partialTpFilledAt: Date | string | null;
+  quantity: number;
+  partialTpQuantity: number | null;
+}): MoveSlAfterPartialDecision {
+  if (!input.partialTpFilledAt) {
+    return { action: "skip", reason: "частичная фиксация ещё не исполнена" };
+  }
+  if (input.partialTpPrice === null || !(input.partialTpPrice > 0)) {
+    return { action: "skip", reason: "нет цены частичной фиксации" };
+  }
+  if (!(input.entryPrice > 0) || !(input.slPrice > 0)) {
+    return { action: "skip", reason: "нет валидных entry/SL" };
+  }
+  if (isStopOnProfitSide(input.entryPrice, input.slPrice, input.side)) {
+    return { action: "skip", reason: "SL уже на стороне прибыли (уже подтянут)" };
+  }
+  if (
+    !isPartialTakeProfitNearRatio(
+      input.entryPrice,
+      input.slPrice,
+      input.partialTpPrice,
+      PARTIAL_TP_TRIGGER_MOVE_SL_RATIO,
+    )
+  ) {
+    return { action: "skip", reason: "частичная фиксация не на R/R ≈ 1/3" };
+  }
+
+  const partialQty = input.partialTpQuantity ?? 0;
+  const remainderQuantity = computeRemainderQuantity(input.quantity, partialQty);
+  if (!(remainderQuantity > 0)) {
+    return { action: "skip", reason: "нет остатка объёма для нового SL" };
+  }
+
+  const newSlPrice = computeTakeProfitPrice(
+    input.entryPrice,
+    input.slPrice,
+    input.side,
+    SL_AFTER_PARTIAL_RATIO,
+  );
+  return { action: "move", newSlPrice, remainderQuantity };
+}
+
+/**
  * Кол-во монет для частичного закрытия — та же точность (кол-во знаков после запятой),
  * что и у объёма всей позиции, иначе биржа отклонит ордер за несоответствие lot size.
  * Остаток (для основного TP) считается вычитанием, а не отдельным round — так сумма

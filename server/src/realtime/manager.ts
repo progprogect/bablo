@@ -2,6 +2,7 @@ import { listActiveAssets } from "../db/repositories/assets.js";
 import { getBingxCredentials } from "../db/repositories/settings.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
+import { repairActiveTradeSlAfterPartial } from "../trades/service.js";
 import { startTracking } from "../tracker/activeTradeTracker.js";
 import { startAccountStream, stopAccountStream } from "./accountStream.js";
 import { setMarketStreamSymbols, startMarketStream } from "./marketStream.js";
@@ -29,6 +30,19 @@ export async function startRealtime(): Promise<void> {
   const activeTrade = await getActiveTrade().catch(() => null);
   if (activeTrade) {
     startTracking(activeTrade);
+  }
+
+  // Если partial на 1/3 уже исполнилась до рестарта, а SL ещё не на 1/1 — подтянуть сейчас.
+  // Без поллинга: одноразово по событию старта (деплой / рестарт).
+  try {
+    const repair = await repairActiveTradeSlAfterPartial();
+    if (repair.attempted && repair.moved) {
+      console.info("[realtime] SL подтянут на 1/1 после partial (repair при старте)");
+    } else if (repair.attempted && repair.warning) {
+      console.warn("[realtime] repair SL после partial:", repair.warning);
+    }
+  } catch (error) {
+    console.error("[realtime] repairActiveTradeSlAfterPartial не удался:", error);
   }
 }
 

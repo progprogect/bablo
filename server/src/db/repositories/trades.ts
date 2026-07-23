@@ -52,6 +52,7 @@ export async function createTrade(input: CreateTradeInput): Promise<Trade> {
 
 export type UpdateTradeInput = Partial<{
   tpPrice: number;
+  slPrice: number;
   rrPreset: string;
   partialTpPrice: number;
   partialTpPercent: number;
@@ -71,6 +72,7 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   const db = getDb();
   const patch: Record<string, unknown> = {};
   if (input.tpPrice !== undefined) patch.tpPrice = String(input.tpPrice);
+  if (input.slPrice !== undefined) patch.slPrice = String(input.slPrice);
   if (input.rrPreset !== undefined) patch.rrPreset = input.rrPreset;
   if (input.partialTpPrice !== undefined) patch.partialTpPrice = String(input.partialTpPrice);
   if (input.partialTpPercent !== undefined) patch.partialTpPercent = String(input.partialTpPercent);
