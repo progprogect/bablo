@@ -16,11 +16,18 @@ import {
   createTrade,
   getActiveTrade,
   getTradeById,
+  listUnclassifiedClosedTrades,
   updateTrade,
   type Trade,
 } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
-import { checkCanOpenTrade, checkVolumeRisk, recordTradeClose, RiskBlockedError } from "../risk/service.js";
+import {
+  checkCanOpenTrade,
+  checkVolumeRisk,
+  recordTradeClose,
+  resyncTradingDayRisk,
+  RiskBlockedError,
+} from "../risk/service.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
   computePartialTpQuantity,
@@ -419,6 +426,50 @@ export async function finalizeTradeClose(
   stopTracking();
   eventBus.emitTyped("refresh", { reason: "trade.closed" });
   return updated;
+}
+
+const UNCLASSIFIED_CLOSE_REASONS = new Set(["external", "manual"]);
+
+/**
+ * Ручная атрибуция закрытия: админ помечает сделку без SL/TP (external/manual) как стоп
+ * или тейк. resultR уже зафиксирован при закрытии — лестницу не трогаем повторно.
+ * Дневные счётчики/локи пересобираем через resyncTradingDayRisk.
+ */
+export async function setTradeCloseReasonManual(
+  tradeId: number,
+  closeReason: "sl" | "tp",
+): Promise<Trade> {
+  const trade = await getTradeById(tradeId);
+  if (!trade) {
+    throw new TradeError("Сделка не найдена", 404);
+  }
+  if (trade.status !== "closed") {
+    throw new TradeError("Можно менять причину только у закрытой сделки", 409);
+  }
+  if (!trade.closeReason || !UNCLASSIFIED_CLOSE_REASONS.has(trade.closeReason)) {
+    throw new TradeError(
+      "Причину можно задать только для сделок без SL/TP (закрытых на бирже или вручную)",
+      409,
+    );
+  }
+  if (trade.closeReason === closeReason) {
+    return trade;
+  }
+
+  const updated = await updateTrade(tradeId, { closeReason });
+  if (!updated) {
+    throw new TradeError("Не удалось обновить сделку", 500);
+  }
+
+  await resyncTradingDayRisk().catch(() => {
+    // инсайты уже увидят новый closeReason; локи можно добить кнопкой в админке
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.reclassified" });
+  return updated;
+}
+
+export async function listTradesNeedingCloseReason(): Promise<Trade[]> {
+  return listUnclassifiedClosedTrades();
 }
 
 /**

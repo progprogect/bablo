@@ -119,6 +119,15 @@ export const resyncDailyLimits = () =>
     lockTypes: string[];
   }>("/admin/resync-daily-limits", { method: "POST", body: JSON.stringify({}) });
 
+/** Сделки без SL/TP (external/manual) — для ручной атрибуции в админке. */
+export const getUnclassifiedTrades = () => request<Trade[]>("/admin/trades/unclassified");
+
+export const setTradeCloseReasonRequest = (tradeId: number, closeReason: "sl" | "tp") =>
+  request<Trade>(`/admin/trades/${tradeId}/close-reason`, {
+    method: "POST",
+    body: JSON.stringify({ closeReason }),
+  });
+
 // --- Админка: корректировки баланса (пополнения/выводы) ---
 
 export type EquityAdjustment = {

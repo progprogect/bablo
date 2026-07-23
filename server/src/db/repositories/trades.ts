@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { trades } from "../schema.js";
 import type { TradeSide } from "../../trades/math.js";
@@ -178,4 +178,18 @@ export async function listExternallyClosedTrades(): Promise<Trade[]> {
     .select()
     .from(trades)
     .where(and(eq(trades.status, "closed"), eq(trades.closeReason, "external")));
+}
+
+/**
+ * Закрытые сделки без атрибуции SL/TP — закрыты на бирже мимо приложения (`external`)
+ * или вручную через Bablo (`manual`). Админ может вручную проставить sl/tp для инсайтов
+ * и дневных лимитов.
+ */
+export async function listUnclassifiedClosedTrades(): Promise<Trade[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.status, "closed"), inArray(trades.closeReason, ["external", "manual"])))
+    .orderBy(desc(trades.closedAt));
 }

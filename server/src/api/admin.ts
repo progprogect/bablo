@@ -13,6 +13,11 @@ import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.j
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
+import {
+  listTradesNeedingCloseReason,
+  setTradeCloseReasonManual,
+  TradeError,
+} from "../trades/service.js";
 import { resyncTradingDayRisk } from "../risk/service.js";
 import {
   createEquityAdjustment,
@@ -123,6 +128,40 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     request.log.info({ resync: result }, "resync-daily-limits");
     return { ok: true, ...result };
   });
+
+  /**
+   * Сделки без атрибуции SL/TP (external / manual) — для ручной пометки в админке.
+   * Это закрытия, обнаруженные на BingX постфактум или сделанные кнопкой «Закрыть»,
+   * а не через срабатывание наших SL/TP-ордеров.
+   */
+  app.get("/admin/trades/unclassified", async () => {
+    return listTradesNeedingCloseReason();
+  });
+
+  app.post<{ Params: { id: string }; Body: { closeReason?: string } }>(
+    "/admin/trades/:id/close-reason",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id)) {
+        reply.code(400).send({ error: "Некорректный id" });
+        return;
+      }
+      const closeReason = request.body?.closeReason;
+      if (closeReason !== "sl" && closeReason !== "tp") {
+        reply.code(400).send({ error: "Укажите closeReason: 'sl' или 'tp'" });
+        return;
+      }
+      try {
+        return await setTradeCloseReasonManual(id, closeReason);
+      } catch (error) {
+        if (error instanceof TradeError) {
+          reply.code(error.status).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+    },
+  );
 
   // --- Активы ---
 
