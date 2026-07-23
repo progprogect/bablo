@@ -64,6 +64,21 @@ function computePotentialPnl(trade: ActiveTradeView, targetPrice: number): numbe
   return delta * qty;
 }
 
+/**
+ * Профит именно с частичной фиксации 70% — считаем по partialTpQuantity (или 70% объёма),
+ * а не по всей позиции: иначе цифра совпадала бы с полным TP и вводила в заблуждение.
+ */
+function computePartialPotentialPnl(trade: ActiveTradeView, targetPrice: number): number | null {
+  const entry = Number(trade.entryPrice);
+  const partialQty =
+    trade.partialTpQuantity !== null && trade.partialTpQuantity !== undefined
+      ? Number(trade.partialTpQuantity)
+      : Number(trade.quantity) * 0.7;
+  if (!Number.isFinite(entry) || !Number.isFinite(partialQty) || !(partialQty > 0)) return null;
+  const delta = trade.side === "long" ? targetPrice - entry : entry - targetPrice;
+  return delta * partialQty;
+}
+
 export function ActiveTradeCard({
   trade,
   livePrice,
@@ -95,6 +110,9 @@ export function ActiveTradeCard({
   const marginUsd = computeMarginUsd(trade);
   const potentialLossAtSl = trade.slPrice ? computePotentialPnl(trade, Number(trade.slPrice)) : null;
   const potentialProfitAtTp = trade.tpPrice ? computePotentialPnl(trade, Number(trade.tpPrice)) : null;
+  const potentialProfitAtPartial = trade.partialTpPrice
+    ? computePartialPotentialPnl(trade, Number(trade.partialTpPrice))
+    : null;
 
   // После настройки TP сделка полностью готова — дальше просто ждём SL/TP, без кнопок,
   // которые создавали бы соблазн что-то вручную докрутить. Кнопка закрытия остаётся только
@@ -173,7 +191,10 @@ export function ActiveTradeCard({
 
       {trade.partialTpPrice && (
         <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 text-xs">
-          <span className="text-ink">Частичная фиксация {formatPrice(trade.partialTpPrice)} · 70%</span>
+          <span className="text-ink">
+            Частичная фиксация {formatPrice(trade.partialTpPrice)} · 70%
+            {potentialProfitAtPartial !== null ? ` / ${formatSignedUsd(potentialProfitAtPartial)}` : ""}
+          </span>
           <span className={trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}>
             {trade.partialTpFilledAt ? `исполнена по ${formatPrice(trade.partialTpFillPrice)}` : "ожидает"}
           </span>
