@@ -25,6 +25,13 @@ function formatAssetOutcome(entry: { symbol: string; tpCount: number; totalTrade
   return `${displaySymbol(entry.symbol)} - ${entry.tpCount}/${entry.totalTrades} TP (${hitPct}%)`;
 }
 
+/** «2ч - 7ч» или одно значение, если все тейки 1/3 шли одинаково по длительности. */
+function formatRrHoldDuration(entry: NonNullable<TradeInsights["rrHoldDuration"]>): string {
+  const range =
+    entry.minHours === entry.maxHours ? `${entry.minHours}ч` : `${entry.minHours}ч - ${entry.maxHours}ч`;
+  return `Среднее время отработки сделки R/R ${entry.preset}: ${range}`;
+}
+
 /** Список пресетов R/R с раскрытием по кнопке, если он не влезает в отведённый лимит. */
 function PresetOutcomesList({ items, limit }: { items: PresetOutcome[]; limit: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -63,6 +70,7 @@ const VISIBLE_PRESETS_LIMIT = 2;
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
   const assetOutcomes = insights.assetOutcomes ?? [];
   const topStopAssets = insights.topStopAssets ?? [];
+  const rrHoldDuration = insights.rrHoldDuration ?? null;
 
   const hasAnyData =
     insights.topProfitableHours.length > 0 ||
@@ -70,6 +78,7 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
     assetOutcomes.length > 0 ||
     topStopAssets.length > 0 ||
     insights.dailyTargetHour !== null ||
+    rrHoldDuration !== null ||
     insights.presetOutcomes.length > 0;
 
   if (!hasAnyData) return null;
@@ -90,7 +99,7 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
         {assetOutcomes.length > 0 && (
           <li>
             <div className="flex flex-col gap-1">
-              <p>% прибыльности активов:</p>
+              <p>% прибыльности:</p>
               {assetOutcomes.map((entry) => (
                 <p key={entry.symbol}>{formatAssetOutcome(entry)}</p>
               ))}
@@ -128,6 +137,8 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
             {pad2(insights.dailyTargetHour.hour)}:00
           </li>
         )}
+
+        {rrHoldDuration && <li>{formatRrHoldDuration(rrHoldDuration)}</li>}
       </ul>
     </div>
   );

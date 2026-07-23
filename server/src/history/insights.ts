@@ -43,6 +43,12 @@ export type TradeInsights = {
   topStopAssets: { symbol: string; count: number }[];
   /** Типичный (медианный) час, к которому в удачные дни достигается дневная цель +targetR. Null, если цель ни разу не была достигнута. */
   dailyTargetHour: { targetR: number; hour: number } | null;
+  /**
+   * Диапазон времени «отработки» пресета R/R 1/3: от открытия до закрытия по тейку.
+   * min/max по часам среди сделок с rrPreset === "1/3" и closeReason === "tp".
+   * Нужен, чтобы не сидеть в графике — понимать, сколько обычно ждёт 1/3.
+   */
+  rrHoldDuration: { preset: string; minHours: number; maxHours: number; sampleCount: number } | null;
   /** Статистика по пресетам R/R (1/1, 1/2…) среди сделок, у которых пресет был задан — см. presetOutcomes(). */
   presetOutcomes: PresetOutcome[];
 };
@@ -221,6 +227,46 @@ function dailyTargetHour(
   return { targetR, hour };
 }
 
+/** Пресет, для которого показываем типичное время «дожития» до тейка в подсказке. */
+export const HOLD_DURATION_PRESET = "1/3";
+
+/**
+ * Округление длительности до целых часов (≥ 1), чтобы в подсказке было «2ч - 7ч»,
+ * а не минуты — достаточно для спокойствия «сделка может идти часами».
+ */
+export function durationMsToHours(ms: number): number {
+  if (!(ms > 0) || !Number.isFinite(ms)) return 1;
+  return Math.max(1, Math.round(ms / 3_600_000));
+}
+
+/**
+ * Диапазон времени отработки R/R 1/3: только сделки, реально дошедшие до тейка с этим
+ * пресетом. SL/manual/external не считаем — это не «отработка» плана 1/3.
+ * Нужно ≥ 1 такой сделки; при одной — min === max.
+ */
+function rrHoldDuration(trades: InsightTradeInput[]): TradeInsights["rrHoldDuration"] {
+  const durationsMs: number[] = [];
+
+  for (const trade of trades) {
+    if (trade.rrPreset !== HOLD_DURATION_PRESET) continue;
+    if (trade.closeReason !== "tp") continue;
+    if (!trade.closedAt) continue;
+    const ms = trade.closedAt.getTime() - trade.openedAt.getTime();
+    if (!(ms > 0)) continue;
+    durationsMs.push(ms);
+  }
+
+  if (durationsMs.length === 0) return null;
+
+  const hours = durationsMs.map(durationMsToHours);
+  return {
+    preset: HOLD_DURATION_PRESET,
+    minHours: Math.min(...hours),
+    maxHours: Math.max(...hours),
+    sampleCount: hours.length,
+  };
+}
+
 /**
  * Инсайты по истории сделок для карточки-подсказки на экране "Сделки" (docs/PROJECT.md).
  * Все метрики считаются по времени ОТКРЫТИЯ (решение войти принимается в этот момент),
@@ -239,6 +285,7 @@ export function computeTradeInsights(
     assetOutcomes: assetOutcomes(trades),
     topStopAssets: topStopAssets(trades, 2),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),
+    rrHoldDuration: rrHoldDuration(trades),
     presetOutcomes: presetOutcomes(trades),
   };
 }

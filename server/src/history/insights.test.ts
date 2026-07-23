@@ -41,6 +41,7 @@ test("computeTradeInsights: пустой список — всё пустое/nu
   assert.deepEqual(insights.assetOutcomes, []);
   assert.deepEqual(insights.topStopAssets, []);
   assert.equal(insights.dailyTargetHour, null);
+  assert.equal(insights.rrHoldDuration, null);
   assert.deepEqual(insights.presetOutcomes, []);
 });
 
@@ -215,4 +216,61 @@ test("computeTradeInsights: presetOutcomes — slCount = 0, если все пр
   assert.equal(oneToThree?.tpCount, 1);
   assert.equal(oneToThree?.slCount, 0);
   assert.equal(oneToThree?.avgSlResultR, 0);
+});
+
+test("computeTradeInsights: rrHoldDuration — диапазон часов до тейка по пресету 1/3", () => {
+  const trades = [
+    // 2 часа до TP
+    trade({
+      openedHourUtc: 4,
+      closedHourUtc: 6,
+      resultR: 3,
+      rrPreset: "1/3",
+      closeReason: "tp",
+    }),
+    // 7 часов до TP
+    trade({
+      openedHourUtc: 4,
+      closedHourUtc: 11,
+      resultR: 3,
+      rrPreset: "1/3",
+      closeReason: "tp",
+    }),
+    // SL с 1/3 — не входит в «отработку»
+    trade({
+      openedHourUtc: 4,
+      closedHourUtc: 20,
+      resultR: -1,
+      rrPreset: "1/3",
+      closeReason: "sl",
+    }),
+    // другой пресет — не входит
+    trade({
+      openedHourUtc: 4,
+      closedHourUtc: 10,
+      resultR: 2,
+      rrPreset: "1/2",
+      closeReason: "tp",
+    }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+  assert.deepEqual(insights.rrHoldDuration, {
+    preset: "1/3",
+    minHours: 2,
+    maxHours: 7,
+    sampleCount: 2,
+  });
+});
+
+test("computeTradeInsights: rrHoldDuration null, если нет тейков 1/3", () => {
+  const trades = [
+    trade({
+      openedHourUtc: 4,
+      closedHourUtc: 6,
+      resultR: -1,
+      rrPreset: "1/3",
+      closeReason: "sl",
+    }),
+  ];
+  assert.equal(computeTradeInsights(trades, TZ, 3).rrHoldDuration, null);
 });

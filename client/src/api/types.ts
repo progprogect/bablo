@@ -145,6 +145,7 @@ export type TradeInsights = {
   assetOutcomes: { symbol: string; tpCount: number; totalTrades: number }[];
   topStopAssets: { symbol: string; count: number }[];
   dailyTargetHour: { targetR: number; hour: number } | null;
+  rrHoldDuration: { preset: string; minHours: number; maxHours: number; sampleCount: number } | null;
   presetOutcomes: PresetOutcome[];
 };
 
