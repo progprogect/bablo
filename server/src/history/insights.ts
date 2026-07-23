@@ -33,8 +33,8 @@ export type TradeInsights = {
    */
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
   /**
-   * Часы открытия, в которые не меньше половины открытых сделок закрылись по стопу
-   * (slRate ≥ 50% — зеркало прибыльных часов). Топ-3 по числу стопов. Формат: `14ч — 3/3 SL`.
+   * Часы открытия, в которые больше половины открытых сделок закрылись по стопу
+   * (slRate > 50% — строго больше половины). Топ-3 по числу стопов. Формат: `14ч — 3/3 SL`.
    */
   topStopHours: { hour: number; slCount: number; total: number }[];
   /**
@@ -90,10 +90,10 @@ function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsi
     .map((bucket) => ({ hour: bucket.hour, tpCount: bucket.tpCount, total: bucket.total }));
 }
 
-/** "Убыточный час" — не меньше половины сделок, открытых в этот час, закрылись по стопу. */
+/** "Убыточный час" — строго больше половины сделок, открытых в этот час, закрылись по стопу. */
 function topStopHours(buckets: HourBucketStat[], limit: number): TradeInsights["topStopHours"] {
   return buckets
-    .filter((bucket) => bucket.total > 0 && bucket.slCount / bucket.total >= 0.5)
+    .filter((bucket) => bucket.total > 0 && bucket.slCount / bucket.total > 0.5)
     .sort((a, b) => b.slCount - a.slCount)
     .slice(0, limit)
     .map((bucket) => ({ hour: bucket.hour, slCount: bucket.slCount, total: bucket.total }));

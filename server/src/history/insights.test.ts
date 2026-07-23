@@ -81,9 +81,9 @@ test("computeTradeInsights: сделки без тейка (даже прибы�
   assert.deepEqual(insights.topProfitableHours, []);
 });
 
-test("computeTradeInsights: топ часов открытия сделок, закрытых по стопу — доля SL ≥ 50%", () => {
+test("computeTradeInsights: топ часов открытия сделок, закрытых по стопу — доля SL > 50%", () => {
   const trades = [
-    trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }), // 08:00 локально — 2/3 SL
+    trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }), // 08:00 локально — 2/3 SL (> 50%)
     trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }),
     trade({ openedHourUtc: 5, resultR: 1, closeReason: "tp" }),
     trade({ openedHourUtc: 9, resultR: -1, closeReason: "sl" }), // 12:00 локально — 1/1 SL
@@ -102,16 +102,13 @@ test("computeTradeInsights: топ часов открытия сделок, з�
   assert.equal(insights.topStopHours.length, 2);
 });
 
-test("computeTradeInsights: ровно половина сделок по стопу — час считается убыточным", () => {
+test("computeTradeInsights: ровно половина сделок по стопу — час НЕ считается убыточным", () => {
   const trades = [
     trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }),
     trade({ openedHourUtc: 5, resultR: 1, closeReason: "tp" }),
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
-  assert.equal(insights.topStopHours.length, 1);
-  assert.equal(insights.topStopHours[0]?.hour, 8);
-  assert.equal(insights.topStopHours[0]?.slCount, 1);
-  assert.equal(insights.topStopHours[0]?.total, 2);
+  assert.deepEqual(insights.topStopHours, []);
 });
 
 test("computeTradeInsights: assetOutcomes — все активы с долей TP, сортировка по hitRate", () => {
