@@ -190,13 +190,20 @@ export function ActiveTradeCard({
       </dl>
 
       {trade.partialTpPrice && (
-        <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 text-xs">
-          <span className="text-ink">
-            Частичная фиксация {formatPrice(trade.partialTpPrice)} · 70%
-            {potentialProfitAtPartial !== null ? ` / ${formatSignedUsd(potentialProfitAtPartial)}` : ""}
-          </span>
-          <span className={trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}>
-            {trade.partialTpFilledAt ? `исполнена по ${formatPrice(trade.partialTpFillPrice)}` : "ожидает"}
+        <div className="flex items-start justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-xs">
+          <div className="min-w-0 flex flex-col gap-0.5">
+            <span className="text-slate-500">Частичная фиксация 70%</span>
+            <span className="tabular-nums text-ink">
+              {formatPrice(trade.partialTpPrice)}
+              {potentialProfitAtPartial !== null ? (
+                <span className="text-emerald-600"> · {formatSignedUsd(potentialProfitAtPartial)}</span>
+              ) : null}
+            </span>
+          </div>
+          <span
+            className={`shrink-0 pt-0.5 ${trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}`}
+          >
+            {trade.partialTpFilledAt ? `по ${formatPrice(trade.partialTpFillPrice)}` : "ожидает"}
           </span>
         </div>
       )}
