@@ -192,13 +192,12 @@ export function ActiveTradeCard({
       {trade.partialTpPrice && (
         <div className="flex items-start justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-xs">
           <div className="min-w-0 flex flex-col gap-0.5">
-            <span className="text-slate-500">Частичная фиксация 70%</span>
-            <span className="tabular-nums text-ink">
-              {formatPrice(trade.partialTpPrice)}
-              {potentialProfitAtPartial !== null ? (
-                <span className="text-emerald-600"> · {formatSignedUsd(potentialProfitAtPartial)}</span>
-              ) : null}
+            <span className="text-ink">
+              Частичная фиксация {formatPrice(trade.partialTpPrice)} · 70%
             </span>
+            {potentialProfitAtPartial !== null && (
+              <span className="tabular-nums text-slate-600">{formatSignedUsd(potentialProfitAtPartial)}</span>
+            )}
           </div>
           <span
             className={`shrink-0 pt-0.5 ${trade.partialTpFilledAt ? "text-emerald-700" : "text-slate-500"}`}
