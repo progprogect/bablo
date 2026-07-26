@@ -3,6 +3,7 @@ import { getBingxCredentials } from "../db/repositories/settings.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
 import { repairActiveTradeSlAfterPartial } from "../trades/service.js";
+import { startNightTakeProfitScheduler } from "../trades/nightTpScheduler.js";
 import { startTracking } from "../tracker/activeTradeTracker.js";
 import { startAccountStream, stopAccountStream } from "./accountStream.js";
 import { setMarketStreamSymbols, startMarketStream } from "./marketStream.js";
@@ -43,6 +44,14 @@ export async function startRealtime(): Promise<void> {
     }
   } catch (error) {
     console.error("[realtime] repairActiveTradeSlAfterPartial не удался:", error);
+  }
+
+  // Ночное правило TP 1/1: если сейчас ночь и дневная сделка ещё открыта — поджать;
+  // иначе одноразовый таймер до 00:00 (без циклического опроса).
+  try {
+    await startNightTakeProfitScheduler();
+  } catch (error) {
+    console.error("[realtime] startNightTakeProfitScheduler не удался:", error);
   }
 }
 

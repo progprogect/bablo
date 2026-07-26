@@ -59,3 +59,92 @@ export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: n
   }
   return fromShifted(candidate, tzOffsetMinutes);
 }
+
+/**
+ * Начало «ночи» в локальных часах (по умолчанию 00:00). Ночь длится до resetHour
+ * торгового дня (07:00): в это окно дневные сделки поджимают TP до 1/1
+ * (см. trades/nightTp.ts, docs/PROJECT.md).
+ */
+export const DEFAULT_NIGHT_START_HOUR = 0;
+
+/**
+ * Локальный час попадает в ночное окно [nightStartHour, resetHour).
+ * Если nightStart ≥ reset (например 23→7) — окно через полночь: hour ≥ nightStart ИЛИ hour < reset.
+ */
+export function isLocalNight(
+  date: Date,
+  nightStartHour: number,
+  resetHour: number,
+  tzOffsetMinutes: number,
+): boolean {
+  const hour = getLocalHour(date, tzOffsetMinutes);
+  if (nightStartHour < resetHour) {
+    return hour >= nightStartHour && hour < resetHour;
+  }
+  return hour >= nightStartHour || hour < resetHour;
+}
+
+/** Момент начала текущей (или только что начавшейся) ночи — в реальном UTC. */
+export function getNightStartAtOrBefore(
+  date: Date,
+  nightStartHour: number,
+  tzOffsetMinutes: number,
+): Date {
+  const shifted = toShifted(date, tzOffsetMinutes);
+  const candidate = new Date(
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      nightStartHour,
+      0,
+      0,
+      0,
+    ),
+  );
+  if (candidate > shifted) {
+    candidate.setUTCDate(candidate.getUTCDate() - 1);
+  }
+  return fromShifted(candidate, tzOffsetMinutes);
+}
+
+/** Следующее начало ночи строго после `date` (для одноразового таймера, без поллинга). */
+export function getNextNightStartAt(
+  date: Date,
+  nightStartHour: number,
+  tzOffsetMinutes: number,
+): Date {
+  const shifted = toShifted(date, tzOffsetMinutes);
+  const candidate = new Date(
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      nightStartHour,
+      0,
+      0,
+      0,
+    ),
+  );
+  if (candidate <= shifted) {
+    candidate.setUTCDate(candidate.getUTCDate() + 1);
+  }
+  return fromShifted(candidate, tzOffsetMinutes);
+}
+
+/**
+ * Сделка открыта утром/днём/вечером (не ночью) и сейчас уже ночь —
+ * кандидат на поджатие TP до 1/1.
+ */
+export function isDayTradeIntoNight(
+  openedAt: Date,
+  now: Date,
+  nightStartHour: number,
+  resetHour: number,
+  tzOffsetMinutes: number,
+): boolean {
+  if (!isLocalNight(now, nightStartHour, resetHour, tzOffsetMinutes)) return false;
+  if (isLocalNight(openedAt, nightStartHour, resetHour, tzOffsetMinutes)) return false;
+  const nightStart = getNightStartAtOrBefore(now, nightStartHour, tzOffsetMinutes);
+  return openedAt.getTime() < nightStart.getTime();
+}

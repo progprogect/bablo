@@ -10,7 +10,7 @@ import {
   type OrderSide,
 } from "../bingx/client.js";
 import { listActiveAssets, type Asset } from "../db/repositories/assets.js";
-import { getBingxCredentials } from "../db/repositories/settings.js";
+import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
 import {
   closeTradeIfActive,
   createTrade,
@@ -46,6 +46,7 @@ import {
   isPartialTakeProfitWithinMaxRatio,
   type TradeSide,
 } from "./math.js";
+import { decideNightTakeProfit } from "./nightTp.js";
 
 export class TradeError extends Error {
   constructor(
@@ -574,6 +575,103 @@ export async function repairActiveTradeSlAfterPartial(): Promise<{
   }
   const result = await moveStopLossAfterPartial(trade.id);
   return { attempted: true, ...result };
+}
+
+/**
+ * Ночное правило: дневная сделка, ушедшая за полночь, получает TP на R/R 1/1
+ * на 100% остатка (старый TP и незаполненный partial отменяются). Идемпотентно.
+ * Не бросает наружу при сбое биржи — warning.
+ */
+export async function applyNightTakeProfitForActiveTrade(
+  now: Date = new Date(),
+): Promise<{ attempted: boolean; applied: boolean; warning: string | null }> {
+  const trade = await getActiveTrade();
+  if (!trade) {
+    return { attempted: false, applied: false, warning: null };
+  }
+
+  const settings = await getRiskSettings();
+  const decision = decideNightTakeProfit({
+    side: trade.side as TradeSide,
+    entryPrice: Number(trade.entryPrice),
+    slPrice: Number(trade.slPrice),
+    riskUsd: Number(trade.riskUsd),
+    quantity: Number(trade.quantity),
+    tpPrice: trade.tpPrice !== null ? Number(trade.tpPrice) : null,
+    partialTpPrice: trade.partialTpPrice !== null ? Number(trade.partialTpPrice) : null,
+    partialTpQuantity: trade.partialTpQuantity !== null ? Number(trade.partialTpQuantity) : null,
+    partialTpFilledAt: trade.partialTpFilledAt,
+    nightTpAppliedAt: trade.nightTpAppliedAt,
+    openedAt: trade.openedAt,
+    now,
+    resetHour: settings.resetHour,
+    tzOffsetMinutes: settings.tzOffsetMinutes,
+  });
+
+  if (decision.action === "skip") {
+    return { attempted: true, applied: false, warning: decision.reason };
+  }
+
+  const credentials = await getBingxCredentials();
+  if (!credentials) {
+    return { attempted: true, applied: false, warning: "нет ключей BingX — ночной TP не выставлен" };
+  }
+
+  const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
+  const exitSide: OrderSide = trade.side === "long" ? "SELL" : "BUY";
+
+  for (const key of ["tp", "partialTp"] as const) {
+    if (key === "partialTp" && !decision.cancelPartial) continue;
+    const pendingId = orderIds[key];
+    if (pendingId === undefined) continue;
+    try {
+      await cancelOrder(credentials, trade.symbol, pendingId);
+    } catch (error) {
+      console.warn(
+        `[trades] не удалось отменить ${key} перед ночным TP 1/1:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  try {
+    const tpOrder = await placeOrder(credentials, {
+      symbol: trade.symbol,
+      side: exitSide,
+      type: "TAKE_PROFIT_MARKET",
+      stopPrice: decision.newTpPrice,
+      quantity: decision.quantity,
+      reduceOnly: true,
+    });
+
+    const nextOrderIds: Record<string, string | number> = { ...orderIds, tp: tpOrder.orderId };
+    if (decision.cancelPartial) {
+      delete nextOrderIds.partialTp;
+    }
+
+    await updateTrade(trade.id, {
+      tpPrice: decision.newTpPrice,
+      rrPreset: "1/1",
+      nightTpAppliedAt: now,
+      bingxOrderIds: nextOrderIds,
+      ...(decision.cancelPartial
+        ? {
+            partialTpPrice: null,
+            partialTpPercent: null,
+            partialTpQuantity: null,
+          }
+        : {}),
+    });
+    eventBus.emitTyped("refresh", { reason: "trade.nightTpApplied" });
+    return { attempted: true, applied: true, warning: null };
+  } catch (error) {
+    const message = bingxMessage(
+      error,
+      "Не удалось выставить ночной TP 1/1 — проверьте тейк на BingX вручную",
+    );
+    console.error("[trades] applyNightTakeProfitForActiveTrade:", message);
+    return { attempted: true, applied: false, warning: message };
+  }
 }
 
 /**

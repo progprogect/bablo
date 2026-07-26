@@ -73,6 +73,11 @@ export const trades = pgTable("trades", {
   partialTpQuantity: numeric("partial_tp_quantity", { precision: 20, scale: 8 }),
   partialTpFilledAt: timestamp("partial_tp_filled_at", { withTimezone: true }),
   partialTpFillPrice: numeric("partial_tp_fill_price", { precision: 20, scale: 8 }),
+  /**
+   * Когда сервер поджал TP до 1/1 на ночь (дневная сделка ушла за полночь) —
+   * идемпотентность: повторно не трогаем.
+   */
+  nightTpAppliedAt: timestamp("night_tp_applied_at", { withTimezone: true }),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closeReason: text("close_reason"), // 'sl' | 'tp' | 'manual' | 'external' (закрыта на бирже, обнаружено постфактум)
