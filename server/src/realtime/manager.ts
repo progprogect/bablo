@@ -46,8 +46,8 @@ export async function startRealtime(): Promise<void> {
     console.error("[realtime] repairActiveTradeSlAfterPartial не удался:", error);
   }
 
-  // Ночное правило TP 1/1: если сейчас ночь (с 00:00 МСК) и дневная сделка ещё
-  // открыта — поджать; иначе одноразовый таймер до 00:00 (без циклического опроса).
+  // Ночное правило TP 1/1: если сейчас ночь (с 01:00 МСК) и дневная сделка ещё
+  // открыта — поджать; иначе одноразовый таймер до 01:00 (без циклического опроса).
   try {
     await startNightTakeProfitScheduler();
   } catch (error) {
