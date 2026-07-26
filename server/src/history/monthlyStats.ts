@@ -1,4 +1,9 @@
-import { RR_PRESETS } from "../trades/math.js";
+import {
+  PARTIAL_RATIO_MATCH_EPSILON,
+  PARTIAL_TP_PRESETS,
+  parseRRRatio,
+  RR_PRESETS,
+} from "../trades/math.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
 
 export type MonthlyStatTradeInput = {
@@ -8,6 +13,12 @@ export type MonthlyStatTradeInput = {
   resultR: number | null;
   riskUsd: number | null;
   rrPreset: string | null;
+  entryPrice?: number | null;
+  quantity?: number | null;
+  partialTpPrice?: number | null;
+  partialTpFilledAt?: Date | string | null;
+  /** Ночной TP 1/1 применён — см. trades/nightTp.ts. */
+  nightTpAppliedAt?: Date | string | null;
 };
 
 export type MonthlyRRPresetCount = { preset: string; count: number };
@@ -31,12 +42,81 @@ export type MonthlyStat = {
   tradingDays: number;
   daysWithoutTrading: number;
   daysInMonth: number;
-  /** Разбивка закрытых по тейку сделок по всем пресетам RR_PRESETS (включая пресеты с нулём сделок за месяц). */
+  /** Разбивка по пресетам RR_PRESETS: полные тейки + исполненные partial (см. resolveMonthlyRrPresetBucket). */
   byRRPreset: MonthlyRRPresetCount[];
 };
 
 /** Сделка считается закрытой "в безубыток", если |resultR| в пределах этого допуска — учитывает комиссии/проскальзывание у стопа, выставленного на цену входа. */
 const BREAKEVEN_EPSILON_R = 0.05;
+
+/**
+ * Ночной TP 1/1 без уже исполненной partial — в статистике это «стоп» плана
+ * (не засчитываем как тейк 1R в сетке пресетов).
+ */
+export function isForcedNightStopClose(trade: MonthlyStatTradeInput): boolean {
+  return trade.nightTpAppliedAt != null && trade.partialTpFilledAt == null;
+}
+
+/**
+ * R/R частичной фиксации от исходного риска сделки (riskUsd / quantity),
+ * даже если SL уже сдвинут на вход / +1R.
+ */
+export function computePartialRatioFromRiskUsd(
+  entryPrice: number,
+  partialTpPrice: number,
+  riskUsd: number,
+  quantity: number,
+): number | null {
+  if (!(entryPrice > 0) || !(partialTpPrice > 0) || !(riskUsd > 0) || !(quantity > 0)) return null;
+  const riskDistance = riskUsd / quantity;
+  if (!(riskDistance > 0)) return null;
+  return Math.abs(partialTpPrice - entryPrice) / riskDistance;
+}
+
+/** Ближайший пресет partial (1/1 · 1/2 · 1/3) к фактическому R/R, иначе null. */
+export function matchPartialPreset(ratio: number): (typeof PARTIAL_TP_PRESETS)[number] | null {
+  let best: (typeof PARTIAL_TP_PRESETS)[number] | null = null;
+  let bestDelta = Infinity;
+  for (const preset of PARTIAL_TP_PRESETS) {
+    const target = parseRRRatio(preset);
+    if (target === null) continue;
+    const delta = Math.abs(ratio - target);
+    if (delta <= PARTIAL_RATIO_MATCH_EPSILON && delta < bestDelta) {
+      best = preset;
+      bestDelta = delta;
+    }
+  }
+  return best;
+}
+
+/**
+ * В какой столбец сетки 1R…10R попадает сделка:
+ * - исполненная partial → пресет partial (1/2, 1/3…), даже если потом БУ / остаток по SL;
+ * - ночной TP без partial → null (стоп плана, не 1R);
+ * - обычный тейк → rrPreset основного TP.
+ */
+export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): string | null {
+  if (isForcedNightStopClose(trade)) return null;
+
+  if (trade.partialTpFilledAt != null) {
+    const entry = trade.entryPrice ?? null;
+    const partialPrice = trade.partialTpPrice ?? null;
+    const riskUsd = trade.riskUsd ?? null;
+    const quantity = trade.quantity ?? null;
+    if (entry !== null && partialPrice !== null && riskUsd !== null && quantity !== null) {
+      const ratio = computePartialRatioFromRiskUsd(entry, partialPrice, riskUsd, quantity);
+      if (ratio !== null) {
+        const preset = matchPartialPreset(ratio);
+        if (preset) return preset;
+      }
+    }
+  }
+
+  if (trade.closeReason === "tp" && trade.rrPreset) {
+    return trade.rrPreset;
+  }
+  return null;
+}
 
 function monthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
@@ -176,6 +256,9 @@ export function computeMonthlyStats(
 
       if (Math.abs(resultR) <= BREAKEVEN_EPSILON_R) {
         beCount += 1;
+      } else if (isForcedNightStopClose(trade)) {
+        // Ночной TP 1/1 без partial — в UI как стоп (план не отработан).
+        slCount += 1;
       } else if (trade.closeReason === "tp") {
         tpCount += 1;
       } else if (trade.closeReason === "sl") {
@@ -184,8 +267,9 @@ export function computeMonthlyStats(
         otherCount += 1;
       }
 
-      if (trade.closeReason === "tp" && trade.rrPreset) {
-        byRRPresetCounts.set(trade.rrPreset, (byRRPresetCounts.get(trade.rrPreset) ?? 0) + 1);
+      const rrBucket = resolveMonthlyRrPresetBucket(trade);
+      if (rrBucket) {
+        byRRPresetCounts.set(rrBucket, (byRRPresetCounts.get(rrBucket) ?? 0) + 1);
       }
     }
 

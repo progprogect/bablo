@@ -38,6 +38,11 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       resultR: row.resultR !== null ? Number(row.resultR) : null,
       riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
       rrPreset: row.rrPreset,
+      entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
+      quantity: Number(row.quantity),
+      partialTpPrice: row.partialTpPrice !== null ? Number(row.partialTpPrice) : null,
+      partialTpFilledAt: row.partialTpFilledAt,
+      nightTpAppliedAt: row.nightTpAppliedAt,
     }));
 
     // Якорь — последний известный снимок эквити. От него computeMonthlyStats "откручивает"

@@ -12,6 +12,11 @@ function trade(input: {
   riskUsd?: number | null;
   closeReason?: string | null;
   rrPreset?: string | null;
+  entryPrice?: number | null;
+  quantity?: number | null;
+  partialTpPrice?: number | null;
+  partialTpFilledAt?: string | null;
+  nightTpAppliedAt?: string | null;
 }): MonthlyStatTradeInput {
   return {
     openedAt: new Date(input.openedAt),
@@ -20,6 +25,11 @@ function trade(input: {
     riskUsd: input.riskUsd ?? 10,
     closeReason: input.closeReason ?? null,
     rrPreset: input.rrPreset ?? null,
+    entryPrice: input.entryPrice ?? null,
+    quantity: input.quantity ?? null,
+    partialTpPrice: input.partialTpPrice ?? null,
+    partialTpFilledAt: input.partialTpFilledAt ? new Date(input.partialTpFilledAt) : null,
+    nightTpAppliedAt: input.nightTpAppliedAt ? new Date(input.nightTpAppliedAt) : null,
   };
 }
 
@@ -157,4 +167,94 @@ test("computeMonthlyStats: сортировка — новые месяцы сн
   ];
   const stats = computeMonthlyStats(trades, TZ, null, [], new Date("2026-07-20T00:00:00Z"));
   assert.deepEqual(stats.map((s) => s.month), [7, 6, 5]);
+});
+
+test("computeMonthlyStats: исполненная partial 2R → столбец 2R, даже при закрытии по БУ", () => {
+  // entry 100, risk 10$/шт × 10 = 100$, partial 120 = 2R; закрытие по БУ после подтяжки SL
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-01T18:00:00Z",
+      resultR: 0.02,
+      riskUsd: 100,
+      closeReason: "sl",
+      rrPreset: "1/10",
+      entryPrice: 100,
+      quantity: 10,
+      partialTpPrice: 120,
+      partialTpFilledAt: "2026-07-01T14:00:00Z",
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.beCount, 1);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/10")?.count, 0);
+});
+
+test("computeMonthlyStats: partial 3R не сработала, выбило по стопу — в сетке R нет, это SL", () => {
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-01T12:00:00Z",
+      resultR: -1,
+      riskUsd: 100,
+      closeReason: "sl",
+      rrPreset: "1/10",
+      entryPrice: 100,
+      quantity: 10,
+      partialTpPrice: 130,
+      partialTpFilledAt: null,
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.slCount, 1);
+  assert.equal(stat.tpCount, 0);
+  assert.ok(stat.byRRPreset.every((e) => e.count === 0));
+});
+
+test("computeMonthlyStats: ночной TP 1/1 без partial — стоп, не 1R в сетке", () => {
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-01T22:30:00Z",
+      resultR: 1,
+      riskUsd: 100,
+      closeReason: "tp",
+      rrPreset: "1/1", // переписан ночным правилом
+      entryPrice: 100,
+      quantity: 10,
+      partialTpPrice: null, // снят при ночном TP
+      partialTpFilledAt: null,
+      nightTpAppliedAt: "2026-07-01T22:00:00Z",
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.slCount, 1);
+  assert.equal(stat.tpCount, 0);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/1")?.count, 0);
+});
+
+test("computeMonthlyStats: partial 2R исполнена, затем остаток дошёл до основного TP — в сетке 2R", () => {
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-02T10:00:00Z",
+      resultR: 4,
+      riskUsd: 100,
+      closeReason: "tp",
+      rrPreset: "1/10",
+      entryPrice: 100,
+      quantity: 10,
+      partialTpPrice: 120,
+      partialTpFilledAt: "2026-07-01T14:00:00Z",
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.tpCount, 1);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/10")?.count, 0);
 });
