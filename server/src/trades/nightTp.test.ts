@@ -123,7 +123,7 @@ test("decideNightTakeProfit: открыта ночью — skip", () => {
     partialTpQuantity: null,
     partialTpFilledAt: null,
     nightTpAppliedAt: null,
-    openedAt: new Date("2026-07-14T22:00:00Z"),
+    openedAt: new Date("2026-07-14T20:15:00Z"), // 23:15 МСК — уже ночь
     now: nowNight,
     resetHour: RESET,
     tzOffsetMinutes: TZ,

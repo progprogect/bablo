@@ -60,7 +60,7 @@ export type NightTpDecisionInput = {
 };
 
 /**
- * Решение: заменить TP на 1/1 × 100% остатка для дневной сделки, ушедшей в ночь.
+ * Решение: заменить TP на 1/1 × 100% остатка для дневной сделки, активной к 23:00 МСК.
  * Чистая функция без I/O.
  */
 export function decideNightTakeProfit(input: NightTpDecisionInput): NightTpDecision {

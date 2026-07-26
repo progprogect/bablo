@@ -4,7 +4,7 @@ import { applyNightTakeProfitForActiveTrade } from "../trades/service.js";
 
 /**
  * Одноразовые таймеры до следующего начала ночи (не setInterval / не поллинг).
- * В 00:00 локального времени — попытка поджать TP дневной сделки до 1/1.
+ * В 23:00 МСК — попытка поджать TP дневной сделки до 1/1.
  */
 let nightTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -58,7 +58,7 @@ async function scheduleNextNight(): Promise<void> {
 
 /**
  * Старт ночного правила: если сейчас уже ночь — применить сразу (деплой/рестарт),
- * затем поставить таймер на следующее 00:00.
+ * затем поставить таймер на следующие 23:00 МСК.
  */
 export async function startNightTakeProfitScheduler(): Promise<void> {
   await runNightTpPass();
