@@ -5,11 +5,13 @@ import {
   computeRemainderQuantity,
   computeResultFromPrices,
   computeRiskRewardRatio,
+  computeSlPriceAfterPartial,
   computeTakeProfitPrice,
-  decideMoveSlAfterPartialOneToThree,
+  decideMoveSlAfterPartial,
   decimalsOf,
   isPartialTakeProfitNearRatio,
   isPartialTakeProfitWithinMaxRatio,
+  isSlAtOrBeyondTarget,
   isStopOnProfitSide,
   isValidPartialTakeProfit,
   isValidStopLoss,
@@ -125,8 +127,19 @@ test("isStopOnProfitSide: long/short", () => {
   assert.equal(isStopOnProfitSide(100, 90, "short"), true);
 });
 
-test("decideMoveSlAfterPartialOneToThree: long — partial 1/3 → SL на 1/1", () => {
-  const decision = decideMoveSlAfterPartialOneToThree({
+test("isSlAtOrBeyondTarget / computeSlPriceAfterPartial", () => {
+  assert.equal(computeSlPriceAfterPartial(100, 90, "long", 0), 100);
+  assert.equal(computeSlPriceAfterPartial(100, 90, "long", 1), 110);
+  assert.equal(computeSlPriceAfterPartial(100, 110, "short", 0), 100);
+  assert.equal(computeSlPriceAfterPartial(100, 110, "short", 1), 90);
+  assert.equal(isSlAtOrBeyondTarget(100, 100, "long"), true);
+  assert.equal(isSlAtOrBeyondTarget(99, 100, "long"), false);
+  assert.equal(isSlAtOrBeyondTarget(100, 100, "short"), true);
+  assert.equal(isSlAtOrBeyondTarget(101, 100, "short"), false);
+});
+
+test("decideMoveSlAfterPartial: long — partial 1/3 → SL на 1/1", () => {
+  const decision = decideMoveSlAfterPartial({
     side: "long",
     entryPrice: 100,
     slPrice: 90,
@@ -139,11 +152,13 @@ test("decideMoveSlAfterPartialOneToThree: long — partial 1/3 → SL на 1/1",
   if (decision.action === "move") {
     assert.equal(decision.newSlPrice, 110); // 1/1
     assert.equal(decision.remainderQuantity, 3);
+    assert.equal(decision.partialRatio, 3);
+    assert.equal(decision.slRatio, 1);
   }
 });
 
-test("decideMoveSlAfterPartialOneToThree: short — partial 1/3 → SL на 1/1", () => {
-  const decision = decideMoveSlAfterPartialOneToThree({
+test("decideMoveSlAfterPartial: short — partial 1/3 → SL на 1/1", () => {
+  const decision = decideMoveSlAfterPartial({
     side: "short",
     entryPrice: 100,
     slPrice: 110,
@@ -156,11 +171,13 @@ test("decideMoveSlAfterPartialOneToThree: short — partial 1/3 → SL на 1/1"
   if (decision.action === "move") {
     assert.equal(decision.newSlPrice, 90);
     assert.equal(decision.remainderQuantity, 3);
+    assert.equal(decision.partialRatio, 3);
+    assert.equal(decision.slRatio, 1);
   }
 });
 
-test("decideMoveSlAfterPartialOneToThree: partial на 1/2 — skip (вариант B)", () => {
-  const decision = decideMoveSlAfterPartialOneToThree({
+test("decideMoveSlAfterPartial: long — partial 1/2 → SL на вход", () => {
+  const decision = decideMoveSlAfterPartial({
     side: "long",
     entryPrice: 100,
     slPrice: 90,
@@ -169,11 +186,49 @@ test("decideMoveSlAfterPartialOneToThree: partial на 1/2 — skip (вариа�
     quantity: 10,
     partialTpQuantity: 7,
   });
+  assert.equal(decision.action, "move");
+  if (decision.action === "move") {
+    assert.equal(decision.newSlPrice, 100); // вход
+    assert.equal(decision.remainderQuantity, 3);
+    assert.equal(decision.partialRatio, 2);
+    assert.equal(decision.slRatio, 0);
+  }
+});
+
+test("decideMoveSlAfterPartial: short — partial 1/2 → SL на вход", () => {
+  const decision = decideMoveSlAfterPartial({
+    side: "short",
+    entryPrice: 100,
+    slPrice: 110,
+    partialTpPrice: 80,
+    partialTpFilledAt: new Date(),
+    quantity: 10,
+    partialTpQuantity: 7,
+  });
+  assert.equal(decision.action, "move");
+  if (decision.action === "move") {
+    assert.equal(decision.newSlPrice, 100);
+    assert.equal(decision.remainderQuantity, 3);
+    assert.equal(decision.partialRatio, 2);
+    assert.equal(decision.slRatio, 0);
+  }
+});
+
+test("decideMoveSlAfterPartial: partial на 1/1 — skip (ход был бы только 1R)", () => {
+  const decision = decideMoveSlAfterPartial({
+    side: "long",
+    entryPrice: 100,
+    slPrice: 90,
+    partialTpPrice: 110,
+    partialTpFilledAt: new Date(),
+    quantity: 10,
+    partialTpQuantity: 7,
+  });
   assert.equal(decision.action, "skip");
 });
 
-test("decideMoveSlAfterPartialOneToThree: SL уже на прибыли — skip (идемпотентность)", () => {
-  const decision = decideMoveSlAfterPartialOneToThree({
+test("decideMoveSlAfterPartial: SL уже на прибыли — skip (идемпотентность)", () => {
+  const decision = decideMoveSlAfterPartial({
     side: "long",
     entryPrice: 100,
     slPrice: 110,
@@ -185,8 +240,21 @@ test("decideMoveSlAfterPartialOneToThree: SL уже на прибыли — skip
   assert.equal(decision.action, "skip");
 });
 
-test("decideMoveSlAfterPartialOneToThree: partial ещё не исполнена — skip", () => {
-  const decision = decideMoveSlAfterPartialOneToThree({
+test("decideMoveSlAfterPartial: SL уже на входе после 1/2 — skip", () => {
+  const decision = decideMoveSlAfterPartial({
+    side: "long",
+    entryPrice: 100,
+    slPrice: 100,
+    partialTpPrice: 120,
+    partialTpFilledAt: new Date(),
+    quantity: 10,
+    partialTpQuantity: 7,
+  });
+  assert.equal(decision.action, "skip");
+});
+
+test("decideMoveSlAfterPartial: partial ещё не исполнена — skip", () => {
+  const decision = decideMoveSlAfterPartial({
     side: "long",
     entryPrice: 100,
     slPrice: 90,

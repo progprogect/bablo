@@ -110,21 +110,29 @@ export function isPartialTakeProfitWithinMaxRatio(
 }
 
 /**
- * Целевое R/R частичной фиксации, после которого подтягиваем SL на 1/1 (вариант B).
- * Совпадает с потолком partial (1/3).
- */
-export const PARTIAL_TP_TRIGGER_MOVE_SL_RATIO = PARTIAL_TP_MAX_RATIO;
-
-/** Новый стоп после partial на 1/3 — защита остатка на +1R. */
-export const SL_AFTER_PARTIAL_RATIO = 1;
-
-/**
- * Допуск при сравнении фактического R/R partial с целевым 1/3.
+ * Допуск при сравнении фактического R/R partial с целевым пресетом.
  * 0.2 отделяет 1/3 (3) от 1/2 (2) и 1/1 (1) с запасом на округление цены.
  */
 export const PARTIAL_RATIO_MATCH_EPSILON = 0.2;
 
-/** Partial-цена близка к заданному R/R (для правила «только 1/3»). */
+/**
+ * Правила подтягивания SL после partial: ход остатка от уровня фиксации до нового
+ * стопа — не больше 2R.
+ * - partial ≈ 1/3 → SL на 1/1 (3R − 1R = 2R хода)
+ * - partial ≈ 1/2 → SL на вход / 0R (2R − 0R = 2R хода)
+ * Partial на 1/1 правило не включает (ход до входа был бы только 1R — другая логика).
+ */
+export const SL_AFTER_PARTIAL_RULES = [
+  { partialRatio: 3, slRatio: 1 },
+  { partialRatio: 2, slRatio: 0 },
+] as const;
+
+/** @deprecated Используйте SL_AFTER_PARTIAL_RULES; оставлено для совместимости импортов. */
+export const PARTIAL_TP_TRIGGER_MOVE_SL_RATIO = 3;
+/** @deprecated Новый стоп после partial на 1/3; для 1/2 — 0 (вход). */
+export const SL_AFTER_PARTIAL_RATIO = 1;
+
+/** Partial-цена близка к заданному R/R. */
 export function isPartialTakeProfitNearRatio(
   entryPrice: number,
   slPrice: number,
@@ -138,11 +146,20 @@ export function isPartialTakeProfitNearRatio(
 }
 
 /**
- * SL уже на стороне прибыли относительно входа (безубыток или +1R) —
- * значит подтягивание после partial уже сделано (или стоп не исходный защитный).
+ * SL уже на стороне прибыли относительно входа (безубыток или лучше) —
+ * стоп не исходный защитный (−1R).
  */
 export function isStopOnProfitSide(entryPrice: number, slPrice: number, side: TradeSide): boolean {
   return side === "long" ? slPrice >= entryPrice : slPrice <= entryPrice;
+}
+
+/** Текущий SL уже не хуже целевого (для лонга ≥ target, для шорта ≤ target). */
+export function isSlAtOrBeyondTarget(
+  slPrice: number,
+  targetSlPrice: number,
+  side: TradeSide,
+): boolean {
+  return side === "long" ? slPrice >= targetSlPrice : slPrice <= targetSlPrice;
 }
 
 /** Остаток объёма после partial (неотрицательный). */
@@ -153,14 +170,34 @@ export function computeRemainderQuantity(totalQuantity: number, partialQuantity:
 }
 
 /**
- * Решение: нужно ли после исполненной partial на ~1/3 заменить SL на 1/1.
+ * Цена нового SL после partial по правилу 2R-хода.
+ * slRatio 0 → вход; иначе computeTakeProfitPrice с этим R/R (исходный SL = −1R).
+ */
+export function computeSlPriceAfterPartial(
+  entryPrice: number,
+  originalSlPrice: number,
+  side: TradeSide,
+  slRatio: number,
+): number {
+  if (slRatio <= 0) return entryPrice;
+  return computeTakeProfitPrice(entryPrice, originalSlPrice, side, slRatio);
+}
+
+/**
+ * Решение: нужно ли после исполненной partial подтянуть SL (ход остатка ≤ 2R).
  * Чистая функция без I/O — покрывается тестами; I/O живёт в trades/service.
  */
 export type MoveSlAfterPartialDecision =
   | { action: "skip"; reason: string }
-  | { action: "move"; newSlPrice: number; remainderQuantity: number };
+  | {
+      action: "move";
+      newSlPrice: number;
+      remainderQuantity: number;
+      partialRatio: number;
+      slRatio: number;
+    };
 
-export function decideMoveSlAfterPartialOneToThree(input: {
+export function decideMoveSlAfterPartial(input: {
   side: TradeSide;
   entryPrice: number;
   slPrice: number;
@@ -178,18 +215,36 @@ export function decideMoveSlAfterPartialOneToThree(input: {
   if (!(input.entryPrice > 0) || !(input.slPrice > 0)) {
     return { action: "skip", reason: "нет валидных entry/SL" };
   }
+  // После подтягивания SL на вход (1/2) или +1R (1/3) риск от текущего стопа
+  // уже не исходный −1R — ratio partial считать нельзя. Идемпотентный выход.
   if (isStopOnProfitSide(input.entryPrice, input.slPrice, input.side)) {
     return { action: "skip", reason: "SL уже на стороне прибыли (уже подтянут)" };
   }
-  if (
-    !isPartialTakeProfitNearRatio(
+
+  const matchedRule = SL_AFTER_PARTIAL_RULES.find((rule) =>
+    isPartialTakeProfitNearRatio(
       input.entryPrice,
       input.slPrice,
-      input.partialTpPrice,
-      PARTIAL_TP_TRIGGER_MOVE_SL_RATIO,
-    )
-  ) {
-    return { action: "skip", reason: "частичная фиксация не на R/R ≈ 1/3" };
+      input.partialTpPrice!,
+      rule.partialRatio,
+    ),
+  );
+  if (!matchedRule) {
+    return {
+      action: "skip",
+      reason: "частичная фиксация не на R/R ≈ 1/2 или 1/3 — SL не двигаем",
+    };
+  }
+
+  const newSlPrice = computeSlPriceAfterPartial(
+    input.entryPrice,
+    input.slPrice,
+    input.side,
+    matchedRule.slRatio,
+  );
+
+  if (isSlAtOrBeyondTarget(input.slPrice, newSlPrice, input.side)) {
+    return { action: "skip", reason: "SL уже на целевом уровне или лучше (уже подтянут)" };
   }
 
   const partialQty = input.partialTpQuantity ?? 0;
@@ -198,13 +253,20 @@ export function decideMoveSlAfterPartialOneToThree(input: {
     return { action: "skip", reason: "нет остатка объёма для нового SL" };
   }
 
-  const newSlPrice = computeTakeProfitPrice(
-    input.entryPrice,
-    input.slPrice,
-    input.side,
-    SL_AFTER_PARTIAL_RATIO,
-  );
-  return { action: "move", newSlPrice, remainderQuantity };
+  return {
+    action: "move",
+    newSlPrice,
+    remainderQuantity,
+    partialRatio: matchedRule.partialRatio,
+    slRatio: matchedRule.slRatio,
+  };
+}
+
+/** @deprecated Алиас decideMoveSlAfterPartial — раньше правило было только для 1/3. */
+export function decideMoveSlAfterPartialOneToThree(
+  input: Parameters<typeof decideMoveSlAfterPartial>[0],
+): MoveSlAfterPartialDecision {
+  return decideMoveSlAfterPartial(input);
 }
 
 /**

@@ -32,12 +32,12 @@ export async function startRealtime(): Promise<void> {
     startTracking(activeTrade);
   }
 
-  // Если partial на 1/3 уже исполнилась до рестарта, а SL ещё не на 1/1 — подтянуть сейчас.
-  // Без поллинга: одноразово по событию старта (деплой / рестарт).
+  // Если partial на 1/2 или 1/3 уже исполнилась до рестарта, а SL ещё исходный —
+  // подтянуть по правилу 2R (1/2→вход, 1/3→1/1). Без поллинга: одноразово при старте.
   try {
     const repair = await repairActiveTradeSlAfterPartial();
     if (repair.attempted && repair.moved) {
-      console.info("[realtime] SL подтянут на 1/1 после partial (repair при старте)");
+      console.info("[realtime] SL подтянут после partial (repair при старте)");
     } else if (repair.attempted && repair.warning) {
       console.warn("[realtime] repair SL после partial:", repair.warning);
     }
