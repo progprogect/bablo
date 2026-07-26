@@ -61,11 +61,11 @@ export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: n
 }
 
 /**
- * Начало «ночи» в локальных часах (по умолчанию 23:00 МСК). Ночь длится до
+ * Начало «ночи» в локальных часах (по умолчанию 00:00 МСК). Ночь длится до
  * resetHour торгового дня (07:00): в это окно дневные сделки поджимают TP до 1/1
  * (см. trades/nightTp.ts, docs/PROJECT.md).
  */
-export const DEFAULT_NIGHT_START_HOUR = 23;
+export const DEFAULT_NIGHT_START_HOUR = 0;
 
 /**
  * Локальный час попадает в ночное окно [nightStartHour, resetHour).

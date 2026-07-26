@@ -74,7 +74,7 @@ export const trades = pgTable("trades", {
   partialTpFilledAt: timestamp("partial_tp_filled_at", { withTimezone: true }),
   partialTpFillPrice: numeric("partial_tp_fill_price", { precision: 20, scale: 8 }),
   /**
-   * Когда сервер поджал TP до 1/1 на ночь (дневная сделка активна к 23:00 МСК) —
+   * Когда сервер поджал TP до 1/1 на ночь (дневная сделка активна после 00:00 МСК) —
    * идемпотентность: повторно не трогаем.
    */
   nightTpAppliedAt: timestamp("night_tp_applied_at", { withTimezone: true }),
