@@ -19,6 +19,11 @@ export type MonthlyStatTradeInput = {
   partialTpFilledAt?: Date | string | null;
   /** Ночной TP 1/1 применён — см. trades/nightTp.ts. */
   nightTpAppliedAt?: Date | string | null;
+  /**
+   * Ручной оверрайд сетки R (админка): null/undefined — авто;
+   * "none" — не учитывать; иначе пресет RR_PRESETS.
+   */
+  statsRrPreset?: string | null;
 };
 
 export type MonthlyRRPresetCount = { preset: string; count: number };
@@ -91,11 +96,21 @@ export function matchPartialPreset(ratio: number): (typeof PARTIAL_TP_PRESETS)[n
 
 /**
  * В какой столбец сетки 1R…10R попадает сделка:
+ * - ручной оверрайд из админки (statsRrPreset) — главный приоритет;
  * - исполненная partial → пресет partial (1/2, 1/3…), даже если потом БУ / остаток по SL;
  * - ночной TP без partial → null (стоп плана, не 1R);
  * - обычный тейк → rrPreset основного TP.
  */
+export const STATS_RR_PRESET_NONE = "none";
+
 export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): string | null {
+  if (trade.statsRrPreset != null) {
+    if (trade.statsRrPreset === STATS_RR_PRESET_NONE || trade.statsRrPreset === "") {
+      return null;
+    }
+    return trade.statsRrPreset;
+  }
+
   if (isForcedNightStopClose(trade)) return null;
 
   if (trade.partialTpFilledAt != null) {
@@ -116,6 +131,11 @@ export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): stri
     return trade.rrPreset;
   }
   return null;
+}
+
+/** Авто-бакет без учёта statsRrPreset — чтобы в админке показать «сейчас было бы». */
+export function resolveAutoMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): string | null {
+  return resolveMonthlyRrPresetBucket({ ...trade, statsRrPreset: null });
 }
 
 function monthKey(year: number, month: number): string {

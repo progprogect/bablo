@@ -57,6 +57,13 @@
       "when": 1785081600000,
       "tag": "0007_night_tp",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785124800000,
+      "tag": "0008_stats_rr_preset",
+      "breakpoints": true
     }
   ]
 }

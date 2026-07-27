@@ -14,8 +14,10 @@ import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
 import {
+  listTradesForStatsRrAdmin,
   listTradesNeedingCloseReason,
   setTradeCloseReasonManual,
+  setTradeStatsRrPreset,
   TradeError,
 } from "../trades/service.js";
 import { resyncTradingDayRisk } from "../risk/service.js";
@@ -153,6 +155,48 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       try {
         return await setTradeCloseReasonManual(id, closeReason);
+      } catch (error) {
+        if (error instanceof TradeError) {
+          reply.code(error.status).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+    },
+  );
+
+  /**
+   * История закрытых сделок + авто/эффективный столбец R для месячной статистики.
+   * Ручная правка statsRrPreset не меняет карточку в Истории — только сетку на «Статистике».
+   */
+  app.get<{ Querystring: { limit?: string; offset?: string } }>(
+    "/admin/trades/stats-rr",
+    async (request) => {
+      const limit = Math.min(Math.max(Number(request.query.limit) || 40, 1), 100);
+      const offset = Math.max(Number(request.query.offset) || 0, 0);
+      return listTradesForStatsRrAdmin({ limit, offset });
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { statsRrPreset?: string | null } }>(
+    "/admin/trades/:id/stats-rr-preset",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id)) {
+        reply.code(400).send({ error: "Некорректный id" });
+        return;
+      }
+      if (!("statsRrPreset" in (request.body ?? {}))) {
+        reply.code(400).send({ error: "Укажите statsRrPreset (пресет, 'none' или null для авто)" });
+        return;
+      }
+      const raw = request.body?.statsRrPreset;
+      if (raw !== null && raw !== undefined && typeof raw !== "string") {
+        reply.code(400).send({ error: "statsRrPreset должен быть строкой или null" });
+        return;
+      }
+      try {
+        return await setTradeStatsRrPreset(id, raw ?? null);
       } catch (error) {
         if (error instanceof TradeError) {
           reply.code(error.status).send({ error: error.message });

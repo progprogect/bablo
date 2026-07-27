@@ -43,6 +43,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       partialTpPrice: row.partialTpPrice !== null ? Number(row.partialTpPrice) : null,
       partialTpFilledAt: row.partialTpFilledAt,
       nightTpAppliedAt: row.nightTpAppliedAt,
+      statsRrPreset: row.statsRrPreset,
     }));
 
     // Якорь — последний известный снимок эквити. От него computeMonthlyStats "откручивает"

@@ -3,6 +3,7 @@ import { AssetsSection } from "./admin/AssetsSection";
 import { RiskPlanSection } from "./admin/RiskPlanSection";
 import { EquityAdjustmentsSection } from "./admin/EquityAdjustmentsSection";
 import { TradeCloseReasonSection } from "./admin/TradeCloseReasonSection";
+import { TradeStatsRrSection } from "./admin/TradeStatsRrSection";
 
 export function Admin() {
   return (
@@ -10,6 +11,7 @@ export function Admin() {
       <h1 className="mb-2 text-lg font-medium text-ink">Админка</h1>
       <BingxKeysSection />
       <TradeCloseReasonSection />
+      <TradeStatsRrSection />
       <AssetsSection />
       <RiskPlanSection />
       <EquityAdjustmentsSection />

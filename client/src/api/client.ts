@@ -128,6 +128,23 @@ export const setTradeCloseReasonRequest = (tradeId: number, closeReason: "sl" | 
     body: JSON.stringify({ closeReason }),
   });
 
+export type StatsRrAdminTrade = Trade & {
+  autoStatsRrPreset: string | null;
+  effectiveStatsRrPreset: string | null;
+};
+
+export const getStatsRrTrades = (limit: number, offset: number) =>
+  request<{ trades: StatsRrAdminTrade[]; total: number }>(
+    `/admin/trades/stats-rr?limit=${limit}&offset=${offset}`,
+  );
+
+/** null — авто; "none" — не в сетке; иначе пресет вроде "1/2". */
+export const setTradeStatsRrPresetRequest = (tradeId: number, statsRrPreset: string | null) =>
+  request<Trade>(`/admin/trades/${tradeId}/stats-rr-preset`, {
+    method: "POST",
+    body: JSON.stringify({ statsRrPreset }),
+  });
+
 // --- Админка: корректировки баланса (пополнения/выводы) ---
 
 export type EquityAdjustment = {

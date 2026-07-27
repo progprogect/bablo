@@ -18,6 +18,7 @@ import {
   getTradeById,
   listUnclassifiedClosedTrades,
   updateTrade,
+  listClosedTrades,
   type Trade,
 } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
@@ -41,12 +42,18 @@ import {
   isValidTakeProfit,
   parseRRRatio,
   PARTIAL_TP_PERCENT,
+  RR_PRESETS,
   requiresPartialTakeProfit,
   computeRiskRewardRatio,
   isPartialTakeProfitWithinMaxRatio,
   type TradeSide,
 } from "./math.js";
 import { decideNightTakeProfit } from "./nightTp.js";
+import {
+  resolveAutoMonthlyRrPresetBucket,
+  STATS_RR_PRESET_NONE,
+  type MonthlyStatTradeInput,
+} from "../history/monthlyStats.js";
 
 export class TradeError extends Error {
   constructor(
@@ -472,6 +479,83 @@ export async function setTradeCloseReasonManual(
 
 export async function listTradesNeedingCloseReason(): Promise<Trade[]> {
   return listUnclassifiedClosedTrades();
+}
+
+function toMonthlyInput(trade: Trade): MonthlyStatTradeInput {
+  return {
+    openedAt: trade.openedAt,
+    closedAt: trade.closedAt,
+    closeReason: trade.closeReason,
+    resultR: trade.resultR !== null ? Number(trade.resultR) : null,
+    riskUsd: trade.riskUsd !== null ? Number(trade.riskUsd) : null,
+    rrPreset: trade.rrPreset,
+    entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
+    quantity: Number(trade.quantity),
+    partialTpPrice: trade.partialTpPrice !== null ? Number(trade.partialTpPrice) : null,
+    partialTpFilledAt: trade.partialTpFilledAt,
+    nightTpAppliedAt: trade.nightTpAppliedAt,
+    statsRrPreset: trade.statsRrPreset,
+  };
+}
+
+export type StatsRrAdminTrade = Trade & {
+  /** Что поставило бы авто-правило без оверрайда. */
+  autoStatsRrPreset: string | null;
+  /** Что реально пойдёт в сетку статистики сейчас. */
+  effectiveStatsRrPreset: string | null;
+};
+
+/** Закрытые сделки для админки: правка столбца R в месячной статистике. */
+export async function listTradesForStatsRrAdmin(options: {
+  limit: number;
+  offset: number;
+}): Promise<{ trades: StatsRrAdminTrade[]; total: number }> {
+  const page = await listClosedTrades(options);
+  const trades = page.trades.map((trade) => {
+    const input = toMonthlyInput(trade);
+    const autoStatsRrPreset = resolveAutoMonthlyRrPresetBucket(input);
+    const effectiveStatsRrPreset =
+      trade.statsRrPreset != null
+        ? trade.statsRrPreset === STATS_RR_PRESET_NONE || trade.statsRrPreset === ""
+          ? null
+          : trade.statsRrPreset
+        : autoStatsRrPreset;
+    return { ...trade, autoStatsRrPreset, effectiveStatsRrPreset };
+  });
+  return { trades, total: page.total };
+}
+
+/**
+ * Ручная корректировка столбца R в месячной статистике.
+ * null — снова авто; "none" — не учитывать в сетке; иначе пресет RR_PRESETS.
+ * На карточку сделки в Истории (rrPreset) не влияет.
+ */
+export async function setTradeStatsRrPreset(
+  tradeId: number,
+  statsRrPreset: string | null,
+): Promise<Trade> {
+  const trade = await getTradeById(tradeId);
+  if (!trade) {
+    throw new TradeError("Сделка не найдена", 404);
+  }
+  if (trade.status !== "closed") {
+    throw new TradeError("Корректировать R статистики можно только у закрытой сделки", 409);
+  }
+
+  let normalized: string | null = statsRrPreset;
+  if (normalized === "") normalized = null;
+  if (normalized !== null && normalized !== STATS_RR_PRESET_NONE) {
+    if (!(RR_PRESETS as readonly string[]).includes(normalized)) {
+      throw new TradeError("Некорректный пресет R для статистики");
+    }
+  }
+
+  const updated = await updateTrade(tradeId, { statsRrPreset: normalized });
+  if (!updated) {
+    throw new TradeError("Не удалось обновить сделку", 500);
+  }
+  eventBus.emitTyped("refresh", { reason: "trade.statsRrPreset" });
+  return updated;
 }
 
 /**

@@ -78,6 +78,12 @@ export const trades = pgTable("trades", {
    * идемпотентность: повторно не трогаем.
    */
   nightTpAppliedAt: timestamp("night_tp_applied_at", { withTimezone: true }),
+  /**
+   * Ручная корректировка столбца R в месячной статистике (админка).
+   * null — авто (partial / тейк / ночной стоп); "none" — не учитывать в сетке;
+   * иначе пресет из RR_PRESETS ("1/2"…). На список сделок в Истории не влияет.
+   */
+  statsRrPreset: text("stats_rr_preset"),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closeReason: text("close_reason"), // 'sl' | 'tp' | 'manual' | 'external' (закрыта на бирже, обнаружено постфактум)

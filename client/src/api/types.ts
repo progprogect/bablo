@@ -38,6 +38,9 @@ export type Trade = {
   partialTpQuantity: string | null;
   partialTpFilledAt: string | null;
   partialTpFillPrice: string | null;
+  nightTpAppliedAt?: string | null;
+  /** Ручной оверрайд столбца R в статистике: null — авто; "none" — не учитывать; иначе "1/2"… */
+  statsRrPreset?: string | null;
   openedAt: string;
   closedAt: string | null;
   closeReason: string | null;
