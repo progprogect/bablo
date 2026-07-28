@@ -11,8 +11,8 @@ type Phase = "idle" | "side" | "details";
 function riskSizeToleranceRatio(level: number): number {
   if (!(level >= 1)) return 0.2;
   if (level === 1) return 0.2;
-  if (level === 2) return 0.1;
-  return 0.05;
+  if (level === 2) return 0.15;
+  return 0.1;
 }
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
