@@ -11,7 +11,7 @@ import { getRiskSettings } from "../db/repositories/settings.js";
 import { getActiveTrade, listAllClosedTrades, updateTrade } from "../db/repositories/trades.js";
 import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
 import { computeResult } from "../trades/result.js";
-import { applyTradeResult, computeMaxQuantity, getLevelDef } from "./ladder.js";
+import { applyTradeResult, computeMaxQuantity, getLevelDef, riskSizeToleranceRatio } from "./ladder.js";
 import {
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
@@ -152,16 +152,15 @@ export async function checkCanOpenTrade(
 }
 
 /**
- * Допустимое отклонение риска сделки от плана текущего уровня — в обе стороны. Риск-план
- * задаёт конкретную сумму 1R не просто как потолок, а как ориентир: сделка с риском заметно
- * МЕНЬШЕ плана так же нарушает дисциплину лестницы, как и сделка с риском больше плана
- * (прогресс перестаёт соответствовать заложенным шагам). 20% — разумный люфт на округление
- * объёма/цены SL и на дрожание цены между вводом в форме и моментом подтверждения; более
- * заметные отклонения означают, что объём или SL посчитаны неверно.
+ * Допустимое отклонение риска сделки от плана текущего уровня — в обе стороны.
+ * Риск-план задаёт конкретную сумму 1R не просто как потолок, а как ориентир.
+ * Допуск сужается с уровнем (см. riskSizeToleranceRatio): L1 ±20%, L2 ±10%, L3+ ±5%.
+ *
+ * @deprecated Используйте riskSizeToleranceRatio(level); константа = допуск 1-го уровня.
  */
 export const RISK_SIZE_TOLERANCE_RATIO = 0.2;
 
-/** Бросает RiskBlockedError, если риск сделки выходит за пределы ±20% от 1R текущего уровня. */
+/** Бросает RiskBlockedError, если риск сделки выходит за пределы ±допуск от 1R текущего уровня. */
 export async function checkVolumeRisk(currentPrice: number, slPrice: number, quantity: number): Promise<void> {
   const [stateRow, levels] = await Promise.all([getOrCreateRiskState(), listRiskLevelDefs()]);
   const levelDef = getLevelDef(levels, stateRow.currentLevel);
@@ -169,10 +168,11 @@ export async function checkVolumeRisk(currentPrice: number, slPrice: number, qua
     return;
   }
 
+  const toleranceRatio = riskSizeToleranceRatio(stateRow.currentLevel);
   const riskUsd = computeRiskUsd(currentPrice, slPrice, quantity);
-  const minAllowed = levelDef.riskUsd * (1 - RISK_SIZE_TOLERANCE_RATIO);
-  const maxAllowed = levelDef.riskUsd * (1 + RISK_SIZE_TOLERANCE_RATIO);
-  const tolerancePct = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
+  const minAllowed = levelDef.riskUsd * (1 - toleranceRatio);
+  const maxAllowed = levelDef.riskUsd * (1 + toleranceRatio);
+  const tolerancePct = Math.round(toleranceRatio * 100);
 
   if (riskUsd > maxAllowed) {
     const targetQuantity = computeMaxQuantity(currentPrice, slPrice, levelDef.riskUsd);

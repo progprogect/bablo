@@ -5,12 +5,15 @@ import type { OpenTradeResult, TradeSide } from "../../api/types";
 type Phase = "idle" | "side" | "details";
 
 /**
- * Держим в синхроне с server/src/risk/service.ts — риск сделки должен лежать в пределах
- * ±20% от плана 1R текущего уровня, а не просто не превышать его. Слишком маленький риск
- * так же ломает дисциплину лестницы, как и слишком большой.
+ * Держим в синхроне с server/src/risk/ladder.ts — riskSizeToleranceRatio.
+ * Допуск сужается с уровнем: на старте ±20% ок, на $20+ тот же процент уже слишком широкий.
  */
-const RISK_SIZE_TOLERANCE_RATIO = 0.2;
-const TOLERANCE_PCT_LABEL = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
+function riskSizeToleranceRatio(level: number): number {
+  if (!(level >= 1)) return 0.2;
+  if (level === 1) return 0.2;
+  if (level === 2) return 0.1;
+  return 0.05;
+}
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
   return side === "long" ? slPrice < currentPrice : slPrice > currentPrice;
@@ -46,13 +49,24 @@ function evaluateTrade(params: {
   slPrice: string;
   side: TradeSide;
   levelRiskUsd: number;
+  currentLevel: number;
   leverage: number;
   minQuantity: number | null;
   minNotionalUsdt: number | null;
   symbolLabel: string;
 }): Validation {
-  const { currentPrice, quantity, slPrice, side, levelRiskUsd, leverage, minQuantity, minNotionalUsdt, symbolLabel } =
-    params;
+  const {
+    currentPrice,
+    quantity,
+    slPrice,
+    side,
+    levelRiskUsd,
+    currentLevel,
+    leverage,
+    minQuantity,
+    minNotionalUsdt,
+    symbolLabel,
+  } = params;
 
   if (!quantity || !slPrice || currentPrice === null) {
     return { status: "empty" };
@@ -85,9 +99,10 @@ function evaluateTrade(params: {
   }
 
   const riskUsd = computeRiskUsd(currentPrice, parsedSl, parsedQuantity);
-  const minAllowedRisk = levelRiskUsd * (1 - RISK_SIZE_TOLERANCE_RATIO);
-  const maxAllowedRisk = levelRiskUsd * (1 + RISK_SIZE_TOLERANCE_RATIO);
-  const tolerancePct = Math.round(RISK_SIZE_TOLERANCE_RATIO * 100);
+  const toleranceRatio = riskSizeToleranceRatio(currentLevel);
+  const minAllowedRisk = levelRiskUsd * (1 - toleranceRatio);
+  const maxAllowedRisk = levelRiskUsd * (1 + toleranceRatio);
+  const tolerancePct = Math.round(toleranceRatio * 100);
 
   if (riskUsd > maxAllowedRisk) {
     // Риск можно снизить двумя равноценными способами: уменьшить объём при том же SL,
@@ -143,6 +158,7 @@ export function TradeForm({
   symbol,
   leverage,
   levelRiskUsd,
+  currentLevel,
   livePrice,
   blockedReason = null,
   onOpened,
@@ -150,6 +166,7 @@ export function TradeForm({
   symbol: string;
   leverage: number;
   levelRiskUsd: number;
+  currentLevel: number;
   livePrice?: number;
   /** Если задан — вход в этот актив запрещён (правило #9: стоп по активу сегодня). */
   blockedReason?: string | null;
@@ -164,6 +181,8 @@ export function TradeForm({
   const [slPrice, setSlPrice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const tolerancePctLabel = Math.round(riskSizeToleranceRatio(currentLevel) * 100);
 
   useEffect(() => {
     setRestPrice(null);
@@ -198,13 +217,25 @@ export function TradeForm({
             slPrice,
             side,
             levelRiskUsd,
+            currentLevel,
             leverage,
             minQuantity,
             minNotionalUsdt,
             symbolLabel,
           })
         : { status: "empty" as const },
-    [currentPrice, quantity, slPrice, side, levelRiskUsd, leverage, minQuantity, minNotionalUsdt, symbolLabel],
+    [
+      currentPrice,
+      quantity,
+      slPrice,
+      side,
+      levelRiskUsd,
+      currentLevel,
+      leverage,
+      minQuantity,
+      minNotionalUsdt,
+      symbolLabel,
+    ],
   );
 
   function resetToIdle() {
@@ -248,7 +279,7 @@ export function TradeForm({
             {symbolLabel} · цена {currentPrice !== null ? currentPrice : "…"}
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            План риска: {levelRiskUsd} USDT (±{TOLERANCE_PCT_LABEL}%)
+            План риска: {levelRiskUsd} USDT (±{tolerancePctLabel}%)
           </p>
           {blockedReason ? (
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
@@ -369,7 +400,11 @@ export function TradeForm({
         />
       </div>
 
-      <ValidationPanel validation={validation} levelRiskUsd={levelRiskUsd} />
+      <ValidationPanel
+        validation={validation}
+        levelRiskUsd={levelRiskUsd}
+        tolerancePctLabel={tolerancePctLabel}
+      />
 
       {error && <p className="text-center text-sm text-red-600">{error}</p>}
 
@@ -387,11 +422,19 @@ export function TradeForm({
   );
 }
 
-function ValidationPanel({ validation, levelRiskUsd }: { validation: Validation; levelRiskUsd: number }) {
+function ValidationPanel({
+  validation,
+  levelRiskUsd,
+  tolerancePctLabel,
+}: {
+  validation: Validation;
+  levelRiskUsd: number;
+  tolerancePctLabel: number;
+}) {
   if (validation.status === "empty") {
     return (
       <p className="rounded-xl bg-surface px-3 py-2.5 text-center text-xs text-slate-500">
-        Заполните объём и SL — риск сделки должен быть ≈{levelRiskUsd} USDT (±{TOLERANCE_PCT_LABEL}%)
+        Заполните объём и SL — риск сделки должен быть ≈{levelRiskUsd} USDT (±{tolerancePctLabel}%)
       </p>
     );
   }

@@ -138,6 +138,7 @@ export function Dashboard() {
                 symbol={selectedSymbol}
                 leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
                 levelRiskUsd={data.risk.levelRiskUsd}
+                currentLevel={data.risk.currentLevel}
                 livePrice={livePrices[selectedSymbol]}
                 blockedReason={selectedAssetSlLock?.reason ?? null}
                 onOpened={(result) => {

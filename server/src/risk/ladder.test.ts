@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyTradeResult, computeMaxQuantity } from "./ladder.js";
+import { applyTradeResult, computeMaxQuantity, riskSizeToleranceRatio } from "./ladder.js";
 import { DEFAULT_RISK_LEVELS } from "./defaultLevels.js";
 
 test("applyTradeResult: положительный результат копит прогресс без перехода уровня", () => {
@@ -36,4 +36,12 @@ test("computeMaxQuantity: делит 1R на дистанцию до стопа"
 
 test("computeMaxQuantity: нулевая дистанция даёт 0 (защита от деления на 0)", () => {
   assert.equal(computeMaxQuantity(1, 1, 10), 0);
+});
+
+test("riskSizeToleranceRatio: сужается с уровнем (20% → 10% → 5%)", () => {
+  assert.equal(riskSizeToleranceRatio(1), 0.2);
+  assert.equal(riskSizeToleranceRatio(2), 0.1);
+  assert.equal(riskSizeToleranceRatio(3), 0.05);
+  assert.equal(riskSizeToleranceRatio(10), 0.05);
+  assert.equal(riskSizeToleranceRatio(0), 0.2);
 });

@@ -48,3 +48,15 @@ export function computeMaxQuantity(currentPrice: number, slPrice: number, levelR
   if (priceDistance <= 0) return 0;
   return levelRiskUsd / priceDistance;
 }
+
+/**
+ * Допуск риска сделки от плана 1R текущего уровня — сужается с ростом уровня:
+ * на $10 (±20%) люфт малозаметен, на $20+ тот же процент уже «гуляет» на несколько долларов.
+ * L1 ±20%, L2 ±10%, L3+ ±5% (пол не ниже 5% — запас на округление лота/цены).
+ */
+export function riskSizeToleranceRatio(level: number): number {
+  if (!(level >= 1)) return 0.2;
+  if (level === 1) return 0.2;
+  if (level === 2) return 0.1;
+  return 0.05;
+}
