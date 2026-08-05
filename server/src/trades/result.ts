@@ -1,4 +1,8 @@
-import { computeResultFromPrices, type TradeSide } from "./math.js";
+import {
+  computeResultFromPrices,
+  isStopOnProfitSide,
+  type TradeSide,
+} from "./math.js";
 
 /** Минимальные поля сделки, нужные для расчёта результата (не тянем весь ORM-тип). */
 export type TradeForResult = {
@@ -12,12 +16,31 @@ export type TradeForResult = {
   partialTpPrice?: string | number | null;
 };
 
+/** Вход для выбора цены закрытия при ручном пересчёте resultR. */
+export type ResolveRecalculateClosePriceInput = {
+  side: TradeSide;
+  entryPrice: number;
+  quantity: number;
+  riskUsd: number;
+  slPrice: number | null;
+  closePrice: number | null;
+  closeReason: string | null;
+  partialTpFilledAt?: Date | string | null;
+  /** Фактический fill с BingX (если удалось найти). */
+  bingxFillPrice?: number | null;
+};
+
+export type ResolveRecalculateClosePriceResult = {
+  closePrice: number;
+  source: "bingx" | "stored" | "sl";
+};
+
 /**
  * BingX на STOP_MARKET иногда присылает rp=0 при реальном убытке (проскальзывание).
  * Нулевой realizedProfit не доверяем, если цена закрытия даёт заметный |R|.
  */
 const REALIZED_PROFIT_ZERO_EPS = 1e-8;
-const PRICE_BASED_R_TRUST_THRESHOLD = 0.05;
+export const PRICE_BASED_R_TRUST_THRESHOLD = 0.05;
 
 function preferPriceBasedOverZeroRp(
   realizedProfit: number,
@@ -94,4 +117,62 @@ export function computeResult(
   }
 
   return fromPrices;
+}
+
+/**
+ * Выбирает цену закрытия для пересчёта resultR.
+ *
+ * Приоритет:
+ * 1) fill BingX;
+ * 2) сохранённый closePrice, если даёт заметный |R|;
+ * 3) для SL без partial — slPrice, если сохранённый close ≈ вход (типичный баг rp=0 / ap≈entry)
+ *    и стоп ещё защитный (не на стороне прибыли).
+ */
+export function resolveRecalculateClosePrice(
+  input: ResolveRecalculateClosePriceInput,
+): ResolveRecalculateClosePriceResult | null {
+  const bingx = input.bingxFillPrice;
+  if (bingx != null && Number.isFinite(bingx) && bingx > 0) {
+    return { closePrice: bingx, source: "bingx" };
+  }
+
+  const stored =
+    input.closePrice != null && Number.isFinite(input.closePrice) && input.closePrice > 0
+      ? input.closePrice
+      : null;
+  const sl =
+    input.slPrice != null && Number.isFinite(input.slPrice) && input.slPrice > 0
+      ? input.slPrice
+      : null;
+
+  const canUseSlFallback =
+    input.closeReason === "sl" &&
+    input.partialTpFilledAt == null &&
+    sl != null &&
+    Number.isFinite(input.entryPrice) &&
+    input.entryPrice > 0 &&
+    !isStopOnProfitSide(input.entryPrice, sl, input.side);
+
+  if (stored != null) {
+    const fromStored = computeResultFromPrices(
+      input.side,
+      input.entryPrice,
+      stored,
+      input.quantity,
+      input.riskUsd,
+    );
+    if (
+      canUseSlFallback &&
+      Math.abs(fromStored.resultR) < PRICE_BASED_R_TRUST_THRESHOLD
+    ) {
+      return { closePrice: sl, source: "sl" };
+    }
+    return { closePrice: stored, source: "stored" };
+  }
+
+  if (canUseSlFallback) {
+    return { closePrice: sl, source: "sl" };
+  }
+
+  return null;
 }

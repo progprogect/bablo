@@ -49,7 +49,7 @@ import {
   type TradeSide,
 } from "./math.js";
 import { decideNightTakeProfit } from "./nightTp.js";
-import { computeResult } from "./result.js";
+import { computeResult, resolveRecalculateClosePrice } from "./result.js";
 import {
   resolveAutoMonthlyRrPresetBucket,
   STATS_RR_PRESET_NONE,
@@ -560,8 +560,9 @@ export async function setTradeStatsRrPreset(
 }
 
 /**
- * Пересчитать resultR/resultPct закрытой сделки по цене закрытия (без rp с биржи).
- * Нужно, когда BingX отдал rp=0 при проскальзывании и в истории зависло 0 USDT / «БУ».
+ * Пересчитать resultR/resultPct закрытой сделки.
+ * Источник цены: fill BingX → closePrice → slPrice (для SL с «нулевым» close≈entry).
+ * Нужно, когда BingX отдал rp=0 / ap≈entry при проскальзывании и в истории зависло 0 USDT.
  * Лестницу уровней не трогаем повторно; дневные лимиты — через resync.
  */
 export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
@@ -572,14 +573,48 @@ export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
   if (trade.status !== "closed") {
     throw new TradeError("Пересчитывать можно только закрытую сделку", 409);
   }
-  if (trade.closePrice === null) {
-    throw new TradeError("Нет цены закрытия — пересчитать нечего", 409);
+
+  let bingxFillPrice: number | null = null;
+  const orderIds = (trade.bingxOrderIds ?? {}) as Record<string, string | number>;
+  if (orderIds.sl !== undefined || orderIds.tp !== undefined) {
+    try {
+      const credentials = await getBingxCredentials();
+      if (credentials) {
+        const { findFilledSlOrTp } = await import("../realtime/reconcile.js");
+        const fill = await findFilledSlOrTp(credentials, trade, orderIds);
+        const raw = fill?.order.avgPrice != null ? Number(fill.order.avgPrice) : NaN;
+        if (Number.isFinite(raw) && raw > 0) {
+          bingxFillPrice = raw;
+        }
+      }
+    } catch (error) {
+      console.warn("[trades] recalculate: BingX fill lookup failed", error);
+    }
   }
 
-  const closePrice = Number(trade.closePrice);
-  const { resultR, resultPct } = computeResult(trade, closePrice, null);
+  const resolved = resolveRecalculateClosePrice({
+    side: trade.side as TradeSide,
+    entryPrice: Number(trade.entryPrice),
+    quantity: Number(trade.quantity),
+    riskUsd: Number(trade.riskUsd) || 0,
+    slPrice: trade.slPrice != null ? Number(trade.slPrice) : null,
+    closePrice: trade.closePrice != null ? Number(trade.closePrice) : null,
+    closeReason: trade.closeReason,
+    partialTpFilledAt: trade.partialTpFilledAt,
+    bingxFillPrice,
+  });
 
-  const updated = await updateTrade(tradeId, { resultR, resultPct });
+  if (!resolved) {
+    throw new TradeError("Нет цены закрытия (ни fill BingX, ни closePrice, ни SL)", 409);
+  }
+
+  const { resultR, resultPct } = computeResult(trade, resolved.closePrice, null);
+
+  const updated = await updateTrade(tradeId, {
+    resultR,
+    resultPct,
+    closePrice: resolved.closePrice,
+  });
   if (!updated) {
     throw new TradeError("Не удалось обновить сделку", 500);
   }

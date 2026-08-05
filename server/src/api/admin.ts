@@ -209,7 +209,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /**
-   * Пересчёт resultR по сохранённой цене закрытия (игнор rp=0 с биржи).
+   * Пересчёт resultR: fill BingX → closePrice → slPrice (если close≈entry при SL).
    * Чинит сделки, где из‑за проскальзывания в истории зависло 0 USDT.
    */
   app.post<{ Params: { id: string } }>("/admin/trades/:id/recalculate-result", async (request, reply) => {

@@ -87,17 +87,32 @@ export function TradeStatsRrSection() {
     setError(null);
     setNotice(null);
     setBusyId(tradeId);
+    const before = trades?.find((t) => t.id === tradeId);
+    const beforeR = before?.resultR != null ? Number(before.resultR) : null;
     try {
       const updated = await recalculateTradeResultRequest(tradeId);
+      const afterR = updated.resultR != null ? Number(updated.resultR) : null;
       const pnl =
-        updated.resultR !== null && updated.riskUsd !== null
-          ? Number(updated.resultR) * Number(updated.riskUsd)
+        afterR !== null && updated.riskUsd !== null
+          ? afterR * Number(updated.riskUsd)
           : null;
-      setNotice(
-        pnl !== null
-          ? `Пересчитано: ${formatSignedUsd(pnl)} (${Number(updated.resultR).toFixed(2)}R)`
-          : "Пересчитано",
-      );
+      const changed =
+        beforeR === null || afterR === null
+          ? beforeR !== afterR
+          : Math.abs(beforeR - afterR) > 1e-6;
+      if (!changed) {
+        setNotice(
+          pnl !== null
+            ? `Без изменений: ${formatSignedUsd(pnl)} (${afterR!.toFixed(2)}R) — цена уже согласована`
+            : "Без изменений — результат уже согласован",
+        );
+      } else {
+        setNotice(
+          pnl !== null
+            ? `Пересчитано: ${formatSignedUsd(pnl)} (${afterR!.toFixed(2)}R)`
+            : "Пересчитано",
+        );
+      }
       reload(0, false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось пересчитать");
@@ -113,9 +128,9 @@ export function TradeStatsRrSection() {
       <div>
         <h2 className="text-sm font-medium text-ink">R в статистике</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Закрытые сделки: столбец R на «Статистике» и пересчёт PnL по цене закрытия (если BingX
-          отдал 0 при проскальзывании). Список сделок в Истории для R-пресета не меняется —
-          после «Пересчитать» обновится сумма USDT.
+          Закрытые сделки: столбец R на «Статистике» и пересчёт PnL (fill BingX / цена закрытия /
+          SL при нулевом close). Список сделок в Истории для R-пресета не меняется — после
+          «Пересчитать» обновится сумма USDT.
         </p>
       </div>
 
@@ -184,10 +199,14 @@ export function TradeStatsRrSection() {
                   </select>
                   <button
                     type="button"
-                    disabled={busy || trade.closePrice === null}
+                    disabled={
+                      busy ||
+                      (trade.closePrice === null &&
+                        !(trade.closeReason === "sl" && trade.slPrice != null))
+                    }
                     onClick={() => handleRecalculate(trade.id)}
                     className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
-                    title="Пересчитать PnL по цене закрытия"
+                    title="Пересчитать PnL по fill BingX / цене закрытия / SL"
                   >
                     {busy ? "…" : "Пересчитать"}
                   </button>
