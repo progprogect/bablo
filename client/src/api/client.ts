@@ -145,6 +145,13 @@ export const setTradeStatsRrPresetRequest = (tradeId: number, statsRrPreset: str
     body: JSON.stringify({ statsRrPreset }),
   });
 
+/** Пересчёт resultR по цене закрытия (когда BingX отдал rp=0 при реальном убытке). */
+export const recalculateTradeResultRequest = (tradeId: number) =>
+  request<Trade>(`/admin/trades/${tradeId}/recalculate-result`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
 // --- Админка: корректировки баланса (пополнения/выводы) ---
 
 export type EquityAdjustment = {

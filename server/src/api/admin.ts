@@ -16,6 +16,7 @@ import { reclassifyExternalTrades } from "../trades/reclassify.js";
 import {
   listTradesForStatsRrAdmin,
   listTradesNeedingCloseReason,
+  recalculateTradeResult,
   setTradeCloseReasonManual,
   setTradeStatsRrPreset,
   TradeError,
@@ -206,6 +207,27 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  /**
+   * Пересчёт resultR по сохранённой цене закрытия (игнор rp=0 с биржи).
+   * Чинит сделки, где из‑за проскальзывания в истории зависло 0 USDT.
+   */
+  app.post<{ Params: { id: string } }>("/admin/trades/:id/recalculate-result", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id)) {
+      reply.code(400).send({ error: "Некорректный id" });
+      return;
+    }
+    try {
+      return await recalculateTradeResult(id);
+    } catch (error) {
+      if (error instanceof TradeError) {
+        reply.code(error.status).send({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  });
 
   // --- Активы ---
 

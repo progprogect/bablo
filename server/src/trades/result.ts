@@ -13,6 +13,23 @@ export type TradeForResult = {
 };
 
 /**
+ * BingX на STOP_MARKET иногда присылает rp=0 при реальном убытке (проскальзывание).
+ * Нулевой realizedProfit не доверяем, если цена закрытия даёт заметный |R|.
+ */
+const REALIZED_PROFIT_ZERO_EPS = 1e-8;
+const PRICE_BASED_R_TRUST_THRESHOLD = 0.05;
+
+function preferPriceBasedOverZeroRp(
+  realizedProfit: number,
+  fromPrices: { resultR: number; resultPct: number },
+): boolean {
+  return (
+    Math.abs(realizedProfit) < REALIZED_PROFIT_ZERO_EPS &&
+    Math.abs(fromPrices.resultR) > PRICE_BASED_R_TRUST_THRESHOLD
+  );
+}
+
+/**
  * Результат сделки в R и %. Учитывает уже исполненную частичную фиксацию:
  * финальный ордер закрывает только остаток, его `realizedProfit` — без PnL partial.
  */
@@ -26,6 +43,7 @@ export function computeResult(
   const riskUsd = Number(trade.riskUsd) || 0;
   const side = trade.side as TradeSide;
   const notional = entryPrice * quantity;
+  const fromPrices = computeResultFromPrices(side, entryPrice, closePrice, quantity, riskUsd);
 
   /**
    * Если частичная фиксация уже исполнилась, финальный ордер (TP/SL) закрывает только
@@ -48,10 +66,18 @@ export function computeResult(
       side === "long" ? close - entryPrice : entryPrice - close;
     const partialPnl = priceDelta(partialPrice) * partialQty;
     const remainderQty = quantity - partialQty;
-    const remainderPnl =
-      realizedProfit !== null && Number.isFinite(realizedProfit)
-        ? realizedProfit
-        : priceDelta(closePrice) * remainderQty;
+    let remainderPnl: number;
+    if (realizedProfit !== null && Number.isFinite(realizedProfit)) {
+      const remainderFromPrices = priceDelta(closePrice) * remainderQty;
+      // rp=0 на остатке при реальном проскальзывании — берём цену закрытия.
+      remainderPnl =
+        Math.abs(realizedProfit) < REALIZED_PROFIT_ZERO_EPS &&
+        Math.abs(remainderFromPrices) > REALIZED_PROFIT_ZERO_EPS
+          ? remainderFromPrices
+          : realizedProfit;
+    } else {
+      remainderPnl = priceDelta(closePrice) * remainderQty;
+    }
     const totalPnl = partialPnl + remainderPnl;
     const resultR = riskUsd > 0 ? totalPnl / riskUsd : 0;
     const resultPct = notional > 0 ? (totalPnl / notional) * 100 : 0;
@@ -59,10 +85,13 @@ export function computeResult(
   }
 
   if (realizedProfit !== null && Number.isFinite(realizedProfit)) {
+    if (preferPriceBasedOverZeroRp(realizedProfit, fromPrices)) {
+      return fromPrices;
+    }
     const resultR = riskUsd > 0 ? realizedProfit / riskUsd : 0;
     const resultPct = notional > 0 ? (realizedProfit / notional) * 100 : 0;
     return { resultR, resultPct };
   }
 
-  return computeResultFromPrices(side, entryPrice, closePrice, quantity, riskUsd);
+  return fromPrices;
 }

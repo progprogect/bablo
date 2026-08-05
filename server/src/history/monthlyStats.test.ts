@@ -13,6 +13,8 @@ function trade(input: {
   closeReason?: string | null;
   rrPreset?: string | null;
   entryPrice?: number | null;
+  slPrice?: number | null;
+  side?: "long" | "short" | null;
   quantity?: number | null;
   partialTpPrice?: number | null;
   partialTpFilledAt?: string | null;
@@ -27,6 +29,8 @@ function trade(input: {
     closeReason: input.closeReason ?? null,
     rrPreset: input.rrPreset ?? null,
     entryPrice: input.entryPrice ?? null,
+    slPrice: input.slPrice ?? null,
+    side: input.side ?? null,
     quantity: input.quantity ?? null,
     partialTpPrice: input.partialTpPrice ?? null,
     partialTpFilledAt: input.partialTpFilledAt ? new Date(input.partialTpFilledAt) : null,
@@ -297,4 +301,44 @@ test("computeMonthlyStats: statsRrPreset none — не в сетке даже п
   assert.ok(stat);
   assert.equal(stat.tpCount, 1);
   assert.ok(stat.byRRPreset.every((e) => e.count === 0));
+});
+
+test("computeMonthlyStats: стоп с исходным SL и resultR≈0 — не БУ (баг rp=0)", () => {
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-01T12:00:00Z",
+      resultR: 0,
+      riskUsd: 20,
+      closeReason: "sl",
+      entryPrice: 100,
+      slPrice: 90,
+      side: "long",
+      quantity: 2,
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.beCount, 0);
+  assert.equal(stat.slCount, 1);
+});
+
+test("computeMonthlyStats: стоп на входе (БУ после partial) с resultR≈0 — БУ", () => {
+  const trades = [
+    trade({
+      openedAt: "2026-07-01T10:00:00Z",
+      closedAt: "2026-07-01T12:00:00Z",
+      resultR: 0.02,
+      riskUsd: 20,
+      closeReason: "sl",
+      entryPrice: 100,
+      slPrice: 100,
+      side: "long",
+      quantity: 2,
+    }),
+  ];
+  const [stat] = computeMonthlyStats(trades, TZ, null);
+  assert.ok(stat);
+  assert.equal(stat.beCount, 1);
+  assert.equal(stat.slCount, 0);
 });

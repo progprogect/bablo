@@ -39,6 +39,8 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
       rrPreset: row.rrPreset,
       entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
+      slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
+      side: row.side,
       quantity: Number(row.quantity),
       partialTpPrice: row.partialTpPrice !== null ? Number(row.partialTpPrice) : null,
       partialTpFilledAt: row.partialTpFilledAt,

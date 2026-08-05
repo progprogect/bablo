@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   getStatsRrTrades,
+  recalculateTradeResultRequest,
   setTradeStatsRrPresetRequest,
   type StatsRrAdminTrade,
 } from "../../api/client";
@@ -82,6 +83,29 @@ export function TradeStatsRrSection() {
     }
   }
 
+  async function handleRecalculate(tradeId: number) {
+    setError(null);
+    setNotice(null);
+    setBusyId(tradeId);
+    try {
+      const updated = await recalculateTradeResultRequest(tradeId);
+      const pnl =
+        updated.resultR !== null && updated.riskUsd !== null
+          ? Number(updated.resultR) * Number(updated.riskUsd)
+          : null;
+      setNotice(
+        pnl !== null
+          ? `Пересчитано: ${formatSignedUsd(pnl)} (${Number(updated.resultR).toFixed(2)}R)`
+          : "Пересчитано",
+      );
+      reload(0, false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось пересчитать");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const loaded = trades?.length ?? 0;
 
   return (
@@ -89,9 +113,9 @@ export function TradeStatsRrSection() {
       <div>
         <h2 className="text-sm font-medium text-ink">R в статистике</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Закрытые сделки: какой столбец (1R…10R) учитывать на вкладке «Статистика». В списке
-          сделок Истории отображение не меняется. «Авто» — по правилам (partial / тейк / ночной
-          стоп), «Не учитывать» — убрать из сетки.
+          Закрытые сделки: столбец R на «Статистике» и пересчёт PnL по цене закрытия (если BingX
+          отдал 0 при проскальзывании). Список сделок в Истории для R-пресета не меняется —
+          после «Пересчитать» обновится сумма USDT.
         </p>
       </div>
 
@@ -141,22 +165,33 @@ export function TradeStatsRrSection() {
                     {formatSignedUsd(pnl)}
                   </p>
                 </div>
-                <select
-                  disabled={busy}
-                  value={selectValue(trade)}
-                  onChange={(event) => handleChange(trade.id, event.target.value)}
-                  className="rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
-                >
-                  <option value={AUTO_VALUE}>
-                    Авто{trade.autoStatsRrPreset ? ` (${presetLabel(trade.autoStatsRrPreset)})` : " (—)"}
-                  </option>
-                  <option value={NONE_VALUE}>Не учитывать</option>
-                  {RR_PRESETS.map((preset) => (
-                    <option key={preset} value={preset}>
-                      {presetLabel(preset)}
+                <div className="flex gap-2">
+                  <select
+                    disabled={busy}
+                    value={selectValue(trade)}
+                    onChange={(event) => handleChange(trade.id, event.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
+                  >
+                    <option value={AUTO_VALUE}>
+                      Авто{trade.autoStatsRrPreset ? ` (${presetLabel(trade.autoStatsRrPreset)})` : " (—)"}
                     </option>
-                  ))}
-                </select>
+                    <option value={NONE_VALUE}>Не учитывать</option>
+                    {RR_PRESETS.map((preset) => (
+                      <option key={preset} value={preset}>
+                        {presetLabel(preset)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={busy || trade.closePrice === null}
+                    onClick={() => handleRecalculate(trade.id)}
+                    className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
+                    title="Пересчитать PnL по цене закрытия"
+                  >
+                    {busy ? "…" : "Пересчитать"}
+                  </button>
+                </div>
               </li>
             );
           })}

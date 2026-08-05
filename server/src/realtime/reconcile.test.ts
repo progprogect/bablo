@@ -168,4 +168,28 @@ describe("computeResult с частичной фиксацией", () => {
     const { resultR } = computeResult(trade, 115, 150);
     assert.equal(resultR, 3);
   });
+
+  it("rp=0 при реальном убытке по цене — не доверяем нулю BingX, считаем по closePrice", () => {
+    // STOP_MARKET с проскальзыванием: биржа иногда шлёт rp=0, ap=реальная цена
+    const trade = fakeTrade({
+      entryPrice: "100",
+      quantity: "10",
+      riskUsd: "50",
+      side: "long",
+    });
+    // close 90 → −10*10 = −100$ → −2R; rp=0 от биржи
+    const { resultR } = computeResult(trade, 90, 0);
+    assert.equal(resultR, -2);
+  });
+
+  it("rp=0 и close≈entry — оставляем ноль (реальный БУ)", () => {
+    const trade = fakeTrade({
+      entryPrice: "100",
+      quantity: "10",
+      riskUsd: "50",
+      side: "long",
+    });
+    const { resultR } = computeResult(trade, 100, 0);
+    assert.equal(resultR, 0);
+  });
 });

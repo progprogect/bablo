@@ -49,6 +49,7 @@ import {
   type TradeSide,
 } from "./math.js";
 import { decideNightTakeProfit } from "./nightTp.js";
+import { computeResult } from "./result.js";
 import {
   resolveAutoMonthlyRrPresetBucket,
   STATS_RR_PRESET_NONE,
@@ -555,6 +556,38 @@ export async function setTradeStatsRrPreset(
     throw new TradeError("Не удалось обновить сделку", 500);
   }
   eventBus.emitTyped("refresh", { reason: "trade.statsRrPreset" });
+  return updated;
+}
+
+/**
+ * Пересчитать resultR/resultPct закрытой сделки по цене закрытия (без rp с биржи).
+ * Нужно, когда BingX отдал rp=0 при проскальзывании и в истории зависло 0 USDT / «БУ».
+ * Лестницу уровней не трогаем повторно; дневные лимиты — через resync.
+ */
+export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
+  const trade = await getTradeById(tradeId);
+  if (!trade) {
+    throw new TradeError("Сделка не найдена", 404);
+  }
+  if (trade.status !== "closed") {
+    throw new TradeError("Пересчитывать можно только закрытую сделку", 409);
+  }
+  if (trade.closePrice === null) {
+    throw new TradeError("Нет цены закрытия — пересчитать нечего", 409);
+  }
+
+  const closePrice = Number(trade.closePrice);
+  const { resultR, resultPct } = computeResult(trade, closePrice, null);
+
+  const updated = await updateTrade(tradeId, { resultR, resultPct });
+  if (!updated) {
+    throw new TradeError("Не удалось обновить сделку", 500);
+  }
+
+  await resyncTradingDayRisk().catch(() => {
+    // результат уже в БД; дневные локи можно добить кнопкой в админке
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.resultRecalculated" });
   return updated;
 }
 

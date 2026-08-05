@@ -1,8 +1,10 @@
 import {
   PARTIAL_RATIO_MATCH_EPSILON,
   PARTIAL_TP_PRESETS,
+  isStopOnProfitSide,
   parseRRRatio,
   RR_PRESETS,
+  type TradeSide,
 } from "../trades/math.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
 
@@ -14,6 +16,8 @@ export type MonthlyStatTradeInput = {
   riskUsd: number | null;
   rrPreset: string | null;
   entryPrice?: number | null;
+  slPrice?: number | null;
+  side?: TradeSide | string | null;
   quantity?: number | null;
   partialTpPrice?: number | null;
   partialTpFilledAt?: Date | string | null;
@@ -53,6 +57,24 @@ export type MonthlyStat = {
 
 /** Сделка считается закрытой "в безубыток", если |resultR| в пределах этого допуска — учитывает комиссии/проскальзывание у стопа, выставленного на цену входа. */
 const BREAKEVEN_EPSILON_R = 0.05;
+
+/**
+ * Близость resultR к нулю сама по себе не значит БУ: стоп с исходным защитным SL
+ * и «нулевым» R (баг rp=0 от биржи) должен оставаться SL в разбивке TP/SL/Б/У.
+ * БУ — только если стоп уже на стороне прибыли (вход / +1R) или closeReason не sl.
+ */
+export function isMonthlyBreakevenClose(trade: MonthlyStatTradeInput, resultR: number): boolean {
+  if (Math.abs(resultR) > BREAKEVEN_EPSILON_R) return false;
+  if (trade.closeReason !== "sl") return true;
+  const entry = trade.entryPrice ?? null;
+  const sl = trade.slPrice ?? null;
+  const side = trade.side;
+  if (entry !== null && sl !== null && (side === "long" || side === "short")) {
+    return isStopOnProfitSide(entry, sl, side);
+  }
+  // Нет данных о SL — оставляем прежнее поведение (считать БУ по |R|).
+  return true;
+}
 
 /**
  * Ночной TP 1/1 без уже исполненной partial — в статистике это «стоп» плана
@@ -274,7 +296,7 @@ export function computeMonthlyStats(
         sumNegativeR += resultR;
       }
 
-      if (Math.abs(resultR) <= BREAKEVEN_EPSILON_R) {
+      if (isMonthlyBreakevenClose(trade, resultR)) {
         beCount += 1;
       } else if (isForcedNightStopClose(trade)) {
         // Ночной TP 1/1 без partial — в UI как стоп (план не отработан).
