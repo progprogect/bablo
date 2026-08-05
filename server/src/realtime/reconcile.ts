@@ -241,7 +241,18 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
 
   if (filled) {
     closeReason = filled.key;
-    closePrice = Number(filled.order.avgPrice) || Number(trade.entryPrice);
+    const rawAvg = filled.order.avgPrice != null ? Number(filled.order.avgPrice) : NaN;
+    // avgPrice=0 / пустой — не подставлять entry (иначе в истории 0R при реальном SL).
+    if (Number.isFinite(rawAvg) && rawAvg > 0) {
+      closePrice = rawAvg;
+    } else {
+      const fallback =
+        filled.key === "sl"
+          ? Number(trade.slPrice)
+          : Number(trade.tpPrice);
+      closePrice =
+        Number.isFinite(fallback) && fallback > 0 ? fallback : Number(trade.entryPrice);
+    }
     realizedProfit = filled.order.profit !== undefined ? Number(filled.order.profit) : null;
   } else {
     // Ни один из наших ордеров не FILLED (например, позицию закрыли вручную в приложении

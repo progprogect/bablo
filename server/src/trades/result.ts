@@ -1,4 +1,8 @@
-import { computeResultFromPrices, type TradeSide } from "./math.js";
+import {
+  computeResultFromPrices,
+  isStopOnProfitSide,
+  type TradeSide,
+} from "./math.js";
 
 /** Минимальные поля сделки, нужные для расчёта результата (не тянем весь ORM-тип). */
 export type TradeForResult = {
@@ -12,12 +16,31 @@ export type TradeForResult = {
   partialTpPrice?: string | number | null;
 };
 
+/** Вход для выбора цены закрытия при ручном пересчёте resultR. */
+export type ResolveRecalculateClosePriceInput = {
+  side: TradeSide;
+  entryPrice: number;
+  quantity: number;
+  riskUsd: number;
+  slPrice: number | null;
+  closePrice: number | null;
+  closeReason: string | null;
+  partialTpFilledAt?: Date | string | null;
+  /** Фактический fill с BingX (если удалось найти). */
+  bingxFillPrice?: number | null;
+};
+
+export type ResolveRecalculateClosePriceResult = {
+  closePrice: number;
+  source: "bingx" | "stored" | "sl";
+};
+
 /**
  * BingX на STOP_MARKET иногда присылает rp=0 при реальном убытке (проскальзывание).
  * Нулевой realizedProfit не доверяем, если цена закрытия даёт заметный |R|.
  */
 const REALIZED_PROFIT_ZERO_EPS = 1e-8;
-const PRICE_BASED_R_TRUST_THRESHOLD = 0.05;
+export const PRICE_BASED_R_TRUST_THRESHOLD = 0.05;
 
 function preferPriceBasedOverZeroRp(
   realizedProfit: number,
@@ -94,4 +117,63 @@ export function computeResult(
   }
 
   return fromPrices;
+}
+
+/**
+ * Выбирает цену закрытия для пересчёта resultR.
+ *
+ * Кандидаты (по приоритету): fill BingX → сохранённый closePrice → slPrice
+ * (для SL без partial, пока стоп защитный). Берём первого, у кого |R| ≥ порога.
+ * Так fill/close ≈ entry (баг BingX rp=0) не блокирует откат на SL.
+ */
+export function resolveRecalculateClosePrice(
+  input: ResolveRecalculateClosePriceInput,
+): ResolveRecalculateClosePriceResult | null {
+  const absRAt = (price: number) =>
+    Math.abs(
+      computeResultFromPrices(
+        input.side,
+        input.entryPrice,
+        price,
+        input.quantity,
+        input.riskUsd,
+      ).resultR,
+    );
+
+  const bingx =
+    input.bingxFillPrice != null && Number.isFinite(input.bingxFillPrice) && input.bingxFillPrice > 0
+      ? input.bingxFillPrice
+      : null;
+  const stored =
+    input.closePrice != null && Number.isFinite(input.closePrice) && input.closePrice > 0
+      ? input.closePrice
+      : null;
+  const sl =
+    input.slPrice != null && Number.isFinite(input.slPrice) && input.slPrice > 0
+      ? input.slPrice
+      : null;
+
+  const canUseSlFallback =
+    input.closeReason === "sl" &&
+    input.partialTpFilledAt == null &&
+    sl != null &&
+    Number.isFinite(input.entryPrice) &&
+    input.entryPrice > 0 &&
+    !isStopOnProfitSide(input.entryPrice, sl, input.side);
+
+  const candidates: ResolveRecalculateClosePriceResult[] = [];
+  if (bingx != null) candidates.push({ closePrice: bingx, source: "bingx" });
+  if (stored != null) candidates.push({ closePrice: stored, source: "stored" });
+  if (canUseSlFallback) candidates.push({ closePrice: sl, source: "sl" });
+
+  if (candidates.length === 0) return null;
+
+  const meaningful = candidates.find(
+    (c) => absRAt(c.closePrice) >= PRICE_BASED_R_TRUST_THRESHOLD,
+  );
+  if (meaningful) return meaningful;
+
+  // Все ≈0R: при защитном SL всё равно берём его (рискUsd=0 и т.п.), иначе первый кандидат.
+  if (canUseSlFallback) return { closePrice: sl, source: "sl" };
+  return candidates[0] ?? null;
 }
