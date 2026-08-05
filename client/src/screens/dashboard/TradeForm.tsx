@@ -11,7 +11,6 @@ type Phase = "idle" | "side" | "details";
 function riskSizeToleranceRatio(level: number): number {
   if (!(level >= 1)) return 0.2;
   if (level === 1) return 0.2;
-  if (level === 2) return 0.15;
   return 0.1;
 }
 

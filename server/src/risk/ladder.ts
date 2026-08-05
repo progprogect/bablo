@@ -52,11 +52,10 @@ export function computeMaxQuantity(currentPrice: number, slPrice: number, levelR
 /**
  * Допуск риска сделки от плана 1R текущего уровня — сужается с ростом уровня:
  * на $10 (±20%) люфт малозаметен, на $20+ тот же процент уже «гуляет» на несколько долларов.
- * L1 ±20%, L2 ±15%, L3+ ±10%.
+ * L1 ±20%, L2+ ±10%.
  */
 export function riskSizeToleranceRatio(level: number): number {
   if (!(level >= 1)) return 0.2;
   if (level === 1) return 0.2;
-  if (level === 2) return 0.15;
   return 0.1;
 }

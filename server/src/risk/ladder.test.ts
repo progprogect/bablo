@@ -38,9 +38,9 @@ test("computeMaxQuantity: нулевая дистанция даёт 0 (защи
   assert.equal(computeMaxQuantity(1, 1, 10), 0);
 });
 
-test("riskSizeToleranceRatio: сужается с уровнем (20% → 15% → 10%)", () => {
+test("riskSizeToleranceRatio: сужается с уровнем (20% → 10% с L2)", () => {
   assert.equal(riskSizeToleranceRatio(1), 0.2);
-  assert.equal(riskSizeToleranceRatio(2), 0.15);
+  assert.equal(riskSizeToleranceRatio(2), 0.1);
   assert.equal(riskSizeToleranceRatio(3), 0.1);
   assert.equal(riskSizeToleranceRatio(10), 0.1);
   assert.equal(riskSizeToleranceRatio(0), 0.2);
