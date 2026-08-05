@@ -146,8 +146,16 @@ export const setTradeStatsRrPresetRequest = (tradeId: number, statsRrPreset: str
   });
 
 /** Пересчёт resultR: fill BingX / closePrice / SL (когда BingX отдал 0 при реальном убытке). */
+export type RecalculateTradeResultResponse = {
+  trade: Trade;
+  source: "bingx" | "stored" | "sl";
+  beforeR: number | null;
+  afterR: number | null;
+  changed: boolean;
+};
+
 export const recalculateTradeResultRequest = (tradeId: number) =>
-  request<Trade>(`/admin/trades/${tradeId}/recalculate-result`, {
+  request<RecalculateTradeResultResponse>(`/admin/trades/${tradeId}/recalculate-result`, {
     method: "POST",
     body: JSON.stringify({}),
   });

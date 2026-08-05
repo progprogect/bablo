@@ -122,20 +122,28 @@ export function computeResult(
 /**
  * Выбирает цену закрытия для пересчёта resultR.
  *
- * Приоритет:
- * 1) fill BingX;
- * 2) сохранённый closePrice, если даёт заметный |R|;
- * 3) для SL без partial — slPrice, если сохранённый close ≈ вход (типичный баг rp=0 / ap≈entry)
- *    и стоп ещё защитный (не на стороне прибыли).
+ * Кандидаты (по приоритету): fill BingX → сохранённый closePrice → slPrice
+ * (для SL без partial, пока стоп защитный). Берём первого, у кого |R| ≥ порога.
+ * Так fill/close ≈ entry (баг BingX rp=0) не блокирует откат на SL.
  */
 export function resolveRecalculateClosePrice(
   input: ResolveRecalculateClosePriceInput,
 ): ResolveRecalculateClosePriceResult | null {
-  const bingx = input.bingxFillPrice;
-  if (bingx != null && Number.isFinite(bingx) && bingx > 0) {
-    return { closePrice: bingx, source: "bingx" };
-  }
+  const absRAt = (price: number) =>
+    Math.abs(
+      computeResultFromPrices(
+        input.side,
+        input.entryPrice,
+        price,
+        input.quantity,
+        input.riskUsd,
+      ).resultR,
+    );
 
+  const bingx =
+    input.bingxFillPrice != null && Number.isFinite(input.bingxFillPrice) && input.bingxFillPrice > 0
+      ? input.bingxFillPrice
+      : null;
   const stored =
     input.closePrice != null && Number.isFinite(input.closePrice) && input.closePrice > 0
       ? input.closePrice
@@ -153,26 +161,19 @@ export function resolveRecalculateClosePrice(
     input.entryPrice > 0 &&
     !isStopOnProfitSide(input.entryPrice, sl, input.side);
 
-  if (stored != null) {
-    const fromStored = computeResultFromPrices(
-      input.side,
-      input.entryPrice,
-      stored,
-      input.quantity,
-      input.riskUsd,
-    );
-    if (
-      canUseSlFallback &&
-      Math.abs(fromStored.resultR) < PRICE_BASED_R_TRUST_THRESHOLD
-    ) {
-      return { closePrice: sl, source: "sl" };
-    }
-    return { closePrice: stored, source: "stored" };
-  }
+  const candidates: ResolveRecalculateClosePriceResult[] = [];
+  if (bingx != null) candidates.push({ closePrice: bingx, source: "bingx" });
+  if (stored != null) candidates.push({ closePrice: stored, source: "stored" });
+  if (canUseSlFallback) candidates.push({ closePrice: sl, source: "sl" });
 
-  if (canUseSlFallback) {
-    return { closePrice: sl, source: "sl" };
-  }
+  if (candidates.length === 0) return null;
 
-  return null;
+  const meaningful = candidates.find(
+    (c) => absRAt(c.closePrice) >= PRICE_BASED_R_TRUST_THRESHOLD,
+  );
+  if (meaningful) return meaningful;
+
+  // Все ≈0R: при защитном SL всё равно берём его (рискUsd=0 и т.п.), иначе первый кандидат.
+  if (canUseSlFallback) return { closePrice: sl, source: "sl" };
+  return candidates[0] ?? null;
 }

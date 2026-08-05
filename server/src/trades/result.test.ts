@@ -24,6 +24,16 @@ describe("resolveRecalculateClosePrice", () => {
     assert.deepEqual(resolved, { closePrice: 94.5, source: "bingx" });
   });
 
+  it("игнорирует fill BingX ≈ entry и берёт slPrice", () => {
+    const resolved = resolveRecalculateClosePrice({
+      ...base,
+      bingxFillPrice: 100,
+      closePrice: 100,
+      slPrice: 95,
+    });
+    assert.deepEqual(resolved, { closePrice: 95, source: "sl" });
+  });
+
   it("при SL и close≈entry берёт slPrice (баг rp=0 / ap=entry)", () => {
     const resolved = resolveRecalculateClosePrice({
       ...base,

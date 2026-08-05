@@ -565,7 +565,17 @@ export async function setTradeStatsRrPreset(
  * Нужно, когда BingX отдал rp=0 / ap≈entry при проскальзывании и в истории зависло 0 USDT.
  * Лестницу уровней не трогаем повторно; дневные лимиты — через resync.
  */
-export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
+export type RecalculateTradeResultResponse = {
+  trade: Trade;
+  source: "bingx" | "stored" | "sl";
+  beforeR: number | null;
+  afterR: number | null;
+  changed: boolean;
+};
+
+export async function recalculateTradeResult(
+  tradeId: number,
+): Promise<RecalculateTradeResultResponse> {
   const trade = await getTradeById(tradeId);
   if (!trade) {
     throw new TradeError("Сделка не найдена", 404);
@@ -573,6 +583,8 @@ export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
   if (trade.status !== "closed") {
     throw new TradeError("Пересчитывать можно только закрытую сделку", 409);
   }
+
+  const beforeR = trade.resultR !== null ? Number(trade.resultR) : null;
 
   let bingxFillPrice: number | null = null;
   const orderIds = (trade.bingxOrderIds ?? {}) as Record<string, string | number>;
@@ -609,6 +621,13 @@ export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
   }
 
   const { resultR, resultPct } = computeResult(trade, resolved.closePrice, null);
+  const afterR = resultR;
+  const changed =
+    beforeR === null ||
+    !Number.isFinite(beforeR) ||
+    Math.abs(beforeR - afterR) > 1e-6 ||
+    trade.closePrice === null ||
+    Math.abs(Number(trade.closePrice) - resolved.closePrice) > 1e-12;
 
   const updated = await updateTrade(tradeId, {
     resultR,
@@ -623,7 +642,13 @@ export async function recalculateTradeResult(tradeId: number): Promise<Trade> {
     // результат уже в БД; дневные локи можно добить кнопкой в админке
   });
   eventBus.emitTyped("refresh", { reason: "trade.resultRecalculated" });
-  return updated;
+  return {
+    trade: updated,
+    source: resolved.source,
+    beforeR,
+    afterR,
+    changed,
+  };
 }
 
 /**

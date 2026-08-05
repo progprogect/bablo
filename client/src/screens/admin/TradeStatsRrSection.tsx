@@ -87,30 +87,28 @@ export function TradeStatsRrSection() {
     setError(null);
     setNotice(null);
     setBusyId(tradeId);
-    const before = trades?.find((t) => t.id === tradeId);
-    const beforeR = before?.resultR != null ? Number(before.resultR) : null;
     try {
-      const updated = await recalculateTradeResultRequest(tradeId);
-      const afterR = updated.resultR != null ? Number(updated.resultR) : null;
+      const result = await recalculateTradeResultRequest(tradeId);
+      const { trade: updated, source, beforeR, afterR, changed } = result;
       const pnl =
-        afterR !== null && updated.riskUsd !== null
-          ? afterR * Number(updated.riskUsd)
-          : null;
-      const changed =
-        beforeR === null || afterR === null
-          ? beforeR !== afterR
-          : Math.abs(beforeR - afterR) > 1e-6;
+        afterR !== null && updated.riskUsd !== null ? afterR * Number(updated.riskUsd) : null;
+      const sourceLabel =
+        source === "bingx" ? "по fill BingX" : source === "sl" ? "по цене SL" : "по цене закрытия";
       if (!changed) {
         setNotice(
           pnl !== null
-            ? `Без изменений: ${formatSignedUsd(pnl)} (${afterR!.toFixed(2)}R) — цена уже согласована`
-            : "Без изменений — результат уже согласован",
+            ? `Без изменений ${sourceLabel}: ${formatSignedUsd(pnl)} (${(afterR ?? 0).toFixed(2)}R)`
+            : `Без изменений ${sourceLabel}`,
         );
       } else {
+        const beforeLabel =
+          beforeR !== null && Number.isFinite(beforeR) ? `${beforeR.toFixed(2)}R` : "—";
+        const afterLabel =
+          afterR !== null && Number.isFinite(afterR) ? `${afterR.toFixed(2)}R` : "—";
         setNotice(
           pnl !== null
-            ? `Пересчитано: ${formatSignedUsd(pnl)} (${afterR!.toFixed(2)}R)`
-            : "Пересчитано",
+            ? `Пересчитано ${sourceLabel}: ${beforeLabel} → ${afterLabel} (${formatSignedUsd(pnl)})`
+            : `Пересчитано ${sourceLabel}: ${beforeLabel} → ${afterLabel}`,
         );
       }
       reload(0, false);
