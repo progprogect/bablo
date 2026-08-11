@@ -80,7 +80,7 @@ export const trades = pgTable("trades", {
   nightTpAppliedAt: timestamp("night_tp_applied_at", { withTimezone: true }),
   /**
    * Ручная корректировка столбца R в месячной статистике (админка).
-   * null — авто (partial / тейк / ночной стоп); "none" — не учитывать в сетке;
+   * null — авто (partial / тейк, в т.ч. ночной 1/1); "none" — не учитывать в сетке;
    * иначе пресет из RR_PRESETS ("1/2"…). На список сделок в Истории не влияет.
    */
   statsRrPreset: text("stats_rr_preset"),
