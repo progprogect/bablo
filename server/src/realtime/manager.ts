@@ -1,3 +1,4 @@
+import { getPositions } from "../bingx/client.js";
 import { listActiveAssets } from "../db/repositories/assets.js";
 import { getBingxCredentials } from "../db/repositories/settings.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
@@ -30,7 +31,15 @@ export async function startRealtime(): Promise<void> {
   // сама сделка и риск-движок от этого не зависят (см. tracker/activeTradeTracker.ts).
   const activeTrade = await getActiveTrade().catch(() => null);
   if (activeTrade) {
-    startTracking(activeTrade);
+    // Сделка могла закрыться по SL/TP, пока сервер лежал: ACCOUNT_UPDATE за это время
+    // потерян, и без сверки она осталась бы "active" до ручного нажатия «Закрыть» —
+    // с причиной "external" вместо реального тейка (ночной TP 1/1 срабатывает как раз
+    // ночью, когда деплой/рестарт наиболее вероятен). Разовая проверка позиции по
+    // событию старта — не поллинг.
+    const closedWhileDown = await reconcileIfPositionAlreadyFlat(activeTrade.symbol);
+    if (!closedWhileDown) {
+      startTracking(activeTrade);
+    }
   }
 
   // Если partial на 1/2 или 1/3 уже исполнилась до рестарта, а SL ещё исходный —
@@ -52,6 +61,32 @@ export async function startRealtime(): Promise<void> {
     await startNightTakeProfitScheduler();
   } catch (error) {
     console.error("[realtime] startNightTakeProfitScheduler не удался:", error);
+  }
+}
+
+/**
+ * Если позиции по символу на бирже уже нет, а в БД сделка ещё активна — досверяем
+ * закрытие обычным путём (reconcilePositionFlat найдёт исполнившийся SL/TP и запишет
+ * реальную причину). Возвращает true, если сделка была закрыта этой сверкой.
+ * Best-effort: любая ошибка BingX оставляет сделку активной, как и раньше.
+ */
+async function reconcileIfPositionAlreadyFlat(symbol: string): Promise<boolean> {
+  try {
+    const credentials = await getBingxCredentials();
+    if (!credentials) return false;
+    const positions = await getPositions(credentials, symbol);
+    if (positions.some((p) => Number(p.positionAmt) !== 0)) return false;
+
+    await reconcilePositionFlat(symbol);
+    const stillActive = await getActiveTrade().catch(() => null);
+    const closed = stillActive === null || stillActive.symbol !== symbol;
+    if (closed) {
+      console.info(`[realtime] сделка по ${symbol} закрылась, пока сервер был недоступен — сверено при старте`);
+    }
+    return closed;
+  } catch (error) {
+    console.error("[realtime] сверка закрытия при старте не удалась:", error);
+    return false;
   }
 }
 

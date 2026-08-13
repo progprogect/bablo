@@ -1,6 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { findFilledSlOrTp, computeResult } from "./reconcile.js";
+import { computeResult } from "./reconcile.js";
+import { findFilledSlOrTp, resolveCloseFromFilledOrder } from "./filledOrder.js";
 import type { Trade } from "../db/repositories/trades.js";
 
 function fakeTrade(overrides: Partial<Trade> = {}): Trade {
@@ -191,5 +192,43 @@ describe("computeResult с частичной фиксацией", () => {
     });
     const { resultR } = computeResult(trade, 100, 0);
     assert.equal(resultR, 0);
+  });
+});
+
+describe("resolveCloseFromFilledOrder", () => {
+  it("исполнившийся ночной TP 1/1 — это тейк с ценой fill, а не external", () => {
+    // Ночное поджатие переписывает bingxOrderIds.tp на новый ордер (trades/service.ts),
+    // поэтому найденный по нему fill должен давать closeReason "tp" — сделка попадает
+    // в тейки статистики и дневных лимитов (docs/PROJECT.md).
+    const trade = fakeTrade({ entryPrice: "100", slPrice: "95", tpPrice: "105" });
+    const resolved = resolveCloseFromFilledOrder(trade, {
+      key: "tp",
+      order: { avgPrice: "105.2", profit: "50" } as never,
+    });
+    assert.equal(resolved.closeReason, "tp");
+    assert.equal(resolved.closePrice, 105.2);
+    assert.equal(resolved.realizedProfit, 50);
+  });
+
+  it("avgPrice=0 от BingX — берём сохранённую цену сработавшей стороны, а не вход", () => {
+    const trade = fakeTrade({ entryPrice: "100", slPrice: "95", tpPrice: "105" });
+    const bySl = resolveCloseFromFilledOrder(trade, {
+      key: "sl",
+      order: { avgPrice: "0" } as never,
+    });
+    assert.equal(bySl.closePrice, 95);
+    assert.equal(bySl.realizedProfit, null);
+
+    const byTp = resolveCloseFromFilledOrder(trade, {
+      key: "tp",
+      order: {} as never,
+    });
+    assert.equal(byTp.closePrice, 105);
+  });
+
+  it("нет ни fill-цены, ни сохранённой цены стороны — откат на цену входа", () => {
+    const trade = fakeTrade({ entryPrice: "100", slPrice: null, tpPrice: null });
+    const resolved = resolveCloseFromFilledOrder(trade, { key: "sl", order: {} as never });
+    assert.equal(resolved.closePrice, 100);
   });
 });
