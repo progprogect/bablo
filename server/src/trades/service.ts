@@ -48,6 +48,9 @@ import {
   isPartialTakeProfitWithinMaxRatio,
   type TradeSide,
 } from "./math.js";
+// filledOrder не зависит от trades/ — статический импорт не создаёт цикл
+// (в отличие от realtime/reconcile.ts, который импортирует finalizeTradeClose отсюда).
+import { findFilledSlOrTp, resolveCloseFromFilledOrder } from "../realtime/filledOrder.js";
 import { decideNightTakeProfit } from "./nightTp.js";
 import { computeResult, resolveRecalculateClosePrice } from "./result.js";
 import {
@@ -592,7 +595,6 @@ export async function recalculateTradeResult(
     try {
       const credentials = await getBingxCredentials();
       if (credentials) {
-        const { findFilledSlOrTp } = await import("../realtime/reconcile.js");
         const fill = await findFilledSlOrTp(credentials, trade, orderIds);
         const raw = fill?.order.avgPrice != null ? Number(fill.order.avgPrice) : NaN;
         if (Number.isFinite(raw) && raw > 0) {
@@ -878,8 +880,11 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
   const exitSide: OrderSide = side === "long" ? "SELL" : "BUY";
   const quantity = Number(trade.quantity);
 
+  const orderIdsForLookup = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
+
   let closePrice: number;
   let closeReason = "manual";
+  let realizedProfit: number | null = null;
   try {
     const positions = await getPositions(credentials, trade.symbol);
     const isStillOpen = positions.some((p) => Number(p.positionAmt) !== 0);
@@ -894,10 +899,21 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
       });
       closePrice = closeOrder.avgPrice ? Number(closeOrder.avgPrice) : await getLatestPrice(trade.symbol);
     } else {
-      // Позиции уже нет, но WS ещё не (или не смог) зафиксировать закрытие — берём
-      // текущую рыночную цену как приближение для R/статистики.
-      closePrice = await getLatestPrice(trade.symbol);
-      closeReason = "external";
+      // Позиции уже нет: сработал наш SL/TP, а событие WS не дошло (рестарт/деплой,
+      // обрыв стрима). Раньше это безусловно писалось как "external" — сделка, реально
+      // закрытая по тейку (в т.ч. ночному 1/1), не попадала ни в тейки статистики, ни в
+      // дневные лимиты. Сначала спрашиваем биржу, какой из ордеров исполнился.
+      const filled = await findFilledSlOrTp(credentials, trade, orderIdsForLookup).catch(() => null);
+      if (filled) {
+        const resolved = resolveCloseFromFilledOrder(trade, filled);
+        closeReason = resolved.closeReason;
+        closePrice = resolved.closePrice;
+        realizedProfit = resolved.realizedProfit;
+      } else {
+        // Ни один наш ордер не исполнился — позицию действительно закрыли мимо приложения.
+        closePrice = await getLatestPrice(trade.symbol);
+        closeReason = "external";
+      }
     }
   } catch (error) {
     throw new TradeError(bingxMessage(error, "Не удалось закрыть позицию на BingX"), 502);
@@ -906,9 +922,8 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
   // ВАЖНО: позиция уже закрыта на бирже с этого момента. Всё, что ниже, —
   // best-effort зачистка и запись результата; ошибки не должны вылетать необработанными.
 
-  const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
   for (const key of ["sl", "tp", "partialTp"] as const) {
-    const orderId = orderIds[key];
+    const orderId = orderIdsForLookup[key];
     if (orderId === undefined) continue;
     try {
       await cancelOrder(credentials, trade.symbol, orderId);
@@ -917,9 +932,10 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
     }
   }
 
-  const entryPrice = Number(trade.entryPrice);
-  const riskUsd = Number(trade.riskUsd) || 0;
-  const { resultR, resultPct } = computeResultFromPrices(side, entryPrice, closePrice, quantity, riskUsd);
+  // computeResult (а не computeResultFromPrices) — учитывает уже исполненную частичную
+  // фиксацию и realizedProfit исполнившегося ордера, как и авто-детект по WS. Иначе у
+  // сделки с partial ручное закрытие давало R только по остатку.
+  const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
 
   const updated = await finalizeTradeClose(tradeId, { closeReason, closePrice, resultR, resultPct });
   if (!updated) {
