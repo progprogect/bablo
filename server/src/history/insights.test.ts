@@ -81,18 +81,24 @@ test("computeTradeInsights: сделки без тейка (даже прибы�
   assert.deepEqual(insights.topProfitableHours, []);
 });
 
-test("computeTradeInsights: прибыльные часы идут по времени, а не по числу тейков", () => {
+test("computeTradeInsights: прибыльные часы — по силе, равные по силе — по времени", () => {
   const trades = [
-    // 13:00 локально — 1/1 TP
-    trade({ openedHourUtc: 10, resultR: 1, closeReason: "tp" }),
-    // 07:00 локально — 2/2 TP: тейков больше, но час раньше — значит и в списке раньше
-    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
-    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    // 09:00 локально — 1/2 TP (равно по силе с 08:00, но позже по времени)
+    trade({ openedHourUtc: 6, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 6, resultR: -1, closeReason: "sl" }),
+    // 10:00 локально — 1/1 TP: тейк один, но доля выше — выше часов 1/2
+    trade({ openedHourUtc: 7, resultR: 1, closeReason: "tp" }),
+    // 21:00 локально — 2/2 TP: тейков больше всех — первый, несмотря на позднее время
+    trade({ openedHourUtc: 18, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 18, resultR: 1, closeReason: "tp" }),
+    // 08:00 локально — 1/2 TP
+    trade({ openedHourUtc: 5, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }),
   ];
   const insights = computeTradeInsights(trades, TZ, 3);
   assert.deepEqual(
     insights.topProfitableHours.map((bucket) => bucket.hour),
-    [7, 13],
+    [21, 10, 8, 9],
   );
 });
 
