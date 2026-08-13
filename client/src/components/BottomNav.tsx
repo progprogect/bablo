@@ -8,7 +8,9 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <ul className="mx-auto flex max-w-md justify-around">
+      {/* h-16 фиксирует высоту панели — на неё завязан отступ контента (spacing
+          "bottom-nav" в tailwind.config.ts), чтобы низ списка не уходил под навигацию. */}
+      <ul className="mx-auto flex h-16 max-w-md items-center justify-around">
         {navTabs.map((tab) => (
           <li key={tab.to} className="flex-1">
             <NavLink
