@@ -29,12 +29,14 @@ export type TradeInsights = {
   /**
    * Часы открытия, в которые не меньше половины открытых сделок закрылись по тейку
    * (hitRate ≥ 50% — именно это и означает "прибыльный час", а не resultR > 0 у отдельной
-   * сделки). Топ-3 по числу сделок, закрытых по тейку.
+   * сделки). ВСЕ подходящие часы, отсортированные по числу тейков ↓, затем по доле ↓;
+   * сколько из них показать сразу, решает UI (см. client InsightPanel).
    */
   topProfitableHours: { hour: number; tpCount: number; total: number }[];
   /**
    * Часы открытия, в которые больше половины открытых сделок закрылись по стопу
-   * (slRate > 50% — строго больше половины). Топ-3 по числу стопов. Формат: `14ч — 3/3 SL`.
+   * (slRate > 50% — строго больше половины). Формат: `14ч — 3/3 SL`. Как и прибыльные
+   * часы — весь список, порядок по числу стопов ↓, затем по доле ↓.
    */
   topStopHours: { hour: number; slCount: number; total: number }[];
   /**
@@ -81,21 +83,39 @@ function bucketByOpenHour(trades: InsightTradeInput[], tzOffsetMinutes: number):
   return buckets;
 }
 
-/** "Прибыльный час" — не меньше половины сделок, открытых в этот час, дошли до тейка. */
-function topProfitableHours(buckets: HourBucketStat[], limit: number): TradeInsights["topProfitableHours"] {
+/**
+ * "Прибыльный час" — не меньше половины сделок, открытых в этот час, дошли до тейка.
+ *
+ * Порядок: число тейков ↓, затем ДОЛЯ тейков ↓, затем час ↑. Доля в сравнении важна:
+ * при сортировке только по числу тейков час 1/1 (100%) и час 1/2 (50%) равны, и порядок
+ * решала стабильность сортировки — то есть номер часа. Из-за этого более «чистый» час
+ * молча уходил вниз и выпадал из видимой части списка.
+ *
+ * Возвращаем ВСЕ подходящие часы — обрезка до видимых решается в UI, где остальные
+ * доступны по кнопке. Иначе час, который пользователь видит в истории как тейк,
+ * пропадал из подсказки без объяснения.
+ */
+function profitableHours(buckets: HourBucketStat[]): TradeInsights["topProfitableHours"] {
   return buckets
     .filter((bucket) => bucket.total > 0 && bucket.tpCount / bucket.total >= 0.5)
-    .sort((a, b) => b.tpCount - a.tpCount)
-    .slice(0, limit)
+    .sort(
+      (a, b) =>
+        b.tpCount - a.tpCount || b.tpCount / b.total - a.tpCount / a.total || a.hour - b.hour,
+    )
     .map((bucket) => ({ hour: bucket.hour, tpCount: bucket.tpCount, total: bucket.total }));
 }
 
-/** "Убыточный час" — строго больше половины сделок, открытых в этот час, закрылись по стопу. */
-function topStopHours(buckets: HourBucketStat[], limit: number): TradeInsights["topStopHours"] {
+/**
+ * "Убыточный час" — строго больше половины сделок, открытых в этот час, закрылись по стопу.
+ * Порядок и полнота списка — как у прибыльных часов (см. profitableHours).
+ */
+function stopHours(buckets: HourBucketStat[]): TradeInsights["topStopHours"] {
   return buckets
     .filter((bucket) => bucket.total > 0 && bucket.slCount / bucket.total > 0.5)
-    .sort((a, b) => b.slCount - a.slCount)
-    .slice(0, limit)
+    .sort(
+      (a, b) =>
+        b.slCount - a.slCount || b.slCount / b.total - a.slCount / a.total || a.hour - b.hour,
+    )
     .map((bucket) => ({ hour: bucket.hour, slCount: bucket.slCount, total: bucket.total }));
 }
 
@@ -280,8 +300,8 @@ export function computeTradeInsights(
 ): TradeInsights {
   const buckets = bucketByOpenHour(trades, tzOffsetMinutes);
   return {
-    topProfitableHours: topProfitableHours(buckets, 3),
-    topStopHours: topStopHours(buckets, 3),
+    topProfitableHours: profitableHours(buckets),
+    topStopHours: stopHours(buckets),
     assetOutcomes: assetOutcomes(trades),
     topStopAssets: topStopAssets(trades, 2),
     dailyTargetHour: dailyTargetHour(trades, dailyProfitLimitR, tzOffsetMinutes),

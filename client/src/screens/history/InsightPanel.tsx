@@ -66,6 +66,48 @@ function PresetOutcomesList({ items, limit }: { items: PresetOutcome[]; limit: n
 }
 
 const VISIBLE_PRESETS_LIMIT = 2;
+const VISIBLE_HOURS_LIMIT = 3;
+
+/**
+ * Строка с часами: первые VISIBLE_HOURS_LIMIT сразу, остальные — по кнопке (как у
+ * пресетов). Сервер отдаёт все подходящие часы, поэтому час, который виден в истории
+ * как тейк, всегда можно найти в подсказке — раньше он молча обрезался топ-3.
+ */
+function HoursLine({ label, items }: { label: string; items: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? items : items.slice(0, VISIBLE_HOURS_LIMIT);
+  const hiddenCount = items.length - shown.length;
+
+  return (
+    <li>
+      {label}: {shown.join(", ")}
+      {hiddenCount > 0 && (
+        <>
+          {" · "}
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="font-medium text-accent underline-offset-2 hover:underline"
+          >
+            и ещё {hiddenCount}
+          </button>
+        </>
+      )}
+      {expanded && items.length > VISIBLE_HOURS_LIMIT && (
+        <>
+          {" · "}
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="font-medium text-accent underline-offset-2 hover:underline"
+          >
+            свернуть
+          </button>
+        </>
+      )}
+    </li>
+  );
+}
 
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
   const assetOutcomes = insights.assetOutcomes ?? [];
@@ -88,12 +130,12 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
       <h3 className="text-sm font-medium text-ink">Подсказка</h3>
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
         {insights.topProfitableHours.length > 0 && (
-          <li>
-            Прибыльные часы:{" "}
-            {insights.topProfitableHours
-              .map((bucket) => `${formatHourShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`)
-              .join(", ")}
-          </li>
+          <HoursLine
+            label="Прибыльные часы"
+            items={insights.topProfitableHours.map(
+              (bucket) => `${formatHourShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`,
+            )}
+          />
         )}
 
         {assetOutcomes.length > 0 && (
@@ -114,12 +156,12 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
         )}
 
         {insights.topStopHours.length > 0 && (
-          <li>
-            Чаще убыточные сделки в:{" "}
-            {insights.topStopHours
-              .map((bucket) => `${formatHourShort(bucket.hour)} — ${bucket.slCount}/${bucket.total} SL`)
-              .join(", ")}
-          </li>
+          <HoursLine
+            label="Чаще убыточные сделки в"
+            items={insights.topStopHours.map(
+              (bucket) => `${formatHourShort(bucket.hour)} — ${bucket.slCount}/${bucket.total} SL`,
+            )}
+          />
         )}
 
         {topStopAssets.length > 0 && (

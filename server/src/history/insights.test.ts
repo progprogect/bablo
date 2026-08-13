@@ -81,6 +81,33 @@ test("computeTradeInsights: сделки без тейка (даже прибы�
   assert.deepEqual(insights.topProfitableHours, []);
 });
 
+test("computeTradeInsights: при равном числе тейков выше час с большей долей тейков", () => {
+  const trades = [
+    // 07:00 локально — 1/2 TP (50%)
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "tp" }),
+    trade({ openedHourUtc: 4, resultR: -1, closeReason: "sl" }),
+    // 13:00 локально — 1/1 TP (100%): тейков столько же, но час «чище» — должен быть выше
+    trade({ openedHourUtc: 10, resultR: 1, closeReason: "tp" }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+  assert.equal(insights.topProfitableHours[0]?.hour, 13);
+  assert.equal(insights.topProfitableHours[1]?.hour, 7);
+});
+
+test("computeTradeInsights: прибыльных часов больше трёх — отдаются все, обрезка на стороне UI", () => {
+  // 4 часа по одному тейку: раньше возвращались только 3, и час с тейком мог пропасть
+  // из подсказки, хотя в истории он виден.
+  const trades = [4, 7, 10, 13].map((hourUtc) =>
+    trade({ openedHourUtc: hourUtc, resultR: 1, closeReason: "tp" }),
+  );
+  const insights = computeTradeInsights(trades, TZ, 3);
+  assert.equal(insights.topProfitableHours.length, 4);
+  assert.deepEqual(
+    insights.topProfitableHours.map((bucket) => bucket.hour),
+    [7, 10, 13, 16],
+  );
+});
+
 test("computeTradeInsights: топ часов открытия сделок, закрытых по стопу — доля SL > 50%", () => {
   const trades = [
     trade({ openedHourUtc: 5, resultR: -1, closeReason: "sl" }), // 08:00 локально — 2/3 SL (> 50%)
