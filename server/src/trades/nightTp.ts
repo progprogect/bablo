@@ -39,7 +39,12 @@ export type NightTpDecision =
       newTpPrice: number;
       quantity: number;
       cancelPartial: boolean;
-    };
+    }
+  /**
+   * Цена уже прошла 1/1, но до целевого TP не дошла: тейк не трогаем (пусть отрабатывает
+   * план), а стоп подтягиваем на уровень 1/1 — сделка уже не может закончиться хуже +1R.
+   */
+  | { action: "moveSl"; newSlPrice: number; quantity: number };
 
 export type NightTpDecisionInput = {
   side: TradeSide;
@@ -48,6 +53,11 @@ export type NightTpDecisionInput = {
   riskUsd: number;
   quantity: number;
   tpPrice: number | null;
+  /**
+   * Текущая рыночная цена. null — не удалось получить: тогда работает прежняя ветка
+   * (перенос TP на 1/1), потому что без цены отличить «дошла до 1R» от «не дошла» нельзя.
+   */
+  currentPrice: number | null;
   partialTpPrice: number | null;
   partialTpQuantity: number | null;
   partialTpFilledAt: Date | string | null;
@@ -59,9 +69,16 @@ export type NightTpDecisionInput = {
   tzOffsetMinutes: number;
 };
 
+/** Цена уже дошла до целевого уровня в сторону прибыли (для лонга ≥, для шорта ≤). */
+function hasReachedTarget(currentPrice: number, targetPrice: number, side: TradeSide): boolean {
+  return side === "long" ? currentPrice >= targetPrice : currentPrice <= targetPrice;
+}
+
 /**
- * Решение: заменить TP на 1/1 × 100% остатка для дневной сделки, активной после 01:00 МСК.
- * Чистая функция без I/O.
+ * Решение по ночному правилу для дневной сделки, активной после 01:00 МСК.
+ * Чистая функция без I/O. Две ветки, развилка по текущей цене:
+ * - цена ещё НЕ дошла до 1/1 → TP переносится на 1/1 × 100% остатка (не пересиживаем ночь);
+ * - цена УЖЕ прошла 1/1 → TP остаётся плановым, SL подтягивается на 1/1.
  */
 export function decideNightTakeProfit(input: NightTpDecisionInput): NightTpDecision {
   const nightStartHour = input.nightStartHour ?? DEFAULT_NIGHT_START_HOUR;
@@ -101,9 +118,10 @@ export function decideNightTakeProfit(input: NightTpDecisionInput): NightTpDecis
     return { action: "skip", reason: "не удалось посчитать цену 1/1" };
   }
 
-  // Если SL уже на 1/1 или дальше — тейк на том же уровне бессмысленен.
+  // Если SL уже на 1/1 или дальше — сделка и так защищена на +1R, делать нечего
+  // (это же покрывает случай подтянутого стопа после partial 1/3).
   if (isSlAtOrBeyondTarget(input.slPrice, newTpPrice, input.side)) {
-    return { action: "skip", reason: "SL уже на 1/1 или дальше — ночной TP не ставим" };
+    return { action: "skip", reason: "SL уже на 1/1 или дальше — ночное правило не нужно" };
   }
 
   // Текущий TP уже не дальше 1/1 (равен или ближе к входу) и partial либо нет,
@@ -124,7 +142,18 @@ export function decideNightTakeProfit(input: NightTpDecisionInput): NightTpDecis
     ? computeRemainderQuantity(input.quantity, partialQty)
     : input.quantity;
   if (!(quantity > 0)) {
-    return { action: "skip", reason: "нет объёма для ночного TP" };
+    return { action: "skip", reason: "нет объёма для ночного правила" };
+  }
+
+  // Цена уже прошла 1/1 — план не ломаем: TP остаётся своим, но результат фиксируем
+  // стопом на 1/1. Ставить TP на 1/1 здесь нельзя: он оказался бы позади рынка и
+  // сработал бы сразу, закрыв сделку в 01:00 вместо того, чтобы дать ей доработать.
+  if (
+    input.currentPrice !== null &&
+    input.currentPrice > 0 &&
+    hasReachedTarget(input.currentPrice, newTpPrice, input.side)
+  ) {
+    return { action: "moveSl", newSlPrice: newTpPrice, quantity };
   }
 
   return {

@@ -7,6 +7,7 @@ import {
   placeOrder,
   setLeverage,
   setMarginType,
+  type BingXCredentials,
   type OrderSide,
 } from "../bingx/client.js";
 import { listActiveAssets, type Asset } from "../db/repositories/assets.js";
@@ -688,47 +689,37 @@ export async function moveStopLossAfterPartial(
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
   const exitSide: OrderSide = trade.side === "long" ? "SELL" : "BUY";
-  const oldSlId = orderIds.sl;
   const targetLabel =
     decision.slRatio <= 0 ? "вход (безубыток)" : `R/R 1/${decision.slRatio}`;
 
-  if (oldSlId !== undefined) {
-    try {
-      await cancelOrder(credentials, trade.symbol, oldSlId);
-    } catch (error) {
-      // Ордер мог уже исчезнуть после partial — пробуем всё равно выставить новый.
-      console.warn(
-        `[trades] не удалось отменить старый SL перед подтягиванием на ${targetLabel}:`,
-        error instanceof Error ? error.message : error,
-      );
+  const moved = await replaceConditionalOrder(credentials, {
+    symbol: trade.symbol,
+    exitSide,
+    type: "STOP_MARKET",
+    oldOrderId: orderIds.sl,
+    oldStopPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+    newStopPrice: decision.newSlPrice,
+    quantity: decision.remainderQuantity,
+    failureMessage: `Не удалось выставить SL на ${targetLabel} после partial — проверьте стоп на BingX вручную`,
+  });
+
+  if (!moved.ok) {
+    // Прежний стоп возвращён на место (новый id) — записываем, иначе в БД останется
+    // мёртвый ордер и закрытие по стопу не определится.
+    if (moved.restoredOrderId !== null) {
+      await updateTrade(trade.id, {
+        bingxOrderIds: { ...orderIds, sl: moved.restoredOrderId },
+      }).catch(() => {});
     }
+    return { moved: false, warning: moved.message };
   }
 
-  try {
-    const slOrder = await placeOrder(credentials, {
-      symbol: trade.symbol,
-      side: exitSide,
-      type: "STOP_MARKET",
-      stopPrice: decision.newSlPrice,
-      quantity: decision.remainderQuantity,
-      reduceOnly: true,
-    });
-
-    const nextOrderIds = { ...orderIds, sl: slOrder.orderId };
-    await updateTrade(trade.id, {
-      slPrice: decision.newSlPrice,
-      bingxOrderIds: nextOrderIds,
-    });
-    eventBus.emitTyped("refresh", { reason: "trade.slMovedAfterPartial" });
-    return { moved: true, warning: null };
-  } catch (error) {
-    const message = bingxMessage(
-      error,
-      `Не удалось выставить SL на ${targetLabel} после partial — проверьте стоп на BingX вручную`,
-    );
-    console.error("[trades] moveStopLossAfterPartial:", message);
-    return { moved: false, warning: message };
-  }
+  await updateTrade(trade.id, {
+    slPrice: decision.newSlPrice,
+    bingxOrderIds: { ...orderIds, sl: moved.orderId },
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.slMovedAfterPartial" });
+  return { moved: true, warning: null };
 }
 
 /** @deprecated Алиас moveStopLossAfterPartial. */
@@ -756,10 +747,88 @@ export async function repairActiveTradeSlAfterPartial(): Promise<{
   return { attempted: true, ...result };
 }
 
+export type ReplaceConditionalOrderResult =
+  | { ok: true; orderId: string | number }
+  | { ok: false; message: string; restoredOrderId: string | number | null };
+
 /**
- * Ночное правило: дневная сделка, активная после 01:00 МСК, получает TP на R/R 1/1
- * на 100% остатка (старый TP и незаполненный partial отменяются). Идемпотентно.
- * Не бросает наружу при сбое биржи — warning.
+ * Заменяет условный ордер (SL или TP) на бирже: отменяет старый, ставит новый и, если
+ * новый выставить не удалось, ВОЗВРАЩАЕТ СТАРЫЙ на место.
+ *
+ * Без отката позиция оставалась бы вообще без стопа или без тейка: старый ордер уже
+ * отменён, новый не встал, а в БД по-прежнему лежит id мёртвого ордера — по нему потом
+ * не определится и причина закрытия. Восстановленный ордер получает новый id, поэтому
+ * вызывающая сторона обязана сохранить `restoredOrderId` в bingxOrderIds.
+ */
+async function replaceConditionalOrder(
+  credentials: BingXCredentials,
+  input: {
+    symbol: string;
+    exitSide: OrderSide;
+    type: "STOP_MARKET" | "TAKE_PROFIT_MARKET";
+    oldOrderId: string | number | undefined;
+    /** Цена старого ордера — нужна, чтобы вернуть его при сбое. null — восстанавливать нечего. */
+    oldStopPrice: number | null;
+    newStopPrice: number;
+    quantity: number;
+    failureMessage: string;
+  },
+): Promise<ReplaceConditionalOrderResult> {
+  if (input.oldOrderId !== undefined) {
+    try {
+      await cancelOrder(credentials, input.symbol, input.oldOrderId);
+    } catch (error) {
+      // Ордер мог уже исполниться/исчезнуть — пробуем выставить новый в любом случае.
+      console.warn(
+        `[trades] не удалось отменить старый ${input.type}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  const place = (stopPrice: number) =>
+    placeOrder(credentials, {
+      symbol: input.symbol,
+      side: input.exitSide,
+      type: input.type,
+      stopPrice,
+      quantity: input.quantity,
+      reduceOnly: true,
+    });
+
+  try {
+    const order = await place(input.newStopPrice);
+    return { ok: true, orderId: order.orderId };
+  } catch (error) {
+    const message = bingxMessage(error, input.failureMessage);
+    console.error(`[trades] ${input.type} не выставлен:`, message);
+
+    if (input.oldStopPrice === null || !(input.oldStopPrice > 0)) {
+      return { ok: false, message, restoredOrderId: null };
+    }
+    try {
+      const restored = await place(input.oldStopPrice);
+      console.warn(`[trades] вернул прежний ${input.type} на ${input.oldStopPrice}`);
+      return { ok: false, message, restoredOrderId: restored.orderId };
+    } catch (restoreError) {
+      console.error(
+        `[trades] прежний ${input.type} восстановить не удалось:`,
+        restoreError instanceof Error ? restoreError.message : restoreError,
+      );
+      return { ok: false, message, restoredOrderId: null };
+    }
+  }
+}
+
+/**
+ * Ночное правило для дневной сделки, активной после 01:00 МСК (docs/PROJECT.md).
+ * Развилка по текущей цене:
+ * - цена ещё не дошла до 1/1 → TP переносится на 1/1 × 100% остатка, незаполненный
+ *   partial отменяется (не пересиживаем ночь ради дальней цели);
+ * - цена уже прошла 1/1 → TP остаётся плановым, а SL подтягивается на 1/1, чтобы
+ *   сделка не могла закончиться хуже +1R.
+ *
+ * Идемпотентно (nightTpAppliedAt). Не бросает наружу при сбое биржи — warning.
  */
 export async function applyNightTakeProfitForActiveTrade(
   now: Date = new Date(),
@@ -770,6 +839,9 @@ export async function applyNightTakeProfitForActiveTrade(
   }
 
   const settings = await getRiskSettings();
+  // Цена нужна, чтобы отличить «до 1/1 ещё не дошли» от «уже прошли». Best-effort:
+  // без неё решение сваливается на прежнюю ветку (перенос TP), а не блокируется.
+  const currentPrice = await getLatestPrice(trade.symbol).catch(() => null);
   const decision = decideNightTakeProfit({
     side: trade.side as TradeSide,
     entryPrice: Number(trade.entryPrice),
@@ -777,6 +849,7 @@ export async function applyNightTakeProfitForActiveTrade(
     riskUsd: Number(trade.riskUsd),
     quantity: Number(trade.quantity),
     tpPrice: trade.tpPrice !== null ? Number(trade.tpPrice) : null,
+    currentPrice,
     partialTpPrice: trade.partialTpPrice !== null ? Number(trade.partialTpPrice) : null,
     partialTpQuantity: trade.partialTpQuantity !== null ? Number(trade.partialTpQuantity) : null,
     partialTpFilledAt: trade.partialTpFilledAt,
@@ -793,64 +866,96 @@ export async function applyNightTakeProfitForActiveTrade(
 
   const credentials = await getBingxCredentials();
   if (!credentials) {
-    return { attempted: true, applied: false, warning: "нет ключей BingX — ночной TP не выставлен" };
+    return { attempted: true, applied: false, warning: "нет ключей BingX — ночное правило не применено" };
   }
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
   const exitSide: OrderSide = trade.side === "long" ? "SELL" : "BUY";
 
-  for (const key of ["tp", "partialTp"] as const) {
-    if (key === "partialTp" && !decision.cancelPartial) continue;
-    const pendingId = orderIds[key];
-    if (pendingId === undefined) continue;
-    try {
-      await cancelOrder(credentials, trade.symbol, pendingId);
-    } catch (error) {
-      console.warn(
-        `[trades] не удалось отменить ${key} перед ночным TP 1/1:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-
-  try {
-    const tpOrder = await placeOrder(credentials, {
+  // Цена уже прошла 1/1: тейк не трогаем, подтягиваем стоп на 1/1.
+  if (decision.action === "moveSl") {
+    const moved = await replaceConditionalOrder(credentials, {
       symbol: trade.symbol,
-      side: exitSide,
-      type: "TAKE_PROFIT_MARKET",
-      stopPrice: decision.newTpPrice,
+      exitSide,
+      type: "STOP_MARKET",
+      oldOrderId: orderIds.sl,
+      oldStopPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+      newStopPrice: decision.newSlPrice,
       quantity: decision.quantity,
-      reduceOnly: true,
+      failureMessage: "Не удалось подтянуть SL на 1/1 на ночь — проверьте стоп на BingX вручную",
     });
 
-    const nextOrderIds: Record<string, string | number> = { ...orderIds, tp: tpOrder.orderId };
-    if (decision.cancelPartial) {
-      delete nextOrderIds.partialTp;
+    if (!moved.ok) {
+      // Стоп остался прежним (или восстановлен новым ордером) — сохраняем актуальный id,
+      // иначе в БД останется мёртвый, и закрытие по стопу не определится.
+      if (moved.restoredOrderId !== null) {
+        await updateTrade(trade.id, {
+          bingxOrderIds: { ...orderIds, sl: moved.restoredOrderId },
+        }).catch(() => {});
+      }
+      return { attempted: true, applied: false, warning: moved.message };
     }
 
     await updateTrade(trade.id, {
-      tpPrice: decision.newTpPrice,
-      rrPreset: "1/1",
+      slPrice: decision.newSlPrice,
       nightTpAppliedAt: now,
-      bingxOrderIds: nextOrderIds,
-      ...(decision.cancelPartial
-        ? {
-            partialTpPrice: null,
-            partialTpPercent: null,
-            partialTpQuantity: null,
-          }
-        : {}),
+      bingxOrderIds: { ...orderIds, sl: moved.orderId },
     });
-    eventBus.emitTyped("refresh", { reason: "trade.nightTpApplied" });
+    eventBus.emitTyped("refresh", { reason: "trade.nightSlMoved" });
     return { attempted: true, applied: true, warning: null };
-  } catch (error) {
-    const message = bingxMessage(
-      error,
-      "Не удалось выставить ночной TP 1/1 — проверьте тейк на BingX вручную",
-    );
-    console.error("[trades] applyNightTakeProfitForActiveTrade:", message);
-    return { attempted: true, applied: false, warning: message };
   }
+
+  // Цена до 1/1 не дошла: переносим тейк на 1/1 × 100% остатка.
+  const replaced = await replaceConditionalOrder(credentials, {
+    symbol: trade.symbol,
+    exitSide,
+    type: "TAKE_PROFIT_MARKET",
+    oldOrderId: orderIds.tp,
+    oldStopPrice: trade.tpPrice !== null ? Number(trade.tpPrice) : null,
+    newStopPrice: decision.newTpPrice,
+    quantity: decision.quantity,
+    failureMessage: "Не удалось выставить ночной TP 1/1 — проверьте тейк на BingX вручную",
+  });
+
+  if (!replaced.ok) {
+    if (replaced.restoredOrderId !== null) {
+      await updateTrade(trade.id, {
+        bingxOrderIds: { ...orderIds, tp: replaced.restoredOrderId },
+      }).catch(() => {});
+    }
+    return { attempted: true, applied: false, warning: replaced.message };
+  }
+
+  // Partial гасим только теперь, когда новый TP уже стоит: при сбое выше план сделки
+  // остаётся нетронутым целиком, а не наполовину разобранным.
+  const nextOrderIds: Record<string, string | number> = { ...orderIds, tp: replaced.orderId };
+  if (decision.cancelPartial && orderIds.partialTp !== undefined) {
+    try {
+      await cancelOrder(credentials, trade.symbol, orderIds.partialTp);
+    } catch (error) {
+      console.warn(
+        "[trades] не удалось отменить partial перед ночным TP 1/1:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    delete nextOrderIds.partialTp;
+  }
+
+  await updateTrade(trade.id, {
+    tpPrice: decision.newTpPrice,
+    rrPreset: "1/1",
+    nightTpAppliedAt: now,
+    bingxOrderIds: nextOrderIds,
+    ...(decision.cancelPartial
+      ? {
+          partialTpPrice: null,
+          partialTpPercent: null,
+          partialTpQuantity: null,
+        }
+      : {}),
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.nightTpApplied" });
+  return { attempted: true, applied: true, warning: null };
 }
 
 /**
