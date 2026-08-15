@@ -44,6 +44,12 @@ export type Trade = {
   openedAt: string;
   closedAt: string | null;
   closeReason: string | null;
+  /**
+   * Фактический исход сделки, считает сервер (history/outcome.ts): стоп, уведённый
+   * в прибыль ночным правилом, приходит как "tp" — это зафиксированная прибыль,
+   * а не сработавший план защиты. Есть только у закрытых сделок из истории.
+   */
+  outcome?: "tp" | "sl" | "be" | "other";
   closePrice: string | null;
   resultR: string | null;
   resultPct: string | null;

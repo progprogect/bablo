@@ -365,3 +365,69 @@ test("computeMonthlyStats: стоп на входе (БУ после partial) с
   assert.equal(stat.beCount, 1);
   assert.equal(stat.slCount, 0);
 });
+
+test("computeMonthlyStats: стоп, уведённый в прибыль — тейк и столбец по уровню стопа", () => {
+  // План 1/3, ночью цена ушла за 1/1 → SL подтянут на 110 (+1R), там и закрылось.
+  // Ожидаем: в разбивке это тейк, в сетке R — столбец 1/1, а не плановый 1/3.
+  const stats = computeMonthlyStats(
+    [
+      {
+        openedAt: new Date("2026-08-10T10:00:00Z"),
+        closedAt: new Date("2026-08-10T23:30:00Z"),
+        closeReason: "sl",
+        resultR: 1,
+        riskUsd: 100,
+        rrPreset: "1/3",
+        entryPrice: 100,
+        slPrice: 110,
+        side: "long",
+        quantity: 10,
+        partialTpPrice: null,
+        partialTpFilledAt: null,
+        statsRrPreset: null,
+      },
+    ],
+    180,
+    null,
+    [],
+  );
+
+  const month = stats[0]!;
+  assert.equal(month.tpCount, 1);
+  assert.equal(month.slCount, 0);
+  assert.equal(month.beCount, 0);
+  assert.deepEqual(
+    month.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/1", count: 1 }],
+  );
+});
+
+test("computeMonthlyStats: обычный стоп остаётся стопом и вне сетки R", () => {
+  const stats = computeMonthlyStats(
+    [
+      {
+        openedAt: new Date("2026-08-10T10:00:00Z"),
+        closedAt: new Date("2026-08-10T12:00:00Z"),
+        closeReason: "sl",
+        resultR: -1,
+        riskUsd: 100,
+        rrPreset: "1/3",
+        entryPrice: 100,
+        slPrice: 90,
+        side: "long",
+        quantity: 10,
+        partialTpPrice: null,
+        partialTpFilledAt: null,
+        statsRrPreset: null,
+      },
+    ],
+    180,
+    null,
+    [],
+  );
+
+  const month = stats[0]!;
+  assert.equal(month.slCount, 1);
+  assert.equal(month.tpCount, 0);
+  assert.deepEqual(month.byRRPreset.filter((entry) => entry.count > 0), []);
+});

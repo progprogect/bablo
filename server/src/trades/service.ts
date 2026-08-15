@@ -434,6 +434,9 @@ export async function finalizeTradeClose(
     closeReason: input.closeReason,
     symbol: updated.symbol,
     rrPreset: updated.rrPreset,
+    entryPrice: updated.entryPrice !== null ? Number(updated.entryPrice) : null,
+    slPrice: updated.slPrice !== null ? Number(updated.slPrice) : null,
+    side: updated.side,
   }).catch(() => {
     // не удалось обновить risk_state/лимиты — стоит проверить вручную через админку
   });
