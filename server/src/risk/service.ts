@@ -23,6 +23,26 @@ import {
   type BlockType,
 } from "./limits.js";
 import { getTradingDayKey } from "./tradingDay.js";
+import { resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
+
+/** Исход закрытой сделки по строке БД — единая трактовка со статистикой (history/outcome.ts). */
+function outcomeOfTrade(trade: {
+  closeReason: string | null;
+  entryPrice: string | null;
+  slPrice: string | null;
+  side: string;
+  resultR: string | null;
+}): TradeOutcome {
+  return resolveTradeOutcome(
+    {
+      closeReason: trade.closeReason,
+      entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
+      slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+      side: trade.side,
+    },
+    trade.resultR !== null ? Number(trade.resultR) : 0,
+  );
+}
 
 export class RiskBlockedError extends Error {
   constructor(
@@ -202,6 +222,10 @@ export async function recordTradeClose(input: {
   symbol: string;
   /** Пресет R/R сделки — для страховки дневного лимита +3R при тейке по плану ≥ 1:3. */
   rrPreset?: string | null;
+  /** Вход/стоп/сторона — чтобы отличить реальный стоп от стопа, уведённого в прибыль. */
+  entryPrice?: number | null;
+  slPrice?: number | null;
+  side?: string;
 }): Promise<void> {
   const settings = await getRiskSettings();
   const dayKey = getTradingDayKey(input.closedAt, settings.resetHour, settings.tzOffsetMinutes);
@@ -221,9 +245,19 @@ export async function recordTradeClose(input: {
     settings.dailyProfitLimitR,
   );
 
+  const outcome = resolveTradeOutcome(
+    {
+      closeReason: input.closeReason,
+      entryPrice: input.entryPrice ?? null,
+      slPrice: input.slPrice ?? null,
+      side: input.side ?? "",
+    },
+    input.resultR,
+  );
+
   const dailyStatsRow = await addTradeResultToDailyStats(dayKey, {
     resultR: resultRForDaily,
-    closeReason: input.closeReason,
+    outcome,
   });
 
   const slSymbols = await listDaySlSymbols(dayKey, settings.resetHour, settings.tzOffsetMinutes);
@@ -288,7 +322,11 @@ function buildManagedBlocks(input: {
   return blocks;
 }
 
-/** Символы сделок текущего торгового дня, закрытых именно по стопу (closeReason === "sl"). */
+/**
+ * Символы сделок текущего торгового дня, закрытых РЕАЛЬНЫМ стопом (правило #9).
+ * Стоп, уведённый в прибыль, актив не блокирует: перезаход после прибыльной сделки —
+ * не «настаивание на своей правоте» после убытка.
+ */
 async function listDaySlSymbols(
   dayKey: string,
   resetHour: number,
@@ -297,7 +335,7 @@ async function listDaySlSymbols(
   const allClosed = await listAllClosedTrades();
   return allClosed
     .filter((trade) => {
-      if (!trade.closedAt || trade.closeReason !== "sl") return false;
+      if (!trade.closedAt || outcomeOfTrade(trade) !== "sl") return false;
       return getTradingDayKey(trade.closedAt, resetHour, tzOffsetMinutes) === dayKey;
     })
     .map((trade) => trade.symbol);
@@ -360,11 +398,12 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
       settings.dailyProfitLimitR,
     );
     sumR += resultR;
-    if (trade.closeReason === "sl") {
+    const outcome = outcomeOfTrade(trade);
+    if (outcome === "sl") {
       slCount += 1;
       slSymbols.push(trade.symbol);
     }
-    if (trade.closeReason === "tp") {
+    if (outcome === "tp") {
       tpCount += 1;
       if (isStrongTakeProfit(resultR) && slCount > 0) {
         strongRecoveryAfterSl = true;

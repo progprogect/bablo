@@ -14,6 +14,10 @@ function trade(input: {
   riskUsd?: number | null;
   rrPreset?: string | null;
   day?: string;
+  /** Цена входа/стопа — для сделок, где стоп уведён в прибыль (см. history/outcome.ts). */
+  entryPrice?: number | null;
+  slPrice?: number | null;
+  side?: string;
 }): InsightTradeInput {
   const day = input.day ?? "2026-07-13";
   const openedAt = new Date(`${day}T${String(input.openedHourUtc).padStart(2, "0")}:00:00Z`);
@@ -31,6 +35,10 @@ function trade(input: {
     resultR: input.resultR,
     riskUsd: input.riskUsd ?? 10,
     rrPreset: input.rrPreset ?? null,
+    // По умолчанию стоп ниже входа — обычный защитный SL лонга.
+    entryPrice: input.entryPrice ?? 100,
+    slPrice: input.slPrice ?? 90,
+    side: input.side ?? "long",
   };
 }
 
@@ -324,4 +332,30 @@ test("computeTradeInsights: rrHoldDuration null, если нет тейков 1/
     }),
   ];
   assert.equal(computeTradeInsights(trades, TZ, 3).rrHoldDuration, null);
+});
+
+test("computeTradeInsights: стоп, уведённый в прибыль — тейк в часах и активах, не стоп", () => {
+  const trades = [
+    // SL подтянут на 110 (выше входа), закрылось в +1R — по логике это тейк
+    trade({ openedHourUtc: 4, resultR: 1, closeReason: "sl", entryPrice: 100, slPrice: 110, rrPreset: "1/3" }),
+    // обычный стоп в минус
+    trade({ openedHourUtc: 9, resultR: -1, closeReason: "sl", entryPrice: 100, slPrice: 90 }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+
+  assert.deepEqual(
+    insights.topProfitableHours.map((bucket) => [bucket.hour, bucket.tpCount, bucket.total]),
+    [[7, 1, 1]],
+  );
+  assert.deepEqual(
+    insights.topStopHours.map((bucket) => [bucket.hour, bucket.slCount]),
+    [[12, 1]],
+  );
+  assert.deepEqual(insights.topStopAssets, [{ symbol: "TIA-USDT", count: 1 }]);
+
+  // Но план 1/3 не отработан: в статистике пресетов это не тейк и не «цена промаха»
+  const preset = insights.presetOutcomes.find((entry) => entry.preset === "1/3");
+  assert.equal(preset?.totalTrades, 1);
+  assert.equal(preset?.tpCount, 0);
+  assert.equal(preset?.slCount, 0);
 });

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { dailyStats } from "../schema.js";
 import { isStrongTakeProfit } from "../../risk/limits.js";
+import type { TradeOutcome } from "../../history/outcome.js";
 
 export type DailyStatsRow = typeof dailyStats.$inferSelect;
 
@@ -18,7 +19,12 @@ export async function getDailySumR(dateKey: string): Promise<number> {
 
 export type TradeCloseForDailyStats = {
   resultR: number;
-  closeReason: string;
+  /**
+   * Фактический исход сделки (history/outcome.ts), а не сырой closeReason: стоп,
+   * уведённый в прибыль ночным правилом, — это тейк, и в счётчик стопов дня он попадать
+   * не должен, иначе две прибыльные сделки закрывали бы день правилом «2 стопа».
+   */
+  outcome: TradeOutcome;
 };
 
 /**
@@ -32,8 +38,8 @@ export async function addTradeResultToDailyStats(
 ): Promise<DailyStatsRow> {
   const db = getDb();
   const existing = await getDailyStats(dateKey);
-  const isStopLoss = trade.closeReason === "sl";
-  const isTakeProfit = trade.closeReason === "tp";
+  const isStopLoss = trade.outcome === "sl";
+  const isTakeProfit = trade.outcome === "tp";
   // Сильный откуп: тейк ≥ 2R, и к этому моменту за день уже был хотя бы один стоп.
   const strongRecovery =
     isTakeProfit && isStrongTakeProfit(trade.resultR) && (existing?.slCount ?? 0) > 0;

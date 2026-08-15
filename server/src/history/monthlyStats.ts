@@ -1,12 +1,17 @@
 import {
   PARTIAL_RATIO_MATCH_EPSILON,
   PARTIAL_TP_PRESETS,
-  isStopOnProfitSide,
   parseRRRatio,
   RR_PRESETS,
   type TradeSide,
 } from "../trades/math.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
+import {
+  isBreakevenClose,
+  isProfitLockedStop,
+  resolveTradeOutcome,
+  type TradeForOutcome,
+} from "./outcome.js";
 
 export type MonthlyStatTradeInput = {
   openedAt: Date;
@@ -55,25 +60,19 @@ export type MonthlyStat = {
   byRRPreset: MonthlyRRPresetCount[];
 };
 
-/** Сделка считается закрытой "в безубыток", если |resultR| в пределах этого допуска — учитывает комиссии/проскальзывание у стопа, выставленного на цену входа. */
-const BREAKEVEN_EPSILON_R = 0.05;
-
-/**
- * Близость resultR к нулю сама по себе не значит БУ: стоп с исходным защитным SL
- * и «нулевым» R (баг rp=0 от биржи) должен оставаться SL в разбивке TP/SL/Б/У.
- * БУ — только если стоп уже на стороне прибыли (вход / +1R) или closeReason не sl.
- */
+/** @deprecated Используйте isBreakevenClose из history/outcome.ts — единый источник правды. */
 export function isMonthlyBreakevenClose(trade: MonthlyStatTradeInput, resultR: number): boolean {
-  if (Math.abs(resultR) > BREAKEVEN_EPSILON_R) return false;
-  if (trade.closeReason !== "sl") return true;
-  const entry = trade.entryPrice ?? null;
-  const sl = trade.slPrice ?? null;
-  const side = trade.side;
-  if (entry !== null && sl !== null && (side === "long" || side === "short")) {
-    return isStopOnProfitSide(entry, sl, side);
-  }
-  // Нет данных о SL — оставляем прежнее поведение (считать БУ по |R|).
-  return true;
+  return isBreakevenClose(toOutcomeInput(trade), resultR);
+}
+
+/** Поля, по которым определяется исход сделки (history/outcome.ts). */
+function toOutcomeInput(trade: MonthlyStatTradeInput): TradeForOutcome {
+  return {
+    closeReason: trade.closeReason,
+    entryPrice: trade.entryPrice ?? null,
+    slPrice: trade.slPrice ?? null,
+    side: trade.side ?? "",
+  };
 }
 
 /**
@@ -108,12 +107,30 @@ export function matchPartialPreset(ratio: number): (typeof PARTIAL_TP_PRESETS)[n
   return best;
 }
 
+/** Ближайший пресет из полной сетки R/R (1/1…1/10) к фактическому отношению, иначе null. */
+export function matchRrPreset(ratio: number): string | null {
+  let best: string | null = null;
+  let bestDelta = Infinity;
+  for (const preset of RR_PRESETS) {
+    const target = parseRRRatio(preset);
+    if (target === null) continue;
+    const delta = Math.abs(ratio - target);
+    if (delta <= PARTIAL_RATIO_MATCH_EPSILON && delta < bestDelta) {
+      best = preset;
+      bestDelta = delta;
+    }
+  }
+  return best;
+}
+
 /**
  * В какой столбец сетки 1R…10R попадает сделка:
  * - ручной оверрайд из админки (statsRrPreset) — главный приоритет;
  * - исполненная partial → пресет partial (1/2, 1/3…), даже если потом БУ / остаток по SL;
  * - обычный тейк (в т.ч. ночной TP 1/1) → rrPreset основного TP;
- * - стоп / без тейка → null.
+ * - стоп, уведённый в прибыль (ночное подтягивание SL на 1/1) → пресет по УРОВНЮ СТОПА:
+ *   план 1/3 не отработан, зафиксирован 1R, значит столбец 1R, а не 3R;
+ * - реальный стоп / без тейка → null.
  */
 export const STATS_RR_PRESET_NONE = "none";
 
@@ -141,6 +158,20 @@ export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): stri
 
   if (trade.closeReason === "tp" && trade.rrPreset) {
     return trade.rrPreset;
+  }
+
+  // Зафиксировали прибыль стопом (ночное правило подтянуло SL на 1/1): в сетку идёт
+  // достигнутый уровень стопа, а не плановый rrPreset — план ведь не отработал.
+  const resultR = trade.resultR ?? 0;
+  if (isProfitLockedStop(toOutcomeInput(trade), resultR)) {
+    const entry = trade.entryPrice ?? null;
+    const sl = trade.slPrice ?? null;
+    const riskUsd = trade.riskUsd ?? null;
+    const quantity = trade.quantity ?? null;
+    if (entry !== null && sl !== null && riskUsd !== null && quantity !== null) {
+      const ratio = computePartialRatioFromRiskUsd(entry, sl, riskUsd, quantity);
+      if (ratio !== null) return matchRrPreset(ratio);
+    }
   }
   return null;
 }
@@ -286,11 +317,14 @@ export function computeMonthlyStats(
         sumNegativeR += resultR;
       }
 
-      if (isMonthlyBreakevenClose(trade, resultR)) {
+      // Исход по экономике сделки: стоп, уведённый в прибыль, — это тейк, а не стоп
+      // (см. history/outcome.ts).
+      const outcome = resolveTradeOutcome(toOutcomeInput(trade), resultR);
+      if (outcome === "be") {
         beCount += 1;
-      } else if (trade.closeReason === "tp") {
+      } else if (outcome === "tp") {
         tpCount += 1;
-      } else if (trade.closeReason === "sl") {
+      } else if (outcome === "sl") {
         slCount += 1;
       } else {
         otherCount += 1;

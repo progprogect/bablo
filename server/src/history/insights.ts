@@ -1,5 +1,6 @@
 import { getLocalDateKey, getLocalHour, getLocalMinuteOfDay } from "../risk/tradingDay.js";
 import { RR_PRESETS } from "../trades/math.js";
+import { resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
 
 export type InsightTradeInput = {
   symbol: string;
@@ -9,7 +10,24 @@ export type InsightTradeInput = {
   resultR: number | null;
   riskUsd: number | null;
   rrPreset: string | null;
+  /** Нужны, чтобы отличить реальный стоп от стопа, уведённого в прибыль (history/outcome.ts). */
+  entryPrice: number | null;
+  slPrice: number | null;
+  side: string;
 };
+
+/**
+ * Исход сделки для инсайтов «прибыльно/убыточно»: стоп, уведённый в прибыль (ночное
+ * правило 1/1, правило после partial), считается тейком — сделка закончилась в плюс
+ * по нашему же решению.
+ *
+ * ВАЖНО: этим меряется результат, а не отработка плана. Там, где вопрос именно «дошла ли
+ * цена до заданного R/R» (presetOutcomes, rrHoldDuration), по-прежнему нужен строгий
+ * closeReason === "tp": зафиксированный на 1/1 стоп до пресета 1/3 не дошёл.
+ */
+function outcomeOf(trade: InsightTradeInput): TradeOutcome {
+  return resolveTradeOutcome(trade, trade.resultR ?? 0);
+}
 
 export type PresetOutcome = {
   preset: string;
@@ -41,7 +59,8 @@ export type TradeInsights = {
   topStopHours: { hour: number; slCount: number; total: number }[];
   /**
    * % прибыльности по каждому активу с хотя бы одной закрытой сделкой:
-   * доля closeReason === "tp" среди всех сделок актива. Сортировка: hitRate ↓, затем total ↓.
+   * доля закрытий с исходом "тейк" (см. outcomeOf) среди всех сделок актива.
+   * Сортировка: hitRate ↓, затем total ↓.
    */
   assetOutcomes: { symbol: string; tpCount: number; totalTrades: number }[];
   /** Активы с наибольшим числом закрытий по стопу (топ-2, только ненулевые). */
@@ -71,11 +90,12 @@ function bucketByOpenHour(trades: InsightTradeInput[], tzOffsetMinutes: number):
     if (trade.resultR === null) continue;
     const hour = getLocalHour(trade.openedAt, tzOffsetMinutes);
     const bucket = buckets[hour]!;
+    const outcome = outcomeOf(trade);
     bucket.total += 1;
-    if (trade.closeReason === "tp") {
+    if (outcome === "tp") {
       bucket.tpCount += 1;
     }
-    if (trade.closeReason === "sl") {
+    if (outcome === "sl") {
       bucket.slCount += 1;
     }
   }
@@ -130,7 +150,7 @@ function assetOutcomes(trades: InsightTradeInput[]): TradeInsights["assetOutcome
     if (trade.resultR === null) continue;
     const entry = bySymbol.get(trade.symbol) ?? { tpCount: 0, totalTrades: 0 };
     entry.totalTrades += 1;
-    if (trade.closeReason === "tp") {
+    if (outcomeOf(trade) === "tp") {
       entry.tpCount += 1;
     }
     bySymbol.set(trade.symbol, entry);
@@ -152,7 +172,7 @@ function topStopAssets(trades: InsightTradeInput[], limit: number): TradeInsight
   const slBySymbol = new Map<string, number>();
 
   for (const trade of trades) {
-    if (trade.resultR === null || trade.closeReason !== "sl") continue;
+    if (trade.resultR === null || outcomeOf(trade) !== "sl") continue;
     slBySymbol.set(trade.symbol, (slBySymbol.get(trade.symbol) ?? 0) + 1);
   }
 
@@ -179,7 +199,10 @@ function presetOutcomes(trades: InsightTradeInput[]): PresetOutcome[] {
     entry.total += 1;
     if (trade.closeReason === "tp") {
       entry.tp += 1;
-    } else if (trade.closeReason === "sl") {
+    } else if (trade.closeReason === "sl" && outcomeOf(trade) === "sl") {
+      // Только реальный стоп: закрытие по стопу, уведённому в прибыль, до пресета не
+      // дошло (значит не tp), но и «ценой промаха» не является — иначе средний R
+      // промаха оказался бы положительным.
       entry.sl += 1;
       entry.slSumR += trade.resultR;
     }
