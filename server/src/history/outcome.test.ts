@@ -91,13 +91,18 @@ test("resolveStatsResultR: ручной столбец R задаёт R для �
   // Сделка записана как 20R (неверный риск), в админке выбран столбец 2R → в статистику +2R
   assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 20 }, "tp"), 2);
   assert.equal(resolveStatsResultR({ statsRrPreset: "1/1.5", resultR: 9 }, "tp"), 1.5);
+  // Шаг округления 0.5: 1.12R → 1R, 1.26R → 1.5R, 2.95R → 3R
+  assert.equal(resolveStatsResultR({ statsRrPreset: null, resultR: 1.12 }, "tp"), 1);
+  assert.equal(resolveStatsResultR({ statsRrPreset: null, resultR: 1.26 }, "tp"), 1.5);
+  assert.equal(resolveStatsResultR({ statsRrPreset: null, resultR: 2.95 }, "tp"), 3);
+  assert.equal(resolveStatsResultR({ statsRrPreset: null, resultR: -1.1185 }, "sl"), -1);
 });
 
 test("resolveStatsResultR: знак берётся от исхода", () => {
   assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: -1 }, "sl"), -2);
   // БУ и неклассифицированные — остаётся факт
   assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 0 }, "be"), 0);
-  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 0.4 }, "other"), 0.4);
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 0.4 }, "other"), 0.5);
 });
 
 test("resolveStatsResultR: мусорный пресет игнорируется", () => {
