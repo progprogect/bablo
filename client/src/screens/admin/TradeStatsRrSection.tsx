@@ -206,7 +206,9 @@ export function TradeStatsRrSection() {
                       </span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(trade.closedAt ?? trade.openedAt)}
+                      {/* Время ОТКРЫТИЯ — как в Истории. Раньше здесь было время закрытия,
+                          и одна и та же сделка выглядела на двух экранах как две разные. */}
+                      {formatDate(trade.openedAt)}
                       {" · R авто "}
                       {presetLabel(trade.autoStatsRrPreset)}
                       {overridden ? ` → ${presetLabel(trade.effectiveStatsRrPreset)}` : ""}
