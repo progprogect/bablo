@@ -33,14 +33,37 @@ function formatDuration(openedAt: string, closedAt: string | null): string {
   return hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
 }
 
-/** R/R сделки: сохранённый пресет, либо вычисленный из entry/SL/TP (если TP выставлялся вручную). */
+/**
+ * R/R сделки. Приоритет:
+ * 1. ручной столбец R из админки (statsRrPreset) — если пользователь задал R сделки,
+ *    он должен видеть его и здесь, а не расходящееся значение;
+ * 2. сохранённый пресет (rrPreset);
+ * 3. расчёт от ИСХОДНОГО риска сделки (riskUsd / quantity) — так считается R/R при TP,
+ *    выставленном вручную.
+ *
+ * Пункт 3 раньше считался от текущего SL (`|вход − SL|`), и это врало: стоп мог быть
+ * подтянут ночным правилом или после частичной фиксации, знаменатель схлопывался, и
+ * сделка на ~2R показывалась как «R/R 1/19.65». Исходный риск в riskUsd зафиксирован
+ * на момент открытия и не меняется, поэтому считаем от него.
+ */
 function riskReward(trade: Trade): string {
+  const override = trade.statsRrPreset;
+  if (override && override !== "none") return override;
   if (trade.rrPreset) return trade.rrPreset;
-  if (!trade.entryPrice || !trade.slPrice || !trade.tpPrice) return "—";
+  if (!trade.entryPrice || !trade.tpPrice) return "—";
   const entry = Number(trade.entryPrice);
-  const sl = Number(trade.slPrice);
   const tp = Number(trade.tpPrice);
-  const risk = Math.abs(entry - sl);
+  const riskUsd = Number(trade.riskUsd);
+  const quantity = Number(trade.quantity);
+
+  if (riskUsd > 0 && quantity > 0) {
+    const riskDistance = riskUsd / quantity;
+    if (riskDistance > 0) return `1/${trimTrailingZeros(Math.abs(tp - entry) / riskDistance)}`;
+  }
+
+  // Нет риска в записи (старые сделки) — откат на расчёт по SL.
+  if (!trade.slPrice) return "—";
+  const risk = Math.abs(entry - Number(trade.slPrice));
   if (risk === 0) return "—";
   return `1/${trimTrailingZeros(Math.abs(tp - entry) / risk)}`;
 }
