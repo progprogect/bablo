@@ -61,6 +61,7 @@ import {
 } from "../history/monthlyStats.js";
 import {
   isManualOutcome,
+  resolveStatsResultR,
   resolveTradeOutcome,
   type TradeForOutcome,
   type TradeOutcome,
@@ -535,6 +536,8 @@ export type StatsRrAdminTrade = Trade & {
   autoOutcome: TradeOutcome;
   /** Исход, который сейчас реально идёт во всю статистику. */
   effectiveOutcome: TradeOutcome;
+  /** R, который сейчас идёт в суммы статистики (с учётом ручного столбца R). */
+  effectiveStatsResultR: number | null;
 };
 
 /** Закрытые сделки для админки: правка столбца R в месячной статистике. */
@@ -555,7 +558,18 @@ export async function listTradesForStatsRrAdmin(options: {
     const resultR = trade.resultR !== null ? Number(trade.resultR) : 0;
     const autoOutcome = resolveTradeOutcome({ ...toOutcomeInput(trade), statsOutcome: null }, resultR);
     const effectiveOutcome = resolveTradeOutcome(toOutcomeInput(trade), resultR);
-    return { ...trade, autoStatsRrPreset, effectiveStatsRrPreset, autoOutcome, effectiveOutcome };
+    const effectiveStatsResultR = resolveStatsResultR(
+      { statsRrPreset: trade.statsRrPreset, resultR: trade.resultR !== null ? resultR : null },
+      effectiveOutcome,
+    );
+    return {
+      ...trade,
+      autoStatsRrPreset,
+      effectiveStatsRrPreset,
+      autoOutcome,
+      effectiveOutcome,
+      effectiveStatsResultR,
+    };
   });
   return { trades, total: page.total };
 }

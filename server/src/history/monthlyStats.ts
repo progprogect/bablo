@@ -9,9 +9,13 @@ import { getLocalDateKey } from "../risk/tradingDay.js";
 import {
   isBreakevenClose,
   isProfitLockedStop,
+  resolveStatsResultR,
   resolveTradeOutcome,
+  STATS_RR_PRESET_NONE,
   type TradeForOutcome,
 } from "./outcome.js";
+
+export { STATS_RR_PRESET_NONE };
 
 export type MonthlyStatTradeInput = {
   openedAt: Date;
@@ -135,7 +139,6 @@ export function matchRrPreset(ratio: number): string | null {
  *   план 1/3 не отработан, зафиксирован 1R, значит столбец 1R, а не 3R;
  * - реальный стоп / без тейка → null.
  */
-export const STATS_RR_PRESET_NONE = "none";
 
 export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): string | null {
   if (trade.statsRrPreset != null) {
@@ -313,10 +316,19 @@ export function computeMonthlyStats(
     const byRRPresetCounts = new Map<string, number>();
 
     for (const trade of monthTrades) {
-      const resultR = trade.resultR!;
+      const factualR = trade.resultR!;
+
+      // Исход по экономике сделки: стоп, уведённый в прибыль, — это тейк, а не стоп
+      // (см. history/outcome.ts).
+      const outcome = resolveTradeOutcome(toOutcomeInput(trade), factualR);
+
+      // R-метрики считаем по статистическому R: если в админке задан столбец R, он
+      // и есть правда для суммы R, «+R / −R» и винрейта. Деньги (sumUsd → % к депозиту)
+      // остаются фактическими — см. resolveStatsResultR.
+      const resultR = resolveStatsResultR(trade, outcome) ?? factualR;
       sumR += resultR;
       if (trade.riskUsd !== null) {
-        sumUsd += resultR * trade.riskUsd;
+        sumUsd += factualR * trade.riskUsd;
       }
       if (resultR > 0) {
         winCount += 1;
@@ -324,10 +336,6 @@ export function computeMonthlyStats(
       } else if (resultR < 0) {
         sumNegativeR += resultR;
       }
-
-      // Исход по экономике сделки: стоп, уведённый в прибыль, — это тейк, а не стоп
-      // (см. history/outcome.ts).
-      const outcome = resolveTradeOutcome(toOutcomeInput(trade), resultR);
       if (outcome === "be") {
         beCount += 1;
       } else if (outcome === "tp") {

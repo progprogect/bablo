@@ -50,6 +50,13 @@ function outcomeSelectValue(trade: StatsRrAdminTrade): string {
   return trade.statsOutcome ?? AUTO_VALUE;
 }
 
+/** «+2R» / «−1R» — R, который идёт в суммы статистики. */
+function rLabel(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  const rounded = Math.round(value * 100) / 100;
+  return `${rounded > 0 ? "+" : ""}${rounded}R`;
+}
+
 function pnlUsd(trade: StatsRrAdminTrade): number | null {
   if (trade.resultR === null || trade.riskUsd === null) return null;
   return Number(trade.resultR) * Number(trade.riskUsd);
@@ -162,10 +169,10 @@ export function TradeStatsRrSection() {
       <div>
         <h2 className="text-sm font-medium text-ink">R в статистике</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Закрытые сделки: исход (тейк / стоп / Б/У), столбец R на «Статистике» и пересчёт PnL
-          (fill BingX / цена закрытия / SL при нулевом close). Исход влияет на всю статистику —
-          месячную разбивку, подсказки, дневные лимиты и подпись в Истории; причину закрытия
-          с биржи не меняет.
+          Закрытые сделки: исход (тейк / стоп / Б/У), столбец R и пересчёт PnL (fill BingX /
+          цена закрытия / SL при нулевом close). Исход и столбец R влияют на всю статистику:
+          месячная разбивка, сумма R, «+R / −R», винрейт, подсказки и подпись в Истории.
+          Причину закрытия с биржи и суммы в USDT не меняют — деньги остаются фактическими.
         </p>
       </div>
 
@@ -182,6 +189,7 @@ export function TradeStatsRrSection() {
             const pnl = pnlUsd(trade);
             const busy = busyId === trade.id;
             const overridden = trade.statsRrPreset != null;
+            const factualR = trade.resultR !== null ? Number(trade.resultR) : null;
             const outcomeOverridden = trade.statsOutcome != null;
             return (
               <li
@@ -206,6 +214,14 @@ export function TradeStatsRrSection() {
                       {outcomeOverridden
                         ? `${OUTCOME_LABELS[trade.autoOutcome]} → ${OUTCOME_LABELS[trade.effectiveOutcome]} (вручную)`
                         : OUTCOME_LABELS[trade.effectiveOutcome]}
+                    </p>
+                    {/* Видно, что реально уходит в суммы статистики: при ручном столбце R
+                        показываем и факт, иначе цифра в отчёте выглядела бы необъяснимой. */}
+                    <p className="text-xs text-slate-500">
+                      В статистику: {rLabel(trade.effectiveStatsResultR)}
+                      {overridden && factualR !== null && factualR !== trade.effectiveStatsResultR
+                        ? ` (факт ${rLabel(factualR)})`
+                        : ""}
                     </p>
                   </div>
                   <p

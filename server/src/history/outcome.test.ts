@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isProfitLockedStop, resolveTradeOutcome } from "./outcome.js";
+import { isProfitLockedStop, resolveStatsResultR, resolveTradeOutcome } from "./outcome.js";
 
 // Лонг: вход 100, исходный SL 90 (−1R). Ночное правило подтягивает стоп на 110 (+1R).
 const longEntry = { closeReason: "sl", entryPrice: 100, side: "long" };
@@ -79,4 +79,27 @@ test("оверрайд снят (null) — снова авто", () => {
 test("мусор в оверрайде игнорируется, работает авто", () => {
   const trade = { closeReason: "sl", entryPrice: 100, slPrice: 90, side: "long", statsOutcome: "garbage" };
   assert.equal(resolveTradeOutcome(trade, -1), "sl");
+});
+
+test("resolveStatsResultR: без ручного столбца R — фактический результат", () => {
+  assert.equal(resolveStatsResultR({ statsRrPreset: null, resultR: 20 }, "tp"), 20);
+  assert.equal(resolveStatsResultR({ statsRrPreset: "none", resultR: 20 }, "tp"), 20);
+  assert.equal(resolveStatsResultR({ statsRrPreset: "", resultR: -1 }, "sl"), -1);
+});
+
+test("resolveStatsResultR: ручной столбец R задаёт R для статистики", () => {
+  // Сделка записана как 20R (неверный риск), в админке выбран столбец 2R → в статистику +2R
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 20 }, "tp"), 2);
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/1.5", resultR: 9 }, "tp"), 1.5);
+});
+
+test("resolveStatsResultR: знак берётся от исхода", () => {
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: -1 }, "sl"), -2);
+  // БУ и неклассифицированные — остаётся факт
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 0 }, "be"), 0);
+  assert.equal(resolveStatsResultR({ statsRrPreset: "1/2", resultR: 0.4 }, "other"), 0.4);
+});
+
+test("resolveStatsResultR: мусорный пресет игнорируется", () => {
+  assert.equal(resolveStatsResultR({ statsRrPreset: "garbage", resultR: 7 }, "tp"), 7);
 });
