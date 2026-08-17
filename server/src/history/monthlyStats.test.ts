@@ -556,3 +556,41 @@ test("computeMonthlyStats: столбец R у стопа даёт отрица�
   assert.equal(stats.sumNegativeR, -2);
   assert.equal(stats.slCount, 1);
 });
+
+test("computeMonthlyStats: столбец сетки — по фактически достигнутому R, а не по плану", () => {
+  const base = {
+    openedAt: new Date("2026-08-10T10:00:00Z"),
+    closedAt: new Date("2026-08-10T12:00:00Z"),
+    closeReason: "tp",
+    riskUsd: 20,
+    rrPreset: "1/3", // план 1/3
+    entryPrice: 100,
+    slPrice: 90,
+    side: "long",
+    quantity: 10,
+    partialTpPrice: null,
+    partialTpFilledAt: null,
+    statsRrPreset: null,
+  };
+
+  // Фактически дала 2.09R → столбец 2R, а не плановый 3R
+  const byFact = computeMonthlyStats([{ ...base, resultR: 2.09 }], 180, null, [])[0]!;
+  assert.deepEqual(
+    byFact.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/2", count: 1 }],
+  );
+
+  // Тейк 1/3 с обычными комиссиями (2.95R) остаётся в 3R
+  const nearPlan = computeMonthlyStats([{ ...base, resultR: 2.95 }], 180, null, [])[0]!;
+  assert.deepEqual(
+    nearPlan.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/3", count: 1 }],
+  );
+
+  // Достигнутый R далеко от всех уровней сетки — откат на план, чтобы не выпасть из сетки
+  const fallback = computeMonthlyStats([{ ...base, resultR: 25 }], 180, null, [])[0]!;
+  assert.deepEqual(
+    fallback.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/3", count: 1 }],
+  );
+});

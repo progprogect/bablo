@@ -46,39 +46,6 @@ function factualR(trade: Trade): string | null {
   return `${rounded > 0 ? "+" : ""}${trimTrailingZeros(rounded)}R`;
 }
 
-/**
- * ПЛАН сделки по R/R: сохранённый пресет, иначе расчёт от ИСХОДНОГО риска сделки
- * (`riskUsd / quantity`) — так считается R/R при TP, выставленном вручную.
- *
- * Ручной столбец R из админки здесь НЕ участвует: он уже виден в фактическом R выше,
- * и подставлять его ещё и в план значило бы показать одно число дважды, спрятав
- * настоящий план сделки.
- *
- * Расчёт раньше шёл от ТЕКУЩЕГО SL (`|вход − SL|`), и это врало: стоп мог быть подтянут
- * ночным правилом или после частичной фиксации, знаменатель схлопывался, и сделка на ~2R
- * показывалась как «R/R 1/19.65». Исходный риск в riskUsd зафиксирован при открытии и не
- * меняется, поэтому считаем от него.
- */
-function plannedRiskReward(trade: Trade): string {
-  if (trade.rrPreset) return trade.rrPreset;
-  if (!trade.entryPrice || !trade.tpPrice) return "—";
-  const entry = Number(trade.entryPrice);
-  const tp = Number(trade.tpPrice);
-  const riskUsd = Number(trade.riskUsd);
-  const quantity = Number(trade.quantity);
-
-  if (riskUsd > 0 && quantity > 0) {
-    const riskDistance = riskUsd / quantity;
-    if (riskDistance > 0) return `1/${trimTrailingZeros(Math.abs(tp - entry) / riskDistance)}`;
-  }
-
-  // Нет риска в записи (старые сделки) — откат на расчёт по SL.
-  if (!trade.slPrice) return "—";
-  const risk = Math.abs(entry - Number(trade.slPrice));
-  if (risk === 0) return "—";
-  return `1/${trimTrailingZeros(Math.abs(tp - entry) / risk)}`;
-}
-
 /** Реализованный результат в USDT: resultR × риск сделки в $. */
 function realizedPnlUsd(trade: Trade): number | null {
   if (trade.resultR === null || trade.riskUsd === null) return null;
@@ -89,7 +56,6 @@ export function TradeRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const pnlUsd = realizedPnlUsd(trade);
   const resultR = factualR(trade);
-  const plan = plannedRiskReward(trade);
   const isProfit = pnlUsd !== null && pnlUsd > 0;
   const isLoss = pnlUsd !== null && pnlUsd < 0;
   // Старые ответы API без outcome — откат на closeReason, чтобы подпись не пропала.
@@ -120,12 +86,11 @@ export function TradeRow({ trade }: { trade: Trade }) {
       </div>
 
       <div className="flex items-center justify-between text-xs text-slate-500">
-        {/* Сначала факт («+2.1R»), план — в скобках: раньше был только план, и результат
-            сделки в R не был виден нигде на пользовательской стороне. */}
+        {/* Только факт: сколько R сделка реально дала. План (пресет R/R) в карточке не
+            показываем — он ничего не говорит о результате, а место занимает. */}
         <span>
           {formatDuration(trade.openedAt, trade.closedAt)}
           {resultR ? ` · ${resultR}` : ""}
-          {plan !== "—" ? ` (план ${plan})` : ""}
           {closeReasonLabel ? ` · ${closeReasonLabel}` : ""}
         </span>
         <span
