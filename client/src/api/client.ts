@@ -137,6 +137,8 @@ export type StatsRrAdminTrade = Trade & {
   autoOutcome: TradeOutcome;
   /** Исход, который сейчас идёт во всю статистику. */
   effectiveOutcome: TradeOutcome;
+  /** R, который сейчас идёт в суммы статистики (с учётом ручного столбца R). */
+  effectiveStatsResultR: number | null;
 };
 
 export const getStatsRrTrades = (limit: number, offset: number) =>

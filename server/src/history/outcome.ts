@@ -1,4 +1,4 @@
-import { isStopOnProfitSide, type TradeSide } from "../trades/math.js";
+import { isStopOnProfitSide, parseRRRatio, type TradeSide } from "../trades/math.js";
 
 /**
  * Фактический исход закрытой сделки — по экономике, а не по типу сработавшего ордера.
@@ -83,4 +83,34 @@ export function resolveTradeOutcome(trade: TradeForOutcome, resultR: number): Tr
   if (trade.closeReason === "tp") return "tp";
   if (trade.closeReason === "sl") return isProfitLockedStop(trade, resultR) ? "tp" : "sl";
   return "other";
+}
+
+/** Значение statsRrPreset, означающее «не учитывать в сетке R». */
+export const STATS_RR_PRESET_NONE = "none";
+
+/**
+ * R сделки ДЛЯ СТАТИСТИКИ. По умолчанию — фактический `resultR`. Если в админке задан
+ * столбец R (`statsRrPreset`), то он и есть источник правды для R-метрик: месячная сумма R,
+ * «+R / −R», винрейт, инсайты. Знак берётся от исхода: тейк → +ratio, стоп → −ratio;
+ * для БУ и неклассифицированных закрытий остаётся факт.
+ *
+ * На ДЕНЬГИ (USDT в истории, % к депозиту) не влияет — и это осознанно. Эквити прошлых
+ * месяцев восстанавливается вычитанием фактического PnL из текущего баланса, поэтому там
+ * нужен реальный результат, иначе арифметика разойдётся с балансом на бирже. Расхождение
+ * «план 2R, а в статистике 20R» обычно и означает неверно записанный риск: деньги
+ * (`resultR × riskUsd`) при этом верные, врёт только R.
+ */
+export function resolveStatsResultR(
+  trade: { statsRrPreset?: string | null; resultR: number | null },
+  outcome: TradeOutcome,
+): number | null {
+  const preset = trade.statsRrPreset;
+  if (preset == null || preset === "" || preset === STATS_RR_PRESET_NONE) {
+    return trade.resultR;
+  }
+  const ratio = parseRRRatio(preset);
+  if (ratio === null) return trade.resultR;
+  if (outcome === "tp") return ratio;
+  if (outcome === "sl") return -ratio;
+  return trade.resultR;
 }

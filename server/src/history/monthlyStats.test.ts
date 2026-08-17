@@ -492,3 +492,67 @@ test("computeMonthlyStats: тейк, помеченный стопом вруч�
   assert.equal(stats.tpCount, 0);
   assert.deepEqual(stats.byRRPreset.filter((entry) => entry.count > 0), []);
 });
+
+test("computeMonthlyStats: столбец R из админки задаёт и сумму R, деньги остаются фактическими", () => {
+  // Записан resultR = 20 при риске 5 USDT (реальный PnL 100 USDT верный, врёт только R).
+  // В админке выбран столбец 2R → в статистике сумма R = +2, но % к депозиту по 100 USDT.
+  const base = {
+    openedAt: new Date("2026-08-10T10:00:00Z"),
+    closedAt: new Date("2026-08-10T12:00:00Z"),
+    closeReason: "tp",
+    resultR: 20,
+    riskUsd: 5,
+    rrPreset: "1/2",
+    entryPrice: 100,
+    slPrice: 90,
+    side: "long",
+    quantity: 10,
+    partialTpPrice: null,
+    partialTpFilledAt: null,
+    statsRrPreset: null,
+  };
+  const anchor = { date: "2026-08-31", equity: 1000 };
+
+  const auto = computeMonthlyStats([base], 180, anchor, [])[0]!;
+  assert.equal(auto.sumR, 20);
+  assert.equal(auto.sumPositiveR, 20);
+
+  const fixed = computeMonthlyStats([{ ...base, statsRrPreset: "1/2" }], 180, anchor, [])[0]!;
+  assert.equal(fixed.sumR, 2);
+  assert.equal(fixed.sumPositiveR, 2);
+  assert.equal(fixed.tpCount, 1);
+  // % к депозиту не изменился — считается по реальным деньгам (20R × 5 USDT = 100 USDT)
+  assert.equal(fixed.resultPct, auto.resultPct);
+  assert.deepEqual(
+    fixed.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/2", count: 1 }],
+  );
+});
+
+test("computeMonthlyStats: столбец R у стопа даёт отрицательный R в сумме", () => {
+  const stats = computeMonthlyStats(
+    [
+      {
+        openedAt: new Date("2026-08-10T10:00:00Z"),
+        closedAt: new Date("2026-08-10T12:00:00Z"),
+        closeReason: "sl",
+        resultR: -5,
+        riskUsd: 10,
+        rrPreset: "1/2",
+        entryPrice: 100,
+        slPrice: 90,
+        side: "long",
+        quantity: 10,
+        partialTpPrice: null,
+        partialTpFilledAt: null,
+        statsRrPreset: "1/2",
+      },
+    ],
+    180,
+    null,
+    [],
+  )[0]!;
+  assert.equal(stats.sumR, -2);
+  assert.equal(stats.sumNegativeR, -2);
+  assert.equal(stats.slCount, 1);
+});

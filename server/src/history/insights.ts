@@ -1,6 +1,6 @@
 import { getLocalDateKey, getLocalHour, getLocalMinuteOfDay } from "../risk/tradingDay.js";
 import { RR_PRESETS } from "../trades/math.js";
-import { resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
+import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
 
 export type InsightTradeInput = {
   symbol: string;
@@ -16,6 +16,8 @@ export type InsightTradeInput = {
   side: string;
   /** Ручной оверрайд исхода из админки (тейк/стоп/БУ) — см. history/outcome.ts. */
   statsOutcome?: string | null;
+  /** Ручной столбец R из админки — он же задаёт R сделки для инсайтов (resolveStatsResultR). */
+  statsRrPreset?: string | null;
 };
 
 /**
@@ -29,6 +31,14 @@ export type InsightTradeInput = {
  */
 function outcomeOf(trade: InsightTradeInput): TradeOutcome {
   return resolveTradeOutcome(trade, trade.resultR ?? 0);
+}
+
+/**
+ * R сделки для инсайтов: с учётом ручного столбца R из админки. Нужен там, где
+ * величина R имеет смысл — накопление дневной цели и «цена промаха» по пресету.
+ */
+function statsResultROf(trade: InsightTradeInput): number | null {
+  return resolveStatsResultR(trade, outcomeOf(trade)) ?? trade.resultR;
 }
 
 export type PresetOutcome = {
@@ -206,7 +216,7 @@ function presetOutcomes(trades: InsightTradeInput[]): PresetOutcome[] {
       // дошло (значит не tp), но и «ценой промаха» не является — иначе средний R
       // промаха оказался бы положительным.
       entry.sl += 1;
-      entry.slSumR += trade.resultR;
+      entry.slSumR += statsResultROf(trade) ?? trade.resultR;
     }
     byPreset.set(trade.rrPreset, entry);
   }
@@ -262,7 +272,7 @@ function dailyTargetHour(
     const sorted = [...dayTrades].sort((a, b) => a.closedAt!.getTime() - b.closedAt!.getTime());
     let cumulativeR = 0;
     for (const trade of sorted) {
-      cumulativeR += trade.resultR!;
+      cumulativeR += statsResultROf(trade) ?? trade.resultR!;
       if (cumulativeR >= targetR) {
         crossingMinutes.push(getLocalMinuteOfDay(trade.closedAt!, tzOffsetMinutes));
         break;
