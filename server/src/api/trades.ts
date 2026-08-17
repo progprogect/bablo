@@ -3,7 +3,7 @@ import { requireAuth } from "./plugins/auth-guard.js";
 import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } from "../trades/service.js";
 import type { TradeSide } from "../trades/math.js";
 import { listClosedTrades, type Trade } from "../db/repositories/trades.js";
-import { resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
+import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
 const DEFAULT_HISTORY_LIMIT = 50;
 const MAX_HISTORY_LIMIT = 200;
@@ -12,20 +12,28 @@ function isTradeSide(value: unknown): value is TradeSide {
   return value === "long" || value === "short";
 }
 
-/** Строка истории + фактический исход сделки для подписи в UI. */
-function withOutcome(trade: Trade): Trade & { outcome: TradeOutcome } {
+/**
+ * Строка истории + фактический исход и фактический R сделки для UI.
+ *
+ * `statsResultR` — тот же R, что идёт во всю статистику (с учётом ручного столбца R из
+ * админки). Считает сервер, чтобы карточка в Истории и цифры в отчётах не могли разойтись.
+ */
+function withOutcome(trade: Trade): Trade & { outcome: TradeOutcome; statsResultR: number | null } {
+  const resultR = trade.resultR !== null ? Number(trade.resultR) : null;
+  const outcome = resolveTradeOutcome(
+    {
+      closeReason: trade.closeReason,
+      entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
+      slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+      side: trade.side,
+      statsOutcome: trade.statsOutcome,
+    },
+    resultR ?? 0,
+  );
   return {
     ...trade,
-    outcome: resolveTradeOutcome(
-      {
-        closeReason: trade.closeReason,
-        entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
-        slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
-        side: trade.side,
-        statsOutcome: trade.statsOutcome,
-      },
-      trade.resultR !== null ? Number(trade.resultR) : 0,
-    ),
+    outcome,
+    statsResultR: resolveStatsResultR({ statsRrPreset: trade.statsRrPreset, resultR }, outcome),
   };
 }
 
