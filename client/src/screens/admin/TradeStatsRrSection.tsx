@@ -3,8 +3,10 @@ import {
   ApiError,
   getStatsRrTrades,
   recalculateTradeResultRequest,
+  setTradeStatsOutcomeRequest,
   setTradeStatsRrPresetRequest,
   type StatsRrAdminTrade,
+  type TradeOutcome,
 } from "../../api/client";
 import { formatSignedUsd } from "../../lib/format";
 
@@ -32,6 +34,20 @@ function presetLabel(preset: string | null): string {
 function selectValue(trade: StatsRrAdminTrade): string {
   if (trade.statsRrPreset == null) return AUTO_VALUE;
   return trade.statsRrPreset;
+}
+
+const OUTCOME_LABELS: Record<TradeOutcome, string> = {
+  tp: "Тейк",
+  sl: "Стоп",
+  be: "Б/У",
+  other: "—",
+};
+
+/** Ручной исход можно задать только из этих значений; "other" — только авто-результат. */
+const MANUAL_OUTCOMES: TradeOutcome[] = ["tp", "sl", "be"];
+
+function outcomeSelectValue(trade: StatsRrAdminTrade): string {
+  return trade.statsOutcome ?? AUTO_VALUE;
 }
 
 function pnlUsd(trade: StatsRrAdminTrade): number | null {
@@ -83,6 +99,26 @@ export function TradeStatsRrSection() {
     }
   }
 
+  async function handleOutcomeChange(tradeId: number, value: string) {
+    setError(null);
+    setNotice(null);
+    setBusyId(tradeId);
+    const statsOutcome = value === AUTO_VALUE ? null : value;
+    try {
+      await setTradeStatsOutcomeRequest(tradeId, statsOutcome);
+      setNotice(
+        statsOutcome === null
+          ? "Исход снова определяется автоматически"
+          : `Сделка учитывается как «${OUTCOME_LABELS[statsOutcome as TradeOutcome]}» во всей статистике`,
+      );
+      reload(0, false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось сохранить исход");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleRecalculate(tradeId: number) {
     setError(null);
     setNotice(null);
@@ -126,9 +162,10 @@ export function TradeStatsRrSection() {
       <div>
         <h2 className="text-sm font-medium text-ink">R в статистике</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Закрытые сделки: столбец R на «Статистике» и пересчёт PnL (fill BingX / цена закрытия /
-          SL при нулевом close). Список сделок в Истории для R-пресета не меняется — после
-          «Пересчитать» обновится сумма USDT.
+          Закрытые сделки: исход (тейк / стоп / Б/У), столбец R на «Статистике» и пересчёт PnL
+          (fill BingX / цена закрытия / SL при нулевом close). Исход влияет на всю статистику —
+          месячную разбивку, подсказки, дневные лимиты и подпись в Истории; причину закрытия
+          с биржи не меняет.
         </p>
       </div>
 
@@ -145,6 +182,7 @@ export function TradeStatsRrSection() {
             const pnl = pnlUsd(trade);
             const busy = busyId === trade.id;
             const overridden = trade.statsRrPreset != null;
+            const outcomeOverridden = trade.statsOutcome != null;
             return (
               <li
                 key={trade.id}
@@ -161,9 +199,13 @@ export function TradeStatsRrSection() {
                     </p>
                     <p className="text-xs text-slate-500">
                       {formatDate(trade.closedAt ?? trade.openedAt)}
-                      {" · авто "}
+                      {" · R авто "}
                       {presetLabel(trade.autoStatsRrPreset)}
-                      {overridden ? ` → сейчас ${presetLabel(trade.effectiveStatsRrPreset)}` : ""}
+                      {overridden ? ` → ${presetLabel(trade.effectiveStatsRrPreset)}` : ""}
+                      {" · исход "}
+                      {outcomeOverridden
+                        ? `${OUTCOME_LABELS[trade.autoOutcome]} → ${OUTCOME_LABELS[trade.effectiveOutcome]} (вручную)`
+                        : OUTCOME_LABELS[trade.effectiveOutcome]}
                     </p>
                   </div>
                   <p
@@ -178,20 +220,36 @@ export function TradeStatsRrSection() {
                     {formatSignedUsd(pnl)}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                {/* flex-wrap: на узком экране два селекта и кнопка переносятся, а не сжимаются
+                    до нечитаемого состояния. */}
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    disabled={busy}
+                    value={outcomeSelectValue(trade)}
+                    onChange={(event) => handleOutcomeChange(trade.id, event.target.value)}
+                    className="min-w-[7.5rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
+                    title="Как сделка учитывается в статистике: тейк, стоп или безубыток"
+                  >
+                    <option value={AUTO_VALUE}>Исход: авто ({OUTCOME_LABELS[trade.autoOutcome]})</option>
+                    {MANUAL_OUTCOMES.map((outcome) => (
+                      <option key={outcome} value={outcome}>
+                        Исход: {OUTCOME_LABELS[outcome]}
+                      </option>
+                    ))}
+                  </select>
                   <select
                     disabled={busy}
                     value={selectValue(trade)}
                     onChange={(event) => handleChange(trade.id, event.target.value)}
-                    className="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
+                    className="min-w-[7.5rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-ink outline-none focus:border-accent disabled:opacity-50"
                   >
                     <option value={AUTO_VALUE}>
-                      Авто{trade.autoStatsRrPreset ? ` (${presetLabel(trade.autoStatsRrPreset)})` : " (—)"}
+                      R: авто{trade.autoStatsRrPreset ? ` (${presetLabel(trade.autoStatsRrPreset)})` : " (—)"}
                     </option>
-                    <option value={NONE_VALUE}>Не учитывать</option>
+                    <option value={NONE_VALUE}>R: не учитывать</option>
                     {RR_PRESETS.map((preset) => (
                       <option key={preset} value={preset}>
-                        {presetLabel(preset)}
+                        R: {presetLabel(preset)}
                       </option>
                     ))}
                   </select>

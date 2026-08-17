@@ -84,6 +84,14 @@ export const trades = pgTable("trades", {
    * иначе пресет из RR_PRESETS ("1/2"…). На список сделок в Истории не влияет.
    */
   statsRrPreset: text("stats_rr_preset"),
+  /**
+   * Ручная корректировка ИСХОДА сделки для статистики (админка).
+   * null — авто (см. history/outcome.ts); "tp" | "sl" | "be" — считать тейком / стопом /
+   * безубытком во всех местах: месячная разбивка, инсайты, дневные лимиты, подпись
+   * в истории. Причину закрытия с биржи (closeReason) не затирает — это отдельный
+   * слой поверх факта, поэтому пересчёт результата и сверки продолжают видеть правду.
+   */
+  statsOutcome: text("stats_outcome"),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closeReason: text("close_reason"), // 'sl' | 'tp' | 'manual' | 'external' (закрыта на бирже, обнаружено постфактум)

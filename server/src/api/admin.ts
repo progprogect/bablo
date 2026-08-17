@@ -18,6 +18,7 @@ import {
   listTradesNeedingCloseReason,
   recalculateTradeResult,
   setTradeCloseReasonManual,
+  setTradeStatsOutcome,
   setTradeStatsRrPreset,
   TradeError,
 } from "../trades/service.js";
@@ -176,6 +177,40 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const limit = Math.min(Math.max(Number(request.query.limit) || 40, 1), 100);
       const offset = Math.max(Number(request.query.offset) || 0, 0);
       return listTradesForStatsRrAdmin({ limit, offset });
+    },
+  );
+
+  /**
+   * Ручной исход сделки для статистики: тейк / стоп / безубыток или null (авто).
+   * Доступно для ЛЮБОЙ закрытой сделки, включая уже классифицированные биржей —
+   * closeReason при этом не затирается (см. setTradeStatsOutcome).
+   */
+  app.post<{ Params: { id: string }; Body: { statsOutcome?: string | null } }>(
+    "/admin/trades/:id/stats-outcome",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id)) {
+        reply.code(400).send({ error: "Некорректный id" });
+        return;
+      }
+      if (!("statsOutcome" in (request.body ?? {}))) {
+        reply.code(400).send({ error: "Укажите statsOutcome ('tp' | 'sl' | 'be' | null для авто)" });
+        return;
+      }
+      const raw = request.body?.statsOutcome;
+      if (raw !== null && raw !== undefined && typeof raw !== "string") {
+        reply.code(400).send({ error: "statsOutcome должен быть строкой или null" });
+        return;
+      }
+      try {
+        return await setTradeStatsOutcome(id, raw ?? null);
+      } catch (error) {
+        if (error instanceof TradeError) {
+          reply.code(error.status).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
     },
   );
 

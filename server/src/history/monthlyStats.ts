@@ -23,6 +23,8 @@ export type MonthlyStatTradeInput = {
   entryPrice?: number | null;
   slPrice?: number | null;
   side?: TradeSide | string | null;
+  /** Ручной оверрайд исхода из админки (тейк/стоп/БУ) — см. history/outcome.ts. */
+  statsOutcome?: string | null;
   quantity?: number | null;
   partialTpPrice?: number | null;
   partialTpFilledAt?: Date | string | null;
@@ -72,6 +74,7 @@ function toOutcomeInput(trade: MonthlyStatTradeInput): TradeForOutcome {
     entryPrice: trade.entryPrice ?? null,
     slPrice: trade.slPrice ?? null,
     side: trade.side ?? "",
+    statsOutcome: trade.statsOutcome ?? null,
   };
 }
 
@@ -156,14 +159,17 @@ export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): stri
     }
   }
 
-  if (trade.closeReason === "tp" && trade.rrPreset) {
-    return trade.rrPreset;
+  // Дальше в сетку идут только тейки — по ФАКТИЧЕСКОМУ исходу, включая ручной оверрайд
+  // из админки: помечена стопом → в сетку не попадает, помечена тейком → попадает.
+  const resultR = trade.resultR ?? 0;
+  const outcomeInput = toOutcomeInput(trade);
+  if (resolveTradeOutcome(outcomeInput, resultR) !== "tp") {
+    return null;
   }
 
-  // Зафиксировали прибыль стопом (ночное правило подтянуло SL на 1/1): в сетку идёт
-  // достигнутый уровень стопа, а не плановый rrPreset — план ведь не отработал.
-  const resultR = trade.resultR ?? 0;
-  if (isProfitLockedStop(toOutcomeInput(trade), resultR)) {
+  // Прибыль зафиксирована стопом (ночное правило подтянуло SL на 1/1): столбец по
+  // достигнутому УРОВНЮ СТОПА, а не по плановому rrPreset — план ведь не отработал.
+  if (isProfitLockedStop(outcomeInput, resultR)) {
     const entry = trade.entryPrice ?? null;
     const sl = trade.slPrice ?? null;
     const riskUsd = trade.riskUsd ?? null;
@@ -173,7 +179,9 @@ export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): stri
       if (ratio !== null) return matchRrPreset(ratio);
     }
   }
-  return null;
+
+  // Обычный тейк (в т.ч. ночной 1/1 и помеченный вручную) → плановый пресет.
+  return trade.rrPreset ?? null;
 }
 
 /** Авто-бакет без учёта statsRrPreset — чтобы в админке показать «сейчас было бы». */

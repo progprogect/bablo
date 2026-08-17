@@ -22,6 +22,7 @@ function withOutcome(trade: Trade): Trade & { outcome: TradeOutcome } {
         entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
         slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
         side: trade.side,
+        statsOutcome: trade.statsOutcome,
       },
       trade.resultR !== null ? Number(trade.resultR) : 0,
     ),

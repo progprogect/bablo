@@ -431,3 +431,64 @@ test("computeMonthlyStats: обычный стоп остаётся стопом
   assert.equal(month.tpCount, 0);
   assert.deepEqual(month.byRRPreset.filter((entry) => entry.count > 0), []);
 });
+
+test("computeMonthlyStats: ручной оверрайд исхода переносит сделку из стопов в тейки", () => {
+  const base = {
+    openedAt: new Date("2026-08-10T10:00:00Z"),
+    closedAt: new Date("2026-08-10T12:00:00Z"),
+    closeReason: "sl",
+    resultR: -1,
+    riskUsd: 100,
+    rrPreset: "1/2",
+    entryPrice: 100,
+    slPrice: 90,
+    side: "long",
+    quantity: 10,
+    partialTpPrice: null,
+    partialTpFilledAt: null,
+    statsRrPreset: null,
+  };
+
+  const auto = computeMonthlyStats([base], 180, null, [])[0]!;
+  assert.equal(auto.slCount, 1);
+  assert.equal(auto.tpCount, 0);
+  assert.deepEqual(auto.byRRPreset.filter((entry) => entry.count > 0), []);
+
+  const overridden = computeMonthlyStats([{ ...base, statsOutcome: "tp" }], 180, null, [])[0]!;
+  assert.equal(overridden.tpCount, 1);
+  assert.equal(overridden.slCount, 0);
+  // Помечена тейком → в сетке появляется её плановый пресет
+  assert.deepEqual(
+    overridden.byRRPreset.filter((entry) => entry.count > 0),
+    [{ preset: "1/2", count: 1 }],
+  );
+});
+
+test("computeMonthlyStats: тейк, помеченный стопом вручную, уходит из сетки R", () => {
+  const stats = computeMonthlyStats(
+    [
+      {
+        openedAt: new Date("2026-08-10T10:00:00Z"),
+        closedAt: new Date("2026-08-10T12:00:00Z"),
+        closeReason: "tp",
+        resultR: 2,
+        riskUsd: 100,
+        rrPreset: "1/2",
+        entryPrice: 100,
+        slPrice: 90,
+        side: "long",
+        quantity: 10,
+        partialTpPrice: null,
+        partialTpFilledAt: null,
+        statsRrPreset: null,
+        statsOutcome: "sl",
+      },
+    ],
+    180,
+    null,
+    [],
+  )[0]!;
+  assert.equal(stats.slCount, 1);
+  assert.equal(stats.tpCount, 0);
+  assert.deepEqual(stats.byRRPreset.filter((entry) => entry.count > 0), []);
+});

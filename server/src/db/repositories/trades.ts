@@ -62,6 +62,8 @@ export type UpdateTradeInput = Partial<{
   nightTpAppliedAt: Date;
   /** null — сбросить на авто; "none" — не в сетке; иначе RR_PRESETS. */
   statsRrPreset: string | null;
+  /** Ручной исход для статистики: null — авто; иначе "tp" | "sl" | "be". */
+  statsOutcome: string | null;
   bingxOrderIds: Record<string, string | number>;
   status: "active" | "closed";
   closedAt: Date;
@@ -94,6 +96,7 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   }
   if (input.nightTpAppliedAt !== undefined) patch.nightTpAppliedAt = input.nightTpAppliedAt;
   if (input.statsRrPreset !== undefined) patch.statsRrPreset = input.statsRrPreset;
+  if (input.statsOutcome !== undefined) patch.statsOutcome = input.statsOutcome;
   if (input.bingxOrderIds !== undefined) patch.bingxOrderIds = input.bingxOrderIds;
   if (input.status !== undefined) patch.status = input.status;
   if (input.closedAt !== undefined) patch.closedAt = input.closedAt;

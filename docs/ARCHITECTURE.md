@@ -121,6 +121,7 @@ assets          — symbol, leverage, sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
 trades          — вся сделка: symbol, side, qty, leverage, entry_price, sl, tp, rr_preset,
+                  stats_outcome (ручной исход для статистики: tp/sl/be, null — авто),
                   risk_usd, opened_at, closed_at, close_reason, close_price,
                   result_r, result_pct, mfe_price, be_crossed (bool),
                   bingx_order_ids (jsonb), signals (jsonb)
@@ -155,6 +156,8 @@ GET  /api/events                — SSE (этап 4)
 GET/POST/PATCH/DELETE /api/admin/* — ключи, активы, параметры риск-плана
 GET/POST/DELETE /api/admin/equity-adjustments — пополнения/выводы (date, amountUsd, note)
 POST /api/admin/reclassify-trades — пересверка "external"-сделок с BingX (см. выше)
+POST /api/admin/trades/:id/stats-outcome — ручной исход сделки для статистики
+                                   ('tp' | 'sl' | 'be' | null — авто); closeReason не меняет
 ```
 
 Контракт стабилен: клиент не знает про BingX напрямую, все специфичные детали — за прослойкой.

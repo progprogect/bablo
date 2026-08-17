@@ -17,7 +17,20 @@ export type TradeForOutcome = {
   entryPrice: number | null;
   slPrice: number | null;
   side: string;
+  /**
+   * Ручной оверрайд исхода из админки: "tp" | "sl" | "be". null/отсутствует — авто.
+   * Главнее любых авто-правил: если пользователь сказал, что сделка была по тейку,
+   * значит она тейк везде — в статистике, инсайтах и дневных лимитах.
+   */
+  statsOutcome?: string | null;
 };
+
+/** Значения, которые допустимо задать вручную в админке. */
+export const MANUAL_OUTCOMES = ["tp", "sl", "be"] as const;
+
+export function isManualOutcome(value: unknown): value is TradeOutcome {
+  return typeof value === "string" && (MANUAL_OUTCOMES as readonly string[]).includes(value);
+}
 
 /**
  * Стоп стоял на стороне прибыли (вход или выше/ниже него) и сделка закрылась в плюс —
@@ -57,6 +70,7 @@ export function isBreakevenClose(trade: TradeForOutcome, resultR: number): boole
 
 /**
  * Исход сделки для статистики:
+ * - ручной оверрайд из админки (`statsOutcome`) — главнее всего;
  * - `tp` — закрытие по тейку ИЛИ по стопу, уведённому в прибыль (см. isProfitLockedStop);
  * - `be` — результат в пределах ±0.05R (стоп на входе / ручное закрытие в ноль);
  * - `sl` — реальный стоп: план защиты сработал в убыток;
@@ -64,6 +78,7 @@ export function isBreakevenClose(trade: TradeForOutcome, resultR: number): boole
  *   без явной классификации в админке.
  */
 export function resolveTradeOutcome(trade: TradeForOutcome, resultR: number): TradeOutcome {
+  if (isManualOutcome(trade.statsOutcome)) return trade.statsOutcome;
   if (isBreakevenClose(trade, resultR)) return "be";
   if (trade.closeReason === "tp") return "tp";
   if (trade.closeReason === "sl") return isProfitLockedStop(trade, resultR) ? "tp" : "sl";

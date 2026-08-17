@@ -55,3 +55,28 @@ test("обычный тейк и ручное закрытие не меняют
 test("нет данных о стопе — прежнее поведение (стоп остаётся стопом)", () => {
   assert.equal(resolveTradeOutcome({ closeReason: "sl", entryPrice: null, slPrice: null, side: "long" }, 1), "sl");
 });
+
+test("ручной оверрайд главнее авто-правил: стоп помечен тейком", () => {
+  const trade = { closeReason: "sl", entryPrice: 100, slPrice: 90, side: "long", statsOutcome: "tp" };
+  assert.equal(resolveTradeOutcome(trade, -1), "tp");
+});
+
+test("ручной оверрайд может и понизить: тейк помечен стопом", () => {
+  const trade = { closeReason: "tp", entryPrice: 100, slPrice: 90, side: "long", statsOutcome: "sl" };
+  assert.equal(resolveTradeOutcome(trade, 3), "sl");
+});
+
+test("ручной оверрайд перебивает и безубыток", () => {
+  const trade = { closeReason: "sl", entryPrice: 100, slPrice: 100, side: "long", statsOutcome: "sl" };
+  assert.equal(resolveTradeOutcome(trade, 0), "sl");
+});
+
+test("оверрайд снят (null) — снова авто", () => {
+  const trade = { closeReason: "sl", entryPrice: 100, slPrice: 110, side: "long", statsOutcome: null };
+  assert.equal(resolveTradeOutcome(trade, 1), "tp");
+});
+
+test("мусор в оверрайде игнорируется, работает авто", () => {
+  const trade = { closeReason: "sl", entryPrice: 100, slPrice: 90, side: "long", statsOutcome: "garbage" };
+  assert.equal(resolveTradeOutcome(trade, -1), "sl");
+});
