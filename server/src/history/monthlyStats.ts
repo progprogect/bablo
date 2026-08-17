@@ -11,6 +11,7 @@ import {
   isProfitLockedStop,
   resolveStatsResultR,
   resolveTradeOutcome,
+  roundStatsR,
   STATS_RR_PRESET_NONE,
   type TradeForOutcome,
 } from "./outcome.js";
@@ -330,10 +331,11 @@ export function computeMonthlyStats(
       // (см. history/outcome.ts).
       const outcome = resolveTradeOutcome(toOutcomeInput(trade), factualR);
 
-      // R-метрики считаем по статистическому R: если в админке задан столбец R, он
-      // и есть правда для суммы R, «+R / −R» и винрейта. Деньги (sumUsd → % к депозиту)
-      // остаются фактическими — см. resolveStatsResultR.
-      const resultR = resolveStatsResultR(trade, outcome) ?? factualR;
+      // R-метрики считаем по статистическому R: он уже округлён до десятых, поэтому
+      // сумма в карточке месяца сходится со суммой R по карточкам сделок. Если в админке
+      // задан столбец R, он и есть правда для суммы R, «+R / −R» и винрейта. Деньги
+      // (sumUsd → % к депозиту) остаются фактическими — см. resolveStatsResultR.
+      const resultR = resolveStatsResultR(trade, outcome) ?? roundStatsR(factualR);
       sumR += resultR;
       if (trade.riskUsd !== null) {
         sumUsd += factualR * trade.riskUsd;

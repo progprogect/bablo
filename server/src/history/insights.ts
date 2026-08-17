@@ -1,6 +1,11 @@
 import { getLocalDateKey, getLocalHour, getLocalMinuteOfDay } from "../risk/tradingDay.js";
 import { RR_PRESETS } from "../trades/math.js";
-import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
+import {
+  resolveStatsResultR,
+  resolveTradeOutcome,
+  roundStatsR,
+  type TradeOutcome,
+} from "./outcome.js";
 
 export type InsightTradeInput = {
   symbol: string;
@@ -38,7 +43,9 @@ function outcomeOf(trade: InsightTradeInput): TradeOutcome {
  * величина R имеет смысл — накопление дневной цели и «цена промаха» по пресету.
  */
 function statsResultROf(trade: InsightTradeInput): number | null {
-  return resolveStatsResultR(trade, outcomeOf(trade)) ?? trade.resultR;
+  const value = resolveStatsResultR(trade, outcomeOf(trade));
+  if (value !== null) return value;
+  return trade.resultR === null ? null : roundStatsR(trade.resultR);
 }
 
 export type PresetOutcome = {
