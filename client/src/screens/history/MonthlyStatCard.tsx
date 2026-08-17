@@ -1,5 +1,5 @@
 import type { MonthlyStat } from "../../api/types";
-import { trimTrailingZeros } from "../../lib/format";
+import { formatSignedR, formatSignedRValue, trimTrailingZeros } from "../../lib/format";
 
 const MONTH_LABELS = [
   "Январь",
@@ -42,10 +42,8 @@ export function MonthlyStatCard({ stat }: { stat: MonthlyStat }) {
           <span className={`text-base font-semibold ${resultColorClass}`}>
             {stat.resultPct !== null ? formatSignedPercent(stat.resultPct) : "—"}
           </span>
-          <span className="text-xs text-slate-500">
-            {stat.sumR > 0 ? "+" : ""}
-            {trimTrailingZeros(stat.sumR)}R
-          </span>
+          {/* Сумма R — до десятых, как и R в карточках сделок (см. lib/format.ts). */}
+          <span className="text-xs text-slate-500">{formatSignedR(stat.sumR)}</span>
         </div>
       </div>
 
@@ -69,9 +67,9 @@ export function MonthlyStatCard({ stat }: { stat: MonthlyStat }) {
           <div className="flex shrink-0 flex-col items-center border-l border-line pl-2.5">
             <span className="text-[10px] text-slate-400">+R / −R</span>
             <span className="text-xs font-medium">
-              <span className="text-emerald-600">+{trimTrailingZeros(stat.sumPositiveR)}</span>
+              <span className="text-emerald-600">{formatSignedRValue(stat.sumPositiveR)}</span>
               <span className="text-slate-400"> / </span>
-              <span className="text-red-600">{trimTrailingZeros(stat.sumNegativeR)}</span>
+              <span className="text-red-600">{formatSignedRValue(stat.sumNegativeR)}</span>
             </span>
           </div>
         </div>
