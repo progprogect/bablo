@@ -641,7 +641,7 @@ test("computeMonthlyStats: убытки тоже суммируются из о�
     partialTpPrice: null,
     partialTpFilledAt: null,
     statsRrPreset: null,
-    resultR: -1.1185, // в карточке −1.1R
+    resultR: -1.1185, // шаг 0.5 → в карточке −1R
   };
   const stats = computeMonthlyStats(
     [
@@ -653,6 +653,6 @@ test("computeMonthlyStats: убытки тоже суммируются из о�
     [],
   )[0]!;
 
-  assert.equal(stats.sumR, -2.2);
-  assert.equal(stats.sumNegativeR, -2.2);
+  assert.equal(stats.sumR, -2);
+  assert.equal(stats.sumNegativeR, -2);
 });

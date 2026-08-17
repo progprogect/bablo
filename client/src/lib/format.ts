@@ -15,32 +15,32 @@ export function trimTrailingZeros(value: number, maxDecimals = 2): string {
 }
 
 /**
- * R показывается с точностью до десятых. Само правило живёт на сервере
+ * R показывается с шагом 0.5 — целое или половина. Само правило живёт на сервере
  * (`history/outcome.ts#roundStatsR`) и применяется ДО агрегации, поэтому сумма R в
  * карточке месяца сходится со суммой R по карточкам сделок. Здесь округление —
- * страховка от накопленного float-шума при сложении (1.9000000000000001 → 1.9)
+ * страховка от накопленного float-шума при сложении (1.5000000000000002 → 1.5)
  * и единая точка форматирования для Истории и Статистики.
  *
  * Деньги (USDT, % к депозиту) не округляются: там нужна фактическая точность, иначе
  * восстановление эквити прошлых месяцев разойдётся с балансом на бирже.
  */
 export function roundR(value: number): number {
-  return Math.round(value * 10) / 10;
+  return Math.round(value * 2) / 2;
 }
 
-/** R сделки в виде соотношения, как принято в карточках: 1.12 → "1/1.1", 2 → "1/2". */
+/** R сделки в виде соотношения, как принято в карточках: 1.12 → "1/1", 1.26 → "1/1.5". */
 export function formatRatioR(value: number): string {
   return `1/${trimTrailingZeros(roundR(Math.abs(value)), 1)}`;
 }
 
-/** Знаковое число R без суффикса: 4.04 → "+4", −1.36 → "-1.4". Для пар вида «+R / −R». */
+/** Знаковое число R без суффикса: 4.04 → "+4", −1.36 → "-1.5". Для пар вида «+R / −R». */
 export function formatSignedRValue(value: number): string {
   const rounded = roundR(value);
   const sign = rounded > 0 ? "+" : "";
   return `${sign}${trimTrailingZeros(rounded, 1)}`;
 }
 
-/** Сумма R со знаком для отчётов: 4.04 → "+4R", −1.36 → "-1.4R". */
+/** Сумма R со знаком для отчётов: 4.04 → "+4R", −1.36 → "-1.5R". */
 export function formatSignedR(value: number): string {
   return `${formatSignedRValue(value)}R`;
 }
