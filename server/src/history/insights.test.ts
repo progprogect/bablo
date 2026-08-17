@@ -18,6 +18,7 @@ function trade(input: {
   entryPrice?: number | null;
   slPrice?: number | null;
   side?: string;
+  statsOutcome?: string | null;
 }): InsightTradeInput {
   const day = input.day ?? "2026-07-13";
   const openedAt = new Date(`${day}T${String(input.openedHourUtc).padStart(2, "0")}:00:00Z`);
@@ -39,6 +40,7 @@ function trade(input: {
     entryPrice: input.entryPrice ?? 100,
     slPrice: input.slPrice ?? 90,
     side: input.side ?? "long",
+    statsOutcome: input.statsOutcome ?? null,
   };
 }
 
@@ -358,4 +360,25 @@ test("computeTradeInsights: стоп, уведённый в прибыль — �
   assert.equal(preset?.totalTrades, 1);
   assert.equal(preset?.tpCount, 0);
   assert.equal(preset?.slCount, 0);
+});
+
+test("computeTradeInsights: ручной оверрайд исхода меняет часы и активы", () => {
+  const trades = [
+    // Реальный стоп, но помечен тейком вручную → час становится прибыльным
+    trade({
+      openedHourUtc: 4,
+      resultR: -1,
+      closeReason: "sl",
+      entryPrice: 100,
+      slPrice: 90,
+      statsOutcome: "tp",
+    }),
+  ];
+  const insights = computeTradeInsights(trades, TZ, 3);
+  assert.deepEqual(
+    insights.topProfitableHours.map((bucket) => [bucket.hour, bucket.tpCount, bucket.total]),
+    [[7, 1, 1]],
+  );
+  assert.deepEqual(insights.topStopHours, []);
+  assert.deepEqual(insights.topStopAssets, []);
 });

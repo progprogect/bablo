@@ -32,6 +32,7 @@ function outcomeOfTrade(trade: {
   slPrice: string | null;
   side: string;
   resultR: string | null;
+  statsOutcome: string | null;
 }): TradeOutcome {
   return resolveTradeOutcome(
     {
@@ -39,6 +40,7 @@ function outcomeOfTrade(trade: {
       entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
       slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
       side: trade.side,
+      statsOutcome: trade.statsOutcome,
     },
     trade.resultR !== null ? Number(trade.resultR) : 0,
   );

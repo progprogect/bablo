@@ -41,6 +41,11 @@ export type Trade = {
   nightTpAppliedAt?: string | null;
   /** Ручной оверрайд столбца R в статистике: null — авто; "none" — не учитывать; иначе "1/2"… */
   statsRrPreset?: string | null;
+  /**
+   * Ручной оверрайд исхода для статистики (админка): null — авто;
+   * "tp" | "sl" | "be" — считать тейком / стопом / безубытком везде.
+   */
+  statsOutcome?: string | null;
   openedAt: string;
   closedAt: string | null;
   closeReason: string | null;

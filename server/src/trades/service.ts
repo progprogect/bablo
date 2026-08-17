@@ -59,6 +59,12 @@ import {
   STATS_RR_PRESET_NONE,
   type MonthlyStatTradeInput,
 } from "../history/monthlyStats.js";
+import {
+  isManualOutcome,
+  resolveTradeOutcome,
+  type TradeForOutcome,
+  type TradeOutcome,
+} from "../history/outcome.js";
 
 export class TradeError extends Error {
   constructor(
@@ -489,6 +495,17 @@ export async function listTradesNeedingCloseReason(): Promise<Trade[]> {
   return listUnclassifiedClosedTrades();
 }
 
+/** Поля строки сделки, по которым считается исход (history/outcome.ts). */
+function toOutcomeInput(trade: Trade): TradeForOutcome {
+  return {
+    closeReason: trade.closeReason,
+    entryPrice: trade.entryPrice !== null ? Number(trade.entryPrice) : null,
+    slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+    side: trade.side,
+    statsOutcome: trade.statsOutcome,
+  };
+}
+
 function toMonthlyInput(trade: Trade): MonthlyStatTradeInput {
   return {
     openedAt: trade.openedAt,
@@ -503,6 +520,9 @@ function toMonthlyInput(trade: Trade): MonthlyStatTradeInput {
     partialTpFilledAt: trade.partialTpFilledAt,
     nightTpAppliedAt: trade.nightTpAppliedAt,
     statsRrPreset: trade.statsRrPreset,
+    slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+    side: trade.side,
+    statsOutcome: trade.statsOutcome,
   };
 }
 
@@ -511,6 +531,10 @@ export type StatsRrAdminTrade = Trade & {
   autoStatsRrPreset: string | null;
   /** Что реально пойдёт в сетку статистики сейчас. */
   effectiveStatsRrPreset: string | null;
+  /** Исход, который определило бы авто-правило (без ручного statsOutcome). */
+  autoOutcome: TradeOutcome;
+  /** Исход, который сейчас реально идёт во всю статистику. */
+  effectiveOutcome: TradeOutcome;
 };
 
 /** Закрытые сделки для админки: правка столбца R в месячной статистике. */
@@ -528,7 +552,10 @@ export async function listTradesForStatsRrAdmin(options: {
           ? null
           : trade.statsRrPreset
         : autoStatsRrPreset;
-    return { ...trade, autoStatsRrPreset, effectiveStatsRrPreset };
+    const resultR = trade.resultR !== null ? Number(trade.resultR) : 0;
+    const autoOutcome = resolveTradeOutcome({ ...toOutcomeInput(trade), statsOutcome: null }, resultR);
+    const effectiveOutcome = resolveTradeOutcome(toOutcomeInput(trade), resultR);
+    return { ...trade, autoStatsRrPreset, effectiveStatsRrPreset, autoOutcome, effectiveOutcome };
   });
   return { trades, total: page.total };
 }
@@ -563,6 +590,45 @@ export async function setTradeStatsRrPreset(
     throw new TradeError("Не удалось обновить сделку", 500);
   }
   eventBus.emitTyped("refresh", { reason: "trade.statsRrPreset" });
+  return updated;
+}
+
+/**
+ * Ручная корректировка ИСХОДА закрытой сделки для статистики: "tp" | "sl" | "be",
+ * либо null — вернуться к авто-определению (history/outcome.ts).
+ *
+ * Работает для ЛЮБОЙ закрытой сделки, в том числе уже классифицированной биржей: это
+ * отдельный слой поверх факта, `closeReason` не затирается — пересчёт результата и
+ * сверки с BingX продолжают видеть реальную причину закрытия.
+ *
+ * Влияет сразу на всё: месячную разбивку TP/SL/БУ, сетку R, инсайты, подпись в истории
+ * и дневные лимиты. Для лимитов текущего дня пересобираем счётчики сразу — иначе правка
+ * доехала бы до блокировок только при следующем закрытии сделки или рестарте.
+ */
+export async function setTradeStatsOutcome(tradeId: number, statsOutcome: string | null): Promise<Trade> {
+  const trade = await getTradeById(tradeId);
+  if (!trade) {
+    throw new TradeError("Сделка не найдена", 404);
+  }
+  if (trade.status !== "closed") {
+    throw new TradeError("Корректировать исход можно только у закрытой сделки", 409);
+  }
+
+  let normalized: string | null = statsOutcome;
+  if (normalized === "" || normalized === "auto") normalized = null;
+  if (normalized !== null && !isManualOutcome(normalized)) {
+    throw new TradeError("Исход должен быть 'tp', 'sl', 'be' или null (авто)");
+  }
+
+  const updated = await updateTrade(tradeId, { statsOutcome: normalized });
+  if (!updated) {
+    throw new TradeError("Не удалось обновить сделку", 500);
+  }
+
+  await resyncTradingDayRisk().catch(() => {
+    // Счётчики дня можно добить кнопкой «Пересчитать дневные лимиты» в админке.
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.statsOutcome" });
   return updated;
 }
 

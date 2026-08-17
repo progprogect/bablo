@@ -128,9 +128,15 @@ export const setTradeCloseReasonRequest = (tradeId: number, closeReason: "sl" | 
     body: JSON.stringify({ closeReason }),
   });
 
+export type TradeOutcome = "tp" | "sl" | "be" | "other";
+
 export type StatsRrAdminTrade = Trade & {
   autoStatsRrPreset: string | null;
   effectiveStatsRrPreset: string | null;
+  /** Исход по авто-правилу (без ручной правки). */
+  autoOutcome: TradeOutcome;
+  /** Исход, который сейчас идёт во всю статистику. */
+  effectiveOutcome: TradeOutcome;
 };
 
 export const getStatsRrTrades = (limit: number, offset: number) =>
@@ -143,6 +149,17 @@ export const setTradeStatsRrPresetRequest = (tradeId: number, statsRrPreset: str
   request<Trade>(`/admin/trades/${tradeId}/stats-rr-preset`, {
     method: "POST",
     body: JSON.stringify({ statsRrPreset }),
+  });
+
+/**
+ * Ручной исход сделки для статистики: "tp" | "sl" | "be" или null — вернуть авто.
+ * Влияет на месячную разбивку, сетку R, инсайты, дневные лимиты и подпись в истории;
+ * причину закрытия с биржи (closeReason) не меняет.
+ */
+export const setTradeStatsOutcomeRequest = (tradeId: number, statsOutcome: string | null) =>
+  request<Trade>(`/admin/trades/${tradeId}/stats-outcome`, {
+    method: "POST",
+    body: JSON.stringify({ statsOutcome }),
   });
 
 /** Пересчёт resultR: fill BingX / closePrice / SL (когда BingX отдал 0 при реальном убытке). */

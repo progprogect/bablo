@@ -14,6 +14,8 @@ export type InsightTradeInput = {
   entryPrice: number | null;
   slPrice: number | null;
   side: string;
+  /** Ручной оверрайд исхода из админки (тейк/стоп/БУ) — см. history/outcome.ts. */
+  statsOutcome?: string | null;
 };
 
 /**

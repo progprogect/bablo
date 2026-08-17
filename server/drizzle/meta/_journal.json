@@ -64,6 +64,13 @@
       "when": 1785124800000,
       "tag": "0008_stats_rr_preset",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786060800000,
+      "tag": "0009_stats_outcome",
+      "breakpoints": true
     }
   ]
 }

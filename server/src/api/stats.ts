@@ -27,6 +27,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
       slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
       side: row.side,
+      statsOutcome: row.statsOutcome,
     }));
     const insights = computeTradeInsights(
       insightInputs,
@@ -49,6 +50,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       partialTpFilledAt: row.partialTpFilledAt,
       nightTpAppliedAt: row.nightTpAppliedAt,
       statsRrPreset: row.statsRrPreset,
+      statsOutcome: row.statsOutcome,
     }));
 
     // Якорь — последний известный снимок эквити. От него computeMonthlyStats "откручивает"
