@@ -1,5 +1,5 @@
 import type { Trade } from "../../api/types";
-import { formatSignedUsd, trimTrailingZeros } from "../../lib/format";
+import { formatRatioR, formatSignedUsd, roundR } from "../../lib/format";
 
 /**
  * Подпись по фактическому исходу с сервера (history/outcome.ts), а не по типу
@@ -34,16 +34,19 @@ function formatDuration(openedAt: string, closedAt: string | null): string {
 }
 
 /**
- * Фактический R сделки — «сколько R она принесла». Берём с сервера (statsResultR: он же
- * идёт в статистику, с учётом ручного столбца R из админки), иначе из resultR.
- * Раньше в карточке был только ПЛАН (R/R 1/2), и по истории нельзя было понять,
- * что сделка реально дала.
+ * R/R сделки по ФАКТУ — сколько R она реально дала, в том же виде «R/R 1/x», в котором
+ * карточка показывала план до 15.08.2026. Значение берём с сервера (`statsResultR`: тот же
+ * R, что идёт во всю статистику, с учётом ручного столбца R из админки), иначе из resultR.
+ *
+ * Знак не выводим: он уже виден по подписи исхода («По стопу» / «По тейку») и по цвету
+ * суммы в USDT справа, а «1/−1.1» ломало бы привычный вид карточки. При нулевом R
+ * (безубыток) соотношение не показываем вовсе — «R/R 1/0» ничего не сообщает.
  */
-function factualR(trade: Trade): string | null {
+function factualRatio(trade: Trade): string | null {
   const raw = trade.statsResultR ?? (trade.resultR !== null ? Number(trade.resultR) : null);
   if (raw === null || !Number.isFinite(raw)) return null;
-  const rounded = Math.round(raw * 100) / 100;
-  return `${rounded > 0 ? "+" : ""}${trimTrailingZeros(rounded)}R`;
+  if (roundR(Math.abs(raw)) === 0) return null;
+  return formatRatioR(raw);
 }
 
 /** Реализованный результат в USDT: resultR × риск сделки в $. */
@@ -55,7 +58,7 @@ function realizedPnlUsd(trade: Trade): number | null {
 export function TradeRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const pnlUsd = realizedPnlUsd(trade);
-  const resultR = factualR(trade);
+  const ratio = factualRatio(trade);
   const isProfit = pnlUsd !== null && pnlUsd > 0;
   const isLoss = pnlUsd !== null && pnlUsd < 0;
   // Старые ответы API без outcome — откат на closeReason, чтобы подпись не пропала.
@@ -86,11 +89,11 @@ export function TradeRow({ trade }: { trade: Trade }) {
       </div>
 
       <div className="flex items-center justify-between text-xs text-slate-500">
-        {/* Только факт: сколько R сделка реально дала. План (пресет R/R) в карточке не
-            показываем — он ничего не говорит о результате, а место занимает. */}
+        {/* Вид строки — как до 15.08.2026 («R/R 1/1.5»), но значение фактическое, а не
+            плановое, и округлённое до десятых. */}
         <span>
           {formatDuration(trade.openedAt, trade.closedAt)}
-          {resultR ? ` · ${resultR}` : ""}
+          {ratio ? ` · R/R ${ratio}` : ""}
           {closeReasonLabel ? ` · ${closeReasonLabel}` : ""}
         </span>
         <span
