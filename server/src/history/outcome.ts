@@ -89,7 +89,25 @@ export function resolveTradeOutcome(trade: TradeForOutcome, resultR: number): Tr
 export const STATS_RR_PRESET_NONE = "none";
 
 /**
- * R сделки ДЛЯ СТАТИСТИКИ. По умолчанию — фактический `resultR`. Если в админке задан
+ * Точность R в статистике — ДЕСЯТЫЕ, и округление делается ДО агрегации.
+ *
+ * Иначе в карточке месяца оказывается «округление суммы», а пользователь складывает
+ * «сумму округлений» по карточкам сделок — и числа не сходятся (три сделки по 1.04R
+ * показываются как 1R каждая, а сумма выходит 3.1R вместо 3R). Поэтому единица учёта —
+ * уже округлённый R сделки, и он один для всех потребителей: месячная статистика,
+ * инсайты, карточка в Истории.
+ *
+ * НЕ применяется к деньгам (USDT, % к депозиту) и к риск-движку: там нужна полная
+ * точность — эквити прошлых месяцев восстанавливается из фактического PnL, а дневные
+ * лимиты не должны срабатывать из-за округления (−1.96R не то же самое, что −2R).
+ */
+export function roundStatsR(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * R сделки ДЛЯ СТАТИСТИКИ — округлённый до десятых (см. roundStatsR). По умолчанию это
+ * фактический `resultR`. Если в админке задан
  * столбец R (`statsRrPreset`), то он и есть источник правды для R-метрик: месячная сумма R,
  * «+R / −R», винрейт, инсайты. Знак берётся от исхода: тейк → +ratio, стоп → −ratio;
  * для БУ и неклассифицированных закрытий остаётся факт.
@@ -104,13 +122,14 @@ export function resolveStatsResultR(
   trade: { statsRrPreset?: string | null; resultR: number | null },
   outcome: TradeOutcome,
 ): number | null {
+  const factual = trade.resultR === null ? null : roundStatsR(trade.resultR);
   const preset = trade.statsRrPreset;
   if (preset == null || preset === "" || preset === STATS_RR_PRESET_NONE) {
-    return trade.resultR;
+    return factual;
   }
   const ratio = parseRRRatio(preset);
-  if (ratio === null) return trade.resultR;
-  if (outcome === "tp") return ratio;
-  if (outcome === "sl") return -ratio;
-  return trade.resultR;
+  if (ratio === null) return factual;
+  if (outcome === "tp") return roundStatsR(ratio);
+  if (outcome === "sl") return roundStatsR(-ratio);
+  return factual;
 }

@@ -98,8 +98,9 @@ test("computeMonthlyStats: сделка около нуля результата
   assert.equal(stat.beCount, 1);
   assert.equal(stat.tpCount, 0);
   assert.equal(stat.otherCount, 0);
-  // resultR > 0, поэтому попадает в sumPositiveR несмотря на то, что засчитана как безубыток.
-  assert.equal(stat.sumPositiveR, 0.02);
+  // R учитывается с точностью до десятых (roundStatsR): 0.02R показывается как 0R,
+  // поэтому и в суммы даёт 0 — иначе «+R» в карточке не сходился бы с карточками сделок.
+  assert.equal(stat.sumPositiveR, 0);
   assert.equal(stat.sumNegativeR, 0);
 });
 
@@ -593,4 +594,65 @@ test("computeMonthlyStats: столбец сетки — по фактическ
     fallback.byRRPreset.filter((entry) => entry.count > 0),
     [{ preset: "1/3", count: 1 }],
   );
+});
+
+test("computeMonthlyStats: сумма R = сумма округлённых R по сделкам, а не округление суммы", () => {
+  // Три тейка по 1.04R: в карточках каждая показывается как 1R.
+  // Сумма округлений = 3R; округление суммы (3.12) дало бы 3.1R — и цифры не сходились бы.
+  const base = {
+    closedAt: new Date("2026-08-10T12:00:00Z"),
+    closeReason: "tp",
+    riskUsd: 20,
+    rrPreset: "1/1",
+    entryPrice: 100,
+    slPrice: 90,
+    side: "long",
+    quantity: 10,
+    partialTpPrice: null,
+    partialTpFilledAt: null,
+    statsRrPreset: null,
+    resultR: 1.04,
+  };
+  const stats = computeMonthlyStats(
+    [
+      { ...base, openedAt: new Date("2026-08-10T10:00:00Z") },
+      { ...base, openedAt: new Date("2026-08-11T10:00:00Z") },
+      { ...base, openedAt: new Date("2026-08-12T10:00:00Z") },
+    ],
+    180,
+    null,
+    [],
+  )[0]!;
+
+  assert.equal(stats.sumR, 3);
+  assert.equal(stats.sumPositiveR, 3);
+});
+
+test("computeMonthlyStats: убытки тоже суммируются из округлённых значений", () => {
+  const base = {
+    closedAt: new Date("2026-08-10T12:00:00Z"),
+    closeReason: "sl",
+    riskUsd: 20,
+    rrPreset: "1/2",
+    entryPrice: 100,
+    slPrice: 90,
+    side: "long",
+    quantity: 10,
+    partialTpPrice: null,
+    partialTpFilledAt: null,
+    statsRrPreset: null,
+    resultR: -1.1185, // в карточке −1.1R
+  };
+  const stats = computeMonthlyStats(
+    [
+      { ...base, openedAt: new Date("2026-08-10T10:00:00Z") },
+      { ...base, openedAt: new Date("2026-08-11T10:00:00Z") },
+    ],
+    180,
+    null,
+    [],
+  )[0]!;
+
+  assert.equal(stats.sumR, -2.2);
+  assert.equal(stats.sumNegativeR, -2.2);
 });
