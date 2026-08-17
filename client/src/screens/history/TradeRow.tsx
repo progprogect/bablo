@@ -34,21 +34,32 @@ function formatDuration(openedAt: string, closedAt: string | null): string {
 }
 
 /**
- * R/R сделки. Приоритет:
- * 1. ручной столбец R из админки (statsRrPreset) — если пользователь задал R сделки,
- *    он должен видеть его и здесь, а не расходящееся значение;
- * 2. сохранённый пресет (rrPreset);
- * 3. расчёт от ИСХОДНОГО риска сделки (riskUsd / quantity) — так считается R/R при TP,
- *    выставленном вручную.
- *
- * Пункт 3 раньше считался от текущего SL (`|вход − SL|`), и это врало: стоп мог быть
- * подтянут ночным правилом или после частичной фиксации, знаменатель схлопывался, и
- * сделка на ~2R показывалась как «R/R 1/19.65». Исходный риск в riskUsd зафиксирован
- * на момент открытия и не меняется, поэтому считаем от него.
+ * Фактический R сделки — «сколько R она принесла». Берём с сервера (statsResultR: он же
+ * идёт в статистику, с учётом ручного столбца R из админки), иначе из resultR.
+ * Раньше в карточке был только ПЛАН (R/R 1/2), и по истории нельзя было понять,
+ * что сделка реально дала.
  */
-function riskReward(trade: Trade): string {
-  const override = trade.statsRrPreset;
-  if (override && override !== "none") return override;
+function factualR(trade: Trade): string | null {
+  const raw = trade.statsResultR ?? (trade.resultR !== null ? Number(trade.resultR) : null);
+  if (raw === null || !Number.isFinite(raw)) return null;
+  const rounded = Math.round(raw * 100) / 100;
+  return `${rounded > 0 ? "+" : ""}${trimTrailingZeros(rounded)}R`;
+}
+
+/**
+ * ПЛАН сделки по R/R: сохранённый пресет, иначе расчёт от ИСХОДНОГО риска сделки
+ * (`riskUsd / quantity`) — так считается R/R при TP, выставленном вручную.
+ *
+ * Ручной столбец R из админки здесь НЕ участвует: он уже виден в фактическом R выше,
+ * и подставлять его ещё и в план значило бы показать одно число дважды, спрятав
+ * настоящий план сделки.
+ *
+ * Расчёт раньше шёл от ТЕКУЩЕГО SL (`|вход − SL|`), и это врало: стоп мог быть подтянут
+ * ночным правилом или после частичной фиксации, знаменатель схлопывался, и сделка на ~2R
+ * показывалась как «R/R 1/19.65». Исходный риск в riskUsd зафиксирован при открытии и не
+ * меняется, поэтому считаем от него.
+ */
+function plannedRiskReward(trade: Trade): string {
   if (trade.rrPreset) return trade.rrPreset;
   if (!trade.entryPrice || !trade.tpPrice) return "—";
   const entry = Number(trade.entryPrice);
@@ -77,6 +88,8 @@ function realizedPnlUsd(trade: Trade): number | null {
 export function TradeRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const pnlUsd = realizedPnlUsd(trade);
+  const resultR = factualR(trade);
+  const plan = plannedRiskReward(trade);
   const isProfit = pnlUsd !== null && pnlUsd > 0;
   const isLoss = pnlUsd !== null && pnlUsd < 0;
   // Старые ответы API без outcome — откат на closeReason, чтобы подпись не пропала.
@@ -107,8 +120,12 @@ export function TradeRow({ trade }: { trade: Trade }) {
       </div>
 
       <div className="flex items-center justify-between text-xs text-slate-500">
+        {/* Сначала факт («+2.1R»), план — в скобках: раньше был только план, и результат
+            сделки в R не был виден нигде на пользовательской стороне. */}
         <span>
-          {formatDuration(trade.openedAt, trade.closedAt)} · R/R {riskReward(trade)}
+          {formatDuration(trade.openedAt, trade.closedAt)}
+          {resultR ? ` · ${resultR}` : ""}
+          {plan !== "—" ? ` (план ${plan})` : ""}
           {closeReasonLabel ? ` · ${closeReasonLabel}` : ""}
         </span>
         <span

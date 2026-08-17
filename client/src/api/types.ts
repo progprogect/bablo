@@ -55,6 +55,11 @@ export type Trade = {
    * а не сработавший план защиты. Есть только у закрытых сделок из истории.
    */
   outcome?: "tp" | "sl" | "be" | "other";
+  /**
+   * Фактический R сделки — тот же, что идёт в статистику (с учётом ручного столбца R
+   * из админки). Считает сервер, см. api/trades.ts. Есть только у закрытых сделок.
+   */
+  statsResultR?: number | null;
   closePrice: string | null;
   resultR: string | null;
   resultPct: string | null;
