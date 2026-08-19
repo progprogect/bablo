@@ -36,7 +36,7 @@ export async function startRealtime(): Promise<void> {
     // с причиной "external" вместо реального тейка (ночной TP 1/1 срабатывает как раз
     // ночью, когда деплой/рестарт наиболее вероятен). Разовая проверка позиции по
     // событию старта — не поллинг.
-    const closedWhileDown = await reconcileIfPositionAlreadyFlat(activeTrade.symbol);
+    const closedWhileDown = await reconcileIfPositionAlreadyFlat(activeTrade.symbol, "старт сервера");
     if (!closedWhileDown) {
       startTracking(activeTrade);
     }
@@ -69,8 +69,12 @@ export async function startRealtime(): Promise<void> {
  * закрытие обычным путём (reconcilePositionFlat найдёт исполнившийся SL/TP и запишет
  * реальную причину). Возвращает true, если сделка была закрыта этой сверкой.
  * Best-effort: любая ошибка BingX оставляет сделку активной, как и раньше.
+ *
+ * Позиция здесь перепроверяется СВОИМ запросом, даже если вызывающая сторона уже
+ * видела её пустой: сверка заканчивается закрытием сделки в БД, и одного случайного
+ * пустого ответа BingX для этого мало — нужно два независимых подтверждения.
  */
-async function reconcileIfPositionAlreadyFlat(symbol: string): Promise<boolean> {
+async function reconcileIfPositionAlreadyFlat(symbol: string, context: string): Promise<boolean> {
   try {
     const credentials = await getBingxCredentials();
     if (!credentials) return false;
@@ -81,12 +85,37 @@ async function reconcileIfPositionAlreadyFlat(symbol: string): Promise<boolean> 
     const stillActive = await getActiveTrade().catch(() => null);
     const closed = stillActive === null || stillActive.symbol !== symbol;
     if (closed) {
-      console.info(`[realtime] сделка по ${symbol} закрылась, пока сервер был недоступен — сверено при старте`);
+      console.info(`[realtime] сделка по ${symbol} закрылась на бирже — досверено (${context})`);
     }
     return closed;
   } catch (error) {
-    console.error("[realtime] сверка закрытия при старте не удалась:", error);
+    console.error(`[realtime] сверка закрытия (${context}) не удалась:`, error);
     return false;
+  }
+}
+
+let flatReconcileInFlight = false;
+
+/**
+ * Событийная досверка для активной сделки, у которой на бирже уже нет позиции, — тот же
+ * путь, что при старте сервера, но триггером служит загрузка дашборда (api/dashboard.ts
+ * видит positionFlat). Нужна, когда ACCOUNT_UPDATE потерян при РАБОТАЮЩЕМ сервере
+ * (обрыв WS, истёкший listenKey): раньше в этом случае сделка висела активной до ручного
+ * «Закрыть сделку», а пользователь видел плашку с просьбой нажать кнопку.
+ *
+ * Fire-and-forget: дашборд не ждёт результата (внутри сверки есть повтор через 15с);
+ * по завершении finalizeTradeClose эмитит refresh в SSE, и клиент сам перезагрузится
+ * уже с закрытой сделкой. In-flight флаг гасит дубли от повторных загрузок дашборда.
+ */
+export async function reconcileActiveTradeIfExchangeFlat(): Promise<void> {
+  if (flatReconcileInFlight) return;
+  flatReconcileInFlight = true;
+  try {
+    const trade = await getActiveTrade().catch(() => null);
+    if (!trade) return;
+    await reconcileIfPositionAlreadyFlat(trade.symbol, "дашборд");
+  } finally {
+    flatReconcileInFlight = false;
   }
 }
 

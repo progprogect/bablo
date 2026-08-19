@@ -5,6 +5,7 @@ import { captureEquitySnapshotIfMissing } from "../db/repositories/equitySnapsho
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
 import { getRiskSnapshot } from "../risk/service.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
+import { reconcileActiveTradeIfExchangeFlat } from "../realtime/manager.js";
 import { getActiveTradeView, getExternalPositions } from "../trades/service.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
@@ -35,6 +36,15 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
       getRiskSnapshot(),
     ]);
     const externalPositions = await getExternalPositions(activeTrade?.symbol);
+
+    // Позиции на бирже нет, а сделка в БД активна — ACCOUNT_UPDATE о закрытии потерян
+    // (обрыв WS при работающем сервере). Запускаем ту же досверку, что и при старте
+    // сервера, не дожидаясь её здесь: она найдёт исполнившийся SL/TP, запишет реальную
+    // причину/результат и эмитнет refresh — клиент перезагрузит дашборд по SSE уже
+    // с закрытой сделкой. Событийный триггер (загрузка дашборда), не поллинг.
+    if (activeTrade?.positionFlat) {
+      void reconcileActiveTradeIfExchangeFlat();
+    }
 
     if (!credentials) {
       return {
