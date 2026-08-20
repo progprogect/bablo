@@ -6,12 +6,10 @@ type Phase = "idle" | "side" | "details";
 
 /**
  * Держим в синхроне с server/src/risk/ladder.ts — riskSizeToleranceRatio.
- * Допуск сужается с уровнем: на старте ±20% ок, на $20+ тот же процент уже слишком широкий.
+ * Единый допуск ±8% на всех уровнях (решение от 20.08.2026).
  */
-function riskSizeToleranceRatio(level: number): number {
-  if (!(level >= 1)) return 0.2;
-  if (level === 1) return 0.2;
-  return 0.1;
+function riskSizeToleranceRatio(_level: number): number {
+  return 0.08;
 }
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
