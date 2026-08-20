@@ -176,11 +176,11 @@ export async function checkCanOpenTrade(
 /**
  * Допустимое отклонение риска сделки от плана текущего уровня — в обе стороны.
  * Риск-план задаёт конкретную сумму 1R не просто как потолок, а как ориентир.
- * Допуск сужается с уровнем (см. riskSizeToleranceRatio): L1 ±20%, L2+ ±10%.
+ * Единый ±8% на всех уровнях (см. riskSizeToleranceRatio).
  *
- * @deprecated Используйте riskSizeToleranceRatio(level); константа = допуск 1-го уровня.
+ * @deprecated Используйте riskSizeToleranceRatio(level).
  */
-export const RISK_SIZE_TOLERANCE_RATIO = 0.2;
+export const RISK_SIZE_TOLERANCE_RATIO = 0.08;
 
 /** Бросает RiskBlockedError, если риск сделки выходит за пределы ±допуск от 1R текущего уровня. */
 export async function checkVolumeRisk(currentPrice: number, slPrice: number, quantity: number): Promise<void> {
