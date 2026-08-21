@@ -132,16 +132,23 @@ export function TradeStatsRrSection() {
     setBusyId(tradeId);
     try {
       const result = await recalculateTradeResultRequest(tradeId);
-      const { trade: updated, source, beforeR, afterR, changed } = result;
+      const { trade: updated, source, beforeR, afterR, changed, exchange } = result;
       const pnl =
         afterR !== null && updated.riskUsd !== null ? afterR * Number(updated.riskUsd) : null;
       const sourceLabel =
-        source === "bingx" ? "по fill BingX" : source === "sl" ? "по цене SL" : "по цене закрытия";
+        source === "bingx" ? "по исполнениям BingX" : source === "sl" ? "по цене SL" : "по цене закрытия";
+      // Диагностика сверки: видно, сколько исполнений нашлось на бирже и почему итог
+      // биржи не был использован — без этого «Пересчитать» выглядит чёрным ящиком.
+      const exchangeLabel = exchange
+        ? exchange.used
+          ? ` · биржа: ${exchange.fills} исполн., объём ${exchange.coveredQty}/${exchange.quantity}`
+          : ` · биржа не использована: ${exchange.reason ?? "—"}`
+        : " · сверка с биржей недоступна (нет ключей)";
       if (!changed) {
         setNotice(
-          pnl !== null
+          (pnl !== null
             ? `Без изменений ${sourceLabel}: ${formatSignedUsd(pnl)} (${(afterR ?? 0).toFixed(2)}R)`
-            : `Без изменений ${sourceLabel}`,
+            : `Без изменений ${sourceLabel}`) + exchangeLabel,
         );
       } else {
         const beforeLabel =
@@ -149,9 +156,9 @@ export function TradeStatsRrSection() {
         const afterLabel =
           afterR !== null && Number.isFinite(afterR) ? `${afterR.toFixed(2)}R` : "—";
         setNotice(
-          pnl !== null
+          (pnl !== null
             ? `Пересчитано ${sourceLabel}: ${beforeLabel} → ${afterLabel} (${formatSignedUsd(pnl)})`
-            : `Пересчитано ${sourceLabel}: ${beforeLabel} → ${afterLabel}`,
+            : `Пересчитано ${sourceLabel}: ${beforeLabel} → ${afterLabel}`) + exchangeLabel,
         );
       }
       reload(0, false);
