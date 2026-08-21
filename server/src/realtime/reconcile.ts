@@ -71,6 +71,7 @@ export async function reconcileOrderUpdate(order: OrderTradeUpdate): Promise<voi
     closePrice,
     resultR,
     resultPct,
+    realizedProfit,
   });
 }
 
@@ -134,5 +135,5 @@ export async function reconcilePositionFlat(symbol: string): Promise<void> {
     });
   }
 
-  await finalizeTradeClose(trade.id, { closeReason, closePrice, resultR, resultPct });
+  await finalizeTradeClose(trade.id, { closeReason, closePrice, resultR, resultPct, realizedProfit });
 }

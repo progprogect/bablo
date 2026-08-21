@@ -177,3 +177,74 @@ export function resolveRecalculateClosePrice(
   if (canUseSlFallback) return { closePrice: sl, source: "sl" };
   return candidates[0] ?? null;
 }
+
+/** Закрывающее исполнение из истории ордеров BingX (без ордера входа). */
+export type ExchangeClosingFill = {
+  /** Реализованный PnL этого исполнения (поле profit у BingX). */
+  profit: number;
+  /** Исполненный объём в монетах. */
+  executedQty: number;
+};
+
+/**
+ * Итог сделки по РЕАЛЬНЫМ исполнениям с биржи — источник правды, когда пользователь
+ * менял ордера прямо на BingX (например, передвинул частичную фиксацию): биржа отменяет
+ * ордер приложения и создаёт новый с другим id, приложение этот fill не видит, и расчёт
+ * по сохранённым планам расходится с фактом.
+ *
+ * Суммируем profit всех FILLED-закрытий из истории. Если история ещё не содержит
+ * финальное исполнение (BingX обновляет её с задержкой — известный лаг, см. retry в
+ * reconcilePositionFlat), добиваем остаток объёма PnL финального ордера: rp из WS-события,
+ * а при rp≈0 на реальном ходе цены (баг BingX) — расчётом от цены закрытия.
+ *
+ * null — посчитать нельзя (нет объёма/входа); суммы не искажаем, вызывающая сторона
+ * остаётся на своём фолбэке.
+ */
+export function computeResultFromExchangeFills(
+  trade: Pick<TradeForResult, "entryPrice" | "quantity" | "riskUsd" | "side">,
+  closingFills: ExchangeClosingFill[],
+  finalFill: { closePrice: number; realizedProfit: number | null },
+): { resultR: number; resultPct: number } | null {
+  const entryPrice = Number(trade.entryPrice);
+  const quantity = Number(trade.quantity);
+  const riskUsd = Number(trade.riskUsd) || 0;
+  const side = trade.side as TradeSide;
+  if (!(entryPrice > 0) || !(quantity > 0)) return null;
+
+  let historyPnl = 0;
+  let historyQty = 0;
+  for (const fill of closingFills) {
+    if (Number.isFinite(fill.profit)) historyPnl += fill.profit;
+    if (Number.isFinite(fill.executedQty) && fill.executedQty > 0) historyQty += fill.executedQty;
+  }
+
+  const priceDelta = (close: number) => (side === "long" ? close - entryPrice : entryPrice - close);
+  const remainderQty = Math.max(0, quantity - Math.min(historyQty, quantity));
+  let totalPnl = historyPnl;
+  // Порог 0.1% объёма — от float-шума количеств, а не «допуск на недозакрытие».
+  if (remainderQty > quantity * 0.001) {
+    const remainderFromPrice = priceDelta(finalFill.closePrice) * remainderQty;
+    const rp = finalFill.realizedProfit;
+    const useRp =
+      rp !== null &&
+      Number.isFinite(rp) &&
+      !(Math.abs(rp) < REALIZED_PROFIT_ZERO_EPS && Math.abs(remainderFromPrice) > REALIZED_PROFIT_ZERO_EPS);
+    totalPnl += useRp ? rp : remainderFromPrice;
+  }
+
+  const notional = entryPrice * quantity;
+  return {
+    resultR: riskUsd > 0 ? totalPnl / riskUsd : 0,
+    resultPct: notional > 0 ? (totalPnl / notional) * 100 : 0,
+  };
+}
+
+/**
+ * Доверять ли итогу с биржи вместо расчётного. Единственный случай недоверия — почерк
+ * бага rp=0: биржа насчитала «около нуля», а наш расчёт по ценам даёт материальный |R|.
+ * Во всех остальных случаях биржа главнее: она видит исполнения, о которых приложение
+ * могло не узнать (ордера, изменённые вручную на BingX).
+ */
+export function shouldTrustExchangeResult(exchangeR: number, fallbackR: number): boolean {
+  return !(Math.abs(exchangeR) < PRICE_BASED_R_TRUST_THRESHOLD && Math.abs(fallbackR) > 0.25);
+}

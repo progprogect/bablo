@@ -52,8 +52,17 @@ test("обычный тейк и ручное закрытие не меняют
   );
 });
 
-test("нет данных о стопе — прежнее поведение (стоп остаётся стопом)", () => {
-  assert.equal(resolveTradeOutcome({ closeReason: "sl", entryPrice: null, slPrice: null, side: "long" }, 1), "sl");
+test("стоп с положительным R — тейк даже без данных о положении стопа", () => {
+  // Защитный стоп в плюс закрыться не может (для лонга он ниже входа), значит плюс на
+  // стопе — зафиксированная прибыль: например, partial, изменённая прямо на бирже.
+  assert.equal(resolveTradeOutcome({ closeReason: "sl", entryPrice: null, slPrice: null, side: "long" }, 1), "tp");
+});
+
+test("стоп в плюс при ИСХОДНОМ защитном стопе — тейк (partial мимо приложения)", () => {
+  // Кейс 20.08.2026: partial 70% передвинута на бирже и исполнилась, остаток выбило по
+  // исходному SL ниже входа, суммарно +1.1R. Экономически это тейк, а не стоп.
+  const trade = { closeReason: "sl", entryPrice: 100, slPrice: 90, side: "long" };
+  assert.equal(resolveTradeOutcome(trade, 1.1), "tp");
 });
 
 test("ручной оверрайд главнее авто-правил: стоп помечен тейком", () => {

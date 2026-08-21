@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { computeResult, resolveRecalculateClosePrice } from "./result.js";
+import {
+  computeResult,
+  computeResultFromExchangeFills,
+  resolveRecalculateClosePrice,
+  shouldTrustExchangeResult,
+} from "./result.js";
 
 describe("resolveRecalculateClosePrice", () => {
   const base = {
@@ -116,5 +121,88 @@ describe("computeResult + resolve: сценарий VIRTUAL rp=0", () => {
     assert.equal(resolved.source, "sl");
     const { resultR } = computeResult(trade, resolved.closePrice, null);
     assert.ok(Math.abs(resultR - -1) < 1e-9);
+  });
+});
+
+describe("computeResultFromExchangeFills", () => {
+  // Кейс 20.08.2026: partial 70% передвинута прямо на бирже (приложение о ней не знает),
+  // остаток 30% выбило по исходному SL. Вход 100, qty 1, риск 10 USDT (SL 90).
+  const trade = { entryPrice: 100, quantity: 1, riskUsd: 10, side: "long" };
+
+  it("partial с биржи + финальный SL по rp из WS (истории ещё нет)", () => {
+    // partial: 0.7 монеты по 120 → profit +14; финал: 0.3 по 90 → rp −3
+    const result = computeResultFromExchangeFills(
+      trade,
+      [{ profit: 14, executedQty: 0.7 }],
+      { closePrice: 90, realizedProfit: -3 },
+    );
+    assert.ok(result);
+    assert.ok(Math.abs(result.resultR - 1.1) < 1e-9, `expected 1.1, got ${result.resultR}`);
+  });
+
+  it("история уже полная — rp финала не прибавляется второй раз", () => {
+    const result = computeResultFromExchangeFills(
+      trade,
+      [
+        { profit: 14, executedQty: 0.7 },
+        { profit: -3, executedQty: 0.3 },
+      ],
+      { closePrice: 90, realizedProfit: -3 },
+    );
+    assert.ok(result);
+    assert.ok(Math.abs(result.resultR - 1.1) < 1e-9, `expected 1.1, got ${result.resultR}`);
+  });
+
+  it("rp=0 на остатке при реальном ходе цены — остаток считается по цене закрытия", () => {
+    const result = computeResultFromExchangeFills(
+      trade,
+      [{ profit: 14, executedQty: 0.7 }],
+      { closePrice: 90, realizedProfit: 0 },
+    );
+    assert.ok(result);
+    // остаток 0.3 × (90 − 100) = −3 → всего +11 → 1.1R
+    assert.ok(Math.abs(result.resultR - 1.1) < 1e-9, `expected 1.1, got ${result.resultR}`);
+  });
+
+  it("закрытий в истории нет вовсе — весь объём по финальному ордеру", () => {
+    const result = computeResultFromExchangeFills(trade, [], { closePrice: 90, realizedProfit: -10 });
+    assert.ok(result);
+    assert.equal(result.resultR, -1);
+  });
+
+  it("шорт: profit с биржи суммируется так же", () => {
+    const shortTrade = { entryPrice: 100, quantity: 1, riskUsd: 10, side: "short" };
+    const result = computeResultFromExchangeFills(
+      shortTrade,
+      [{ profit: 14, executedQty: 0.7 }],
+      { closePrice: 110, realizedProfit: -3 },
+    );
+    assert.ok(result);
+    assert.ok(Math.abs(result.resultR - 1.1) < 1e-9);
+  });
+
+  it("нет входа/объёма — null, вызывающая сторона остаётся на фолбэке", () => {
+    assert.equal(
+      computeResultFromExchangeFills(
+        { entryPrice: null, quantity: 0, riskUsd: 10, side: "long" },
+        [{ profit: 14, executedQty: 0.7 }],
+        { closePrice: 90, realizedProfit: null },
+      ),
+      null,
+    );
+  });
+});
+
+describe("shouldTrustExchangeResult", () => {
+  it("биржа главнее, когда её итог материален", () => {
+    assert.equal(shouldTrustExchangeResult(1.1, -1), true);
+    assert.equal(shouldTrustExchangeResult(-1.36, -1), true);
+  });
+  it("ноль с биржи при материальном расчётном R — почерк бага rp=0, не доверяем", () => {
+    assert.equal(shouldTrustExchangeResult(0, -1.36), false);
+    assert.equal(shouldTrustExchangeResult(0.01, 1.5), false);
+  });
+  it("оба около нуля — реальный безубыток, биржа принимается", () => {
+    assert.equal(shouldTrustExchangeResult(0.02, 0.03), true);
   });
 });
