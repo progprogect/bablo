@@ -8,7 +8,6 @@ import {
 import { getLocalDateKey } from "../risk/tradingDay.js";
 import {
   isBreakevenClose,
-  isProfitLockedStop,
   resolveStatsResultR,
   resolveTradeOutcome,
   roundStatsR,
@@ -134,11 +133,10 @@ export function matchRrPreset(ratio: number): string | null {
 /**
  * В какой столбец сетки 1R…10R попадает сделка:
  * - ручной оверрайд из админки (statsRrPreset) — главный приоритет;
- * - исполненная partial → пресет partial (1/2, 1/3…), даже если потом БУ / остаток по SL;
- * - стоп, уведённый в прибыль (ночное подтягивание SL на 1/1) → пресет по УРОВНЮ СТОПА:
- *   план 1/3 не отработан, зафиксирован 1R, значит столбец 1R, а не 3R;
- * - обычный тейк → пресет по ФАКТИЧЕСКИ достигнутому R (тейк на +2.09R при плане 1/3 идёт
- *   в столбец 2R, а не 3R); если достигнутый R ни к одному уровню сетки не близок —
+ * - исполненная partial (известная приложению) → пресет partial (1/2, 1/3…);
+ * - любой исход «тейк» (обычный TP, стоп в плюсе — ночной 1/1, partial мимо приложения)
+ *   → пресет по ФАКТИЧЕСКИ достигнутому R: тейк на +2.09R при плане 1/3 идёт в столбец
+ *   2R, стоп на 1/1 — в 1R. Если достигнутый R ни к одному уровню сетки не близок —
  *   откат на плановый пресет, чтобы сделка не выпала из сетки совсем;
  * - реальный стоп / без тейка → null.
  */
@@ -173,21 +171,8 @@ export function resolveMonthlyRrPresetBucket(trade: MonthlyStatTradeInput): stri
     return null;
   }
 
-  // Прибыль зафиксирована стопом (ночное правило подтянуло SL на 1/1): столбец по
-  // достигнутому УРОВНЮ СТОПА, а не по плановому rrPreset — план ведь не отработал.
-  if (isProfitLockedStop(outcomeInput, resultR)) {
-    const entry = trade.entryPrice ?? null;
-    const sl = trade.slPrice ?? null;
-    const riskUsd = trade.riskUsd ?? null;
-    const quantity = trade.quantity ?? null;
-    if (entry !== null && sl !== null && riskUsd !== null && quantity !== null) {
-      const ratio = computePartialRatioFromRiskUsd(entry, sl, riskUsd, quantity);
-      if (ratio !== null) return matchRrPreset(ratio);
-    }
-  }
-
-  // Обычный тейк: столбец по ФАКТУ, а не по плану. Плановый пресет — только запасной
-  // вариант, если достигнутый R не попадает ни в один уровень сетки.
+  // Тейк (в т.ч. стоп, закрытый в плюс): столбец по ФАКТУ, а не по плану. Плановый
+  // пресет — только запасной вариант, если достигнутый R не попадает в сетку.
   const achieved = resolveStatsResultR(trade, "tp") ?? resultR;
   if (achieved > 0) {
     const byFact = matchRrPreset(achieved);

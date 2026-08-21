@@ -51,9 +51,18 @@ import {
 } from "./math.js";
 // filledOrder не зависит от trades/ — статический импорт не создаёт цикл
 // (в отличие от realtime/reconcile.ts, который импортирует finalizeTradeClose отсюда).
-import { findFilledSlOrTp, resolveCloseFromFilledOrder } from "../realtime/filledOrder.js";
+import {
+  findFilledSlOrTp,
+  listExchangeClosingFills,
+  resolveCloseFromFilledOrder,
+} from "../realtime/filledOrder.js";
 import { decideNightTakeProfit } from "./nightTp.js";
-import { computeResult, resolveRecalculateClosePrice } from "./result.js";
+import {
+  computeResult,
+  computeResultFromExchangeFills,
+  resolveRecalculateClosePrice,
+  shouldTrustExchangeResult,
+} from "./result.js";
 import {
   resolveAutoMonthlyRrPresetBucket,
   STATS_RR_PRESET_NONE,
@@ -422,13 +431,59 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
  * Финализирует закрытую сделку: атомарная запись результата (защита от гонки с
  * авто-детектом по WS) + постфактум-фид в риск-движок + событие клиенту на обновление.
  * Вызывается и из ручного closeTrade, и из реалтайм reconcile (см. realtime/reconcile.ts).
+ *
+ * Перед записью итог СВЕРЯЕТСЯ С БИРЖЕЙ (best-effort): суммируем PnL реальных
+ * закрывающих исполнений из истории ордеров BingX. Это единственный способ учесть
+ * ордера, изменённые пользователем прямо на бирже (у них другой orderId — приложение
+ * их fill'ы не видит), из-за которых расчёт по сохранённым планам расходился с фактом.
+ * `realizedProfit` финального ордера нужен на случай, когда история BingX ещё не
+ * содержит только что исполнившееся закрытие (известный лаг).
  */
 export async function finalizeTradeClose(
   tradeId: number,
-  input: { closeReason: string; closePrice: number; resultR: number; resultPct: number },
+  input: {
+    closeReason: string;
+    closePrice: number;
+    resultR: number;
+    resultPct: number;
+    realizedProfit?: number | null;
+  },
 ): Promise<Trade | null> {
+  let { resultR, resultPct } = input;
+  try {
+    const credentials = await getBingxCredentials();
+    const trade = credentials ? await getTradeById(tradeId) : null;
+    if (credentials && trade && trade.status === "active") {
+      const fills = await listExchangeClosingFills(credentials, trade);
+      if (fills !== null) {
+        const fromExchange = computeResultFromExchangeFills(trade, fills, {
+          closePrice: input.closePrice,
+          realizedProfit: input.realizedProfit ?? null,
+        });
+        if (fromExchange && shouldTrustExchangeResult(fromExchange.resultR, resultR)) {
+          if (Math.abs(fromExchange.resultR - resultR) > 0.01) {
+            console.info(
+              `[trades] итог по бирже отличается от расчётного: ${resultR.toFixed(4)}R → ${fromExchange.resultR.toFixed(4)}R (${trade.symbol})`,
+            );
+          }
+          resultR = fromExchange.resultR;
+          resultPct = fromExchange.resultPct;
+        }
+      }
+    }
+  } catch (error) {
+    // Сверка best-effort: без неё работает прежний расчёт, закрытие не блокируем.
+    console.warn("[trades] сверка итога с биржей не удалась:", error);
+  }
+
   const closedAt = new Date();
-  const updated = await closeTradeIfActive(tradeId, { ...input, closedAt }).catch(() => null);
+  const updated = await closeTradeIfActive(tradeId, {
+    closedAt,
+    closeReason: input.closeReason,
+    closePrice: input.closePrice,
+    resultR,
+    resultPct,
+  }).catch(() => null);
   if (!updated) {
     // Сделку уже закрыл другой путь (гонка ручного закрытия и авто-детекта) — статистику
     // риск-движка трогать повторно не нужно, она уже учтена тем, кто выиграл гонку.
@@ -437,7 +492,7 @@ export async function finalizeTradeClose(
 
   await recordTradeClose({
     closedAt,
-    resultR: input.resultR,
+    resultR,
     closeReason: input.closeReason,
     symbol: updated.symbol,
     rrPreset: updated.rrPreset,
@@ -672,18 +727,16 @@ export async function recalculateTradeResult(
   }
 
   const beforeR = trade.resultR !== null ? Number(trade.resultR) : null;
+  const credentials = await getBingxCredentials().catch(() => null);
 
   let bingxFillPrice: number | null = null;
   const orderIds = (trade.bingxOrderIds ?? {}) as Record<string, string | number>;
-  if (orderIds.sl !== undefined || orderIds.tp !== undefined) {
+  if (credentials && (orderIds.sl !== undefined || orderIds.tp !== undefined)) {
     try {
-      const credentials = await getBingxCredentials();
-      if (credentials) {
-        const fill = await findFilledSlOrTp(credentials, trade, orderIds);
-        const raw = fill?.order.avgPrice != null ? Number(fill.order.avgPrice) : NaN;
-        if (Number.isFinite(raw) && raw > 0) {
-          bingxFillPrice = raw;
-        }
+      const fill = await findFilledSlOrTp(credentials, trade, orderIds);
+      const raw = fill?.order.avgPrice != null ? Number(fill.order.avgPrice) : NaN;
+      if (Number.isFinite(raw) && raw > 0) {
+        bingxFillPrice = raw;
       }
     } catch (error) {
       console.warn("[trades] recalculate: BingX fill lookup failed", error);
@@ -706,7 +759,31 @@ export async function recalculateTradeResult(
     throw new TradeError("Нет цены закрытия (ни fill BingX, ни closePrice, ни SL)", 409);
   }
 
-  const { resultR, resultPct } = computeResult(trade, resolved.closePrice, null);
+  let { resultR, resultPct } = computeResult(trade, resolved.closePrice, null);
+  let source = resolved.source;
+
+  // Главный источник — сумма PnL реальных закрывающих исполнений с BingX: она видит
+  // и ордера, изменённые вручную на бирже (другие orderId), про которые приложение не
+  // знает. Пока биржа хранит историю (7 дней) — этим и чинится «своя цифра» в записи.
+  if (credentials) {
+    try {
+      const fills = await listExchangeClosingFills(credentials, trade);
+      if (fills !== null && fills.length > 0) {
+        const fromExchange = computeResultFromExchangeFills(trade, fills, {
+          closePrice: resolved.closePrice,
+          realizedProfit: null,
+        });
+        if (fromExchange && shouldTrustExchangeResult(fromExchange.resultR, resultR)) {
+          resultR = fromExchange.resultR;
+          resultPct = fromExchange.resultPct;
+          source = "bingx";
+        }
+      }
+    } catch (error) {
+      console.warn("[trades] recalculate: сверка по исполнениям BingX не удалась", error);
+    }
+  }
+
   const afterR = resultR;
   const changed =
     beforeR === null ||
@@ -730,7 +807,7 @@ export async function recalculateTradeResult(
   eventBus.emitTyped("refresh", { reason: "trade.resultRecalculated" });
   return {
     trade: updated,
-    source: resolved.source,
+    source,
     beforeR,
     afterR,
     changed,
@@ -1125,7 +1202,13 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
   // сделки с partial ручное закрытие давало R только по остатку.
   const { resultR, resultPct } = computeResult(trade, closePrice, realizedProfit);
 
-  const updated = await finalizeTradeClose(tradeId, { closeReason, closePrice, resultR, resultPct });
+  const updated = await finalizeTradeClose(tradeId, {
+    closeReason,
+    closePrice,
+    resultR,
+    resultPct,
+    realizedProfit,
+  });
   if (!updated) {
     // Проиграли гонку авто-детекту по WS — сделка уже закрыта, возвращаем актуальную запись.
     const settled = await getTradeById(tradeId);

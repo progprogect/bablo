@@ -139,6 +139,44 @@ export async function findFilledSlOrTpDebug(
   return { result: null, debug };
 }
 
+/**
+ * Закрывающие FILLED-исполнения сделки из истории ордеров BingX — все, кроме ордера
+ * входа. Сюда попадают и исполнения ордеров, изменённых пользователем прямо на бирже
+ * (у них другой orderId, приложению они неизвестны) — именно ради них история и есть
+ * источник правды для итогового PnL.
+ *
+ * null — посчитать нельзя: нет id ордера входа (не отличить вход от закрытий) или
+ * история недоступна. Пустой массив — история прочитана, закрытий в ней ещё нет (лаг).
+ */
+export async function listExchangeClosingFills(
+  credentials: BingXCredentials,
+  trade: Trade,
+): Promise<{ profit: number; executedQty: number }[] | null> {
+  const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
+  const marketId = orderIds.market;
+  if (marketId === undefined) return null;
+
+  const now = Date.now();
+  const openedAtMs = trade.openedAt ? new Date(trade.openedAt).getTime() : now;
+  const startTime = Math.max(openedAtMs, now - MAX_HISTORY_RANGE_MS);
+
+  let history: BingXOrderStatus[];
+  try {
+    history = await getOrderHistory(credentials, trade.symbol, startTime, now);
+  } catch {
+    return null;
+  }
+
+  // Правила #7/#8 гарантируют одну позицию за раз, поэтому все FILLED-ордера символа
+  // после openedAt, кроме входа, — закрытия именно этой сделки.
+  return history
+    .filter((o) => o.status === "FILLED" && String(o.orderId) !== String(marketId))
+    .map((o) => ({
+      profit: Number(o.profit ?? 0) || 0,
+      executedQty: Number(o.executedQty ?? 0) || 0,
+    }));
+}
+
 export type TradeForCloseResolve = {
   slPrice: string | number | null;
   tpPrice: string | number | null;

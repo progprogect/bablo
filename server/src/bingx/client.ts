@@ -342,6 +342,8 @@ export type BingXOrderStatus = {
   status: string;
   avgPrice: string;
   profit?: string;
+  /** Исполненный объём ордера (в монетах) — нужен, чтобы понять, весь ли объём сделки виден в истории. */
+  executedQty?: string;
   /**
    * Ключевой факт про исполнение условных ордеров у BingX: когда STOP_MARKET/
    * TAKE_PROFIT_MARKET срабатывает, исходный ордер остаётся CANCELLED навсегда,
