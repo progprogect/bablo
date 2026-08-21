@@ -1,3 +1,6 @@
+/**
+ * Контракт нашего API (клиент не знает про BingX напрямую — docs/ARCHITECTURE.md).
+ */
 export type AuthStatus = {
   hasPin: boolean;
   authenticated: boolean;
