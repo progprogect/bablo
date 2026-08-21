@@ -707,12 +707,29 @@ export async function setTradeStatsOutcome(tradeId: number, statsOutcome: string
  * Нужно, когда BingX отдал rp=0 / ap≈entry при проскальзывании и в истории зависло 0 USDT.
  * Лестницу уровней не трогаем повторно; дневные лимиты — через resync.
  */
+/** Диагностика сверки с биржей — чтобы в админке было видно, ЧТО нашлось в истории BingX. */
+export type RecalculateExchangeInfo = {
+  /** Сколько закрывающих FILLED-исполнений найдено в истории (без ордера входа). */
+  fills: number;
+  /** Какой объём сделки покрыт этими исполнениями. */
+  coveredQty: number;
+  quantity: number;
+  /** Итоговый PnL по сверке (исполнения + добивка остатка по цене закрытия). */
+  pnlUsd: number;
+  resultR: number;
+  /** Использован ли итог биржи для записи. */
+  used: boolean;
+  /** Почему не использован (история недоступна / пусто / похоже на баг rp=0). */
+  reason: string | null;
+};
+
 export type RecalculateTradeResultResponse = {
   trade: Trade;
   source: "bingx" | "stored" | "sl";
   beforeR: number | null;
   afterR: number | null;
   changed: boolean;
+  exchange: RecalculateExchangeInfo | null;
 };
 
 export async function recalculateTradeResult(
@@ -761,6 +778,7 @@ export async function recalculateTradeResult(
 
   let { resultR, resultPct } = computeResult(trade, resolved.closePrice, null);
   let source = resolved.source;
+  let exchange: RecalculateExchangeInfo | null = null;
 
   // Главный источник — сумма PnL реальных закрывающих исполнений с BingX: она видит
   // и ордера, изменённые вручную на бирже (другие orderId), про которые приложение не
@@ -768,15 +786,66 @@ export async function recalculateTradeResult(
   if (credentials) {
     try {
       const fills = await listExchangeClosingFills(credentials, trade);
-      if (fills !== null && fills.length > 0) {
-        const fromExchange = computeResultFromExchangeFills(trade, fills, {
-          closePrice: resolved.closePrice,
-          realizedProfit: null,
-        });
-        if (fromExchange && shouldTrustExchangeResult(fromExchange.resultR, resultR)) {
+      const quantity = Number(trade.quantity) || 0;
+      const riskUsd = Number(trade.riskUsd) || 0;
+      if (fills === null) {
+        exchange = {
+          fills: 0,
+          coveredQty: 0,
+          quantity,
+          pnlUsd: 0,
+          resultR: 0,
+          used: false,
+          reason: "история ордеров BingX недоступна (хранится 7 дней) или у сделки нет id входа",
+        };
+      } else {
+        const coveredQty = fills.reduce(
+          (sum, f) => sum + (Number.isFinite(f.executedQty) && f.executedQty > 0 ? f.executedQty : 0),
+          0,
+        );
+        const fromExchange =
+          fills.length > 0
+            ? computeResultFromExchangeFills(trade, fills, {
+                closePrice: resolved.closePrice,
+                realizedProfit: null,
+              })
+            : null;
+        if (fills.length === 0) {
+          exchange = {
+            fills: 0,
+            coveredQty: 0,
+            quantity,
+            pnlUsd: 0,
+            resultR: 0,
+            used: false,
+            reason: "закрывающих исполнений в истории BingX не найдено",
+          };
+        } else if (fromExchange && shouldTrustExchangeResult(fromExchange.resultR, resultR)) {
           resultR = fromExchange.resultR;
           resultPct = fromExchange.resultPct;
           source = "bingx";
+          exchange = {
+            fills: fills.length,
+            coveredQty,
+            quantity,
+            pnlUsd: fromExchange.resultR * riskUsd,
+            resultR: fromExchange.resultR,
+            used: true,
+            reason: null,
+          };
+        } else {
+          exchange = {
+            fills: fills.length,
+            coveredQty,
+            quantity,
+            pnlUsd: (fromExchange?.resultR ?? 0) * riskUsd,
+            resultR: fromExchange?.resultR ?? 0,
+            used: false,
+            reason:
+              fromExchange === null
+                ? "не хватает данных сделки для расчёта (вход/объём)"
+                : "PnL биржи ≈ 0 при материальном расчётном R — похоже на баг rp=0, оставлен расчёт по ценам",
+          };
         }
       }
     } catch (error) {
@@ -811,6 +880,7 @@ export async function recalculateTradeResult(
     beforeR,
     afterR,
     changed,
+    exchange,
   };
 }
 

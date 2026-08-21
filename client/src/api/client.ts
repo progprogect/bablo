@@ -165,12 +165,24 @@ export const setTradeStatsOutcomeRequest = (tradeId: number, statsOutcome: strin
   });
 
 /** Пересчёт resultR: fill BingX / closePrice / SL (когда BingX отдал 0 при реальном убытке). */
+/** Что нашла сверка с биржей при пересчёте — см. server RecalculateExchangeInfo. */
+export type RecalculateExchangeInfo = {
+  fills: number;
+  coveredQty: number;
+  quantity: number;
+  pnlUsd: number;
+  resultR: number;
+  used: boolean;
+  reason: string | null;
+};
+
 export type RecalculateTradeResultResponse = {
   trade: Trade;
   source: "bingx" | "stored" | "sl";
   beforeR: number | null;
   afterR: number | null;
   changed: boolean;
+  exchange: RecalculateExchangeInfo | null;
 };
 
 export const recalculateTradeResultRequest = (tradeId: number) =>
