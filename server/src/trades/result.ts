@@ -248,3 +248,21 @@ export function computeResultFromExchangeFills(
 export function shouldTrustExchangeResult(exchangeR: number, fallbackR: number): boolean {
   return !(Math.abs(exchangeR) < PRICE_BASED_R_TRUST_THRESHOLD && Math.abs(fallbackR) > 0.25);
 }
+
+/**
+ * Результат сделки из заданной вручную суммы PnL (админка, «сумма в статистике»).
+ * Требует riskUsd > 0 — иначе R не определить; null сигналит вызывающей стороне
+ * вернуть понятную ошибку.
+ */
+export function resultFromManualPnl(
+  trade: Pick<TradeForResult, "entryPrice" | "quantity" | "riskUsd">,
+  pnlUsd: number,
+): { resultR: number; resultPct: number } | null {
+  const riskUsd = Number(trade.riskUsd) || 0;
+  if (!(riskUsd > 0) || !Number.isFinite(pnlUsd)) return null;
+  const notional = Number(trade.entryPrice) * Number(trade.quantity);
+  return {
+    resultR: pnlUsd / riskUsd,
+    resultPct: notional > 0 ? (pnlUsd / notional) * 100 : 0,
+  };
+}
