@@ -164,6 +164,13 @@ export const setTradeStatsOutcomeRequest = (tradeId: number, statsOutcome: strin
     body: JSON.stringify({ statsOutcome }),
   });
 
+/** Ручная итоговая сумма сделки в USDT — сервер пересчитает из неё resultR/resultPct. */
+export const setTradeResultManualRequest = (tradeId: number, pnlUsd: number) =>
+  request<Trade>(`/admin/trades/${tradeId}/result`, {
+    method: "POST",
+    body: JSON.stringify({ pnlUsd }),
+  });
+
 /** Пересчёт resultR: fill BingX / closePrice / SL (когда BingX отдал 0 при реальном убытке). */
 /** Что нашла сверка с биржей при пересчёте — см. server RecalculateExchangeInfo. */
 export type RecalculateExchangeInfo = {

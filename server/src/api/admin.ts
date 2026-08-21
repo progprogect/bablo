@@ -18,6 +18,7 @@ import {
   listTradesNeedingCloseReason,
   recalculateTradeResult,
   setTradeCloseReasonManual,
+  setTradeResultManual,
   setTradeStatsOutcome,
   setTradeStatsRrPreset,
   TradeError,
@@ -233,6 +234,32 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       try {
         return await setTradeStatsRrPreset(id, raw ?? null);
+      } catch (error) {
+        if (error instanceof TradeError) {
+          reply.code(error.status).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+    },
+  );
+
+  /** Ручная итоговая сумма сделки в USDT — пересчитывает resultR/resultPct из неё. */
+  app.post<{ Params: { id: string }; Body: { pnlUsd?: number } }>(
+    "/admin/trades/:id/result",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id)) {
+        reply.code(400).send({ error: "Некорректный id" });
+        return;
+      }
+      const pnlUsd = request.body?.pnlUsd;
+      if (typeof pnlUsd !== "number" || !Number.isFinite(pnlUsd)) {
+        reply.code(400).send({ error: "Укажите pnlUsd — итоговую сумму сделки в USDT (число)" });
+        return;
+      }
+      try {
+        return await setTradeResultManual(id, pnlUsd);
       } catch (error) {
         if (error instanceof TradeError) {
           reply.code(error.status).send({ error: error.message });

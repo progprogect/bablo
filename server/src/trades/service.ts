@@ -61,6 +61,7 @@ import {
   computeResult,
   computeResultFromExchangeFills,
   resolveRecalculateClosePrice,
+  resultFromManualPnl,
   shouldTrustExchangeResult,
 } from "./result.js";
 import {
@@ -698,6 +699,43 @@ export async function setTradeStatsOutcome(tradeId: number, statsOutcome: string
     // Счётчики дня можно добить кнопкой «Пересчитать дневные лимиты» в админке.
   });
   eventBus.emitTyped("refresh", { reason: "trade.statsOutcome" });
+  return updated;
+}
+
+/**
+ * Ручная правка ИТОГОВОЙ СУММЫ закрытой сделки (админка): пользователь вводит PnL в USDT,
+ * из него пересчитываются resultR/resultPct — та же запись, которую делает авто-расчёт
+ * или «Пересчитать», только числом от пользователя. Отдельного слоя-оверрайда нет
+ * осознанно: сумма — это факт сделки, от него считаются деньги, R, % к депозиту и
+ * дневные лимиты; слой поверх пришлось бы протаскивать во все эти места. «Отменить»
+ * можно кнопкой «Пересчитать» — она вернёт цифру с биржи, пока BingX хранит историю.
+ */
+export async function setTradeResultManual(tradeId: number, pnlUsd: number): Promise<Trade> {
+  const trade = await getTradeById(tradeId);
+  if (!trade) {
+    throw new TradeError("Сделка не найдена", 404);
+  }
+  if (trade.status !== "closed") {
+    throw new TradeError("Задавать сумму можно только у закрытой сделки", 409);
+  }
+  if (!Number.isFinite(pnlUsd) || Math.abs(pnlUsd) > 1_000_000) {
+    throw new TradeError("Некорректная сумма");
+  }
+
+  const computed = resultFromManualPnl(trade, pnlUsd);
+  if (!computed) {
+    throw new TradeError("У сделки не записан риск (riskUsd) — R из суммы не посчитать", 409);
+  }
+
+  const updated = await updateTrade(tradeId, computed);
+  if (!updated) {
+    throw new TradeError("Не удалось обновить сделку", 500);
+  }
+
+  await resyncTradingDayRisk().catch(() => {
+    // Счётчики дня можно добить кнопкой «Пересчитать дневные лимиты» в админке.
+  });
+  eventBus.emitTyped("refresh", { reason: "trade.resultManual" });
   return updated;
 }
 

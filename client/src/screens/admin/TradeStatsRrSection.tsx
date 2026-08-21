@@ -3,6 +3,7 @@ import {
   ApiError,
   getStatsRrTrades,
   recalculateTradeResultRequest,
+  setTradeResultManualRequest,
   setTradeStatsOutcomeRequest,
   setTradeStatsRrPresetRequest,
   type StatsRrAdminTrade,
@@ -121,6 +122,37 @@ export function TradeStatsRrSection() {
       reload(0, false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось сохранить исход");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * Ручная правка итоговой суммы: prompt вместо постоянного поля — операция редкая
+   * (ремонт данных), лишний инпут в каждой строке зашумлял бы список.
+   */
+  async function handleManualSum(trade: StatsRrAdminTrade) {
+    const current = pnlUsd(trade);
+    const raw = window.prompt(
+      "Итоговая сумма сделки в USDT (со знаком, например -22.37).\nИз неё пересчитаются R и статистика; «Пересчитать» вернёт цифру с биржи.",
+      current !== null ? current.toFixed(2) : "",
+    );
+    if (raw === null) return;
+    const value = Number(raw.replace(",", ".").trim());
+    if (!Number.isFinite(value)) {
+      setError("Сумма должна быть числом, например -22.37");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setBusyId(trade.id);
+    try {
+      const updated = await setTradeResultManualRequest(trade.id, value);
+      const r = updated.resultR !== null ? Number(updated.resultR).toFixed(2) : "—";
+      setNotice(`Сумма задана вручную: ${formatSignedUsd(value)} (${r}R) — лимиты дня пересобраны`);
+      reload(0, false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось сохранить сумму");
     } finally {
       setBusyId(null);
     }
@@ -287,9 +319,18 @@ export function TradeStatsRrSection() {
                     }
                     onClick={() => handleRecalculate(trade.id)}
                     className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
-                    title="Пересчитать PnL по fill BingX / цене закрытия / SL"
+                    title="Пересчитать PnL по исполнениям BingX / цене закрытия / SL"
                   >
                     {busy ? "…" : "Пересчитать"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleManualSum(trade)}
+                    className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
+                    title="Задать итоговую сумму сделки в USDT вручную — R и статистика пересчитаются из неё"
+                  >
+                    Сумма…
                   </button>
                 </div>
               </li>

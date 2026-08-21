@@ -4,6 +4,7 @@ import {
   computeResult,
   computeResultFromExchangeFills,
   resolveRecalculateClosePrice,
+  resultFromManualPnl,
   shouldTrustExchangeResult,
 } from "./result.js";
 
@@ -204,5 +205,23 @@ describe("shouldTrustExchangeResult", () => {
   });
   it("оба около нуля — реальный безубыток, биржа принимается", () => {
     assert.equal(shouldTrustExchangeResult(0.02, 0.03), true);
+  });
+});
+
+describe("resultFromManualPnl", () => {
+  it("считает R и % из суммы", () => {
+    const result = resultFromManualPnl({ entryPrice: 100, quantity: 1, riskUsd: 30 }, 44);
+    assert.ok(result);
+    assert.ok(Math.abs(result.resultR - 44 / 30) < 1e-9);
+    assert.ok(Math.abs(result.resultPct - 44) < 1e-9);
+  });
+  it("отрицательная сумма — отрицательный R", () => {
+    const result = resultFromManualPnl({ entryPrice: 100, quantity: 1, riskUsd: 30 }, -22.37);
+    assert.ok(result);
+    assert.ok(result.resultR < 0);
+  });
+  it("без riskUsd — null (R не определить)", () => {
+    assert.equal(resultFromManualPnl({ entryPrice: 100, quantity: 1, riskUsd: 0 }, 44), null);
+    assert.equal(resultFromManualPnl({ entryPrice: 100, quantity: 1, riskUsd: null }, 44), null);
   });
 });
