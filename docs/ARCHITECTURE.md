@@ -114,6 +114,16 @@ bablo/
   `lock.changed`, `balance.updated`, `level.progressed`.
 - Endpoint `GET /api/events` — SSE-стрим для клиента.
 
+### Деплой (Railway)
+- Один сервис из корня монорепо: собирает и клиент, и сервер (`npm run build`).
+- `build.watchPatterns: ["/**"]` в `railway.json` — деплой на ЛЮБОЙ коммит в main
+  (правка от 20.08.2026). До этого в UI сервиса стояло `/client/**`, и чисто серверные
+  коммиты Railway молча пропускал (`SKIPPED`) — правки риск-движка не доезжали до прода,
+  пока следующий коммит не задевал клиент. Файловый конфиг у Railway главнее UI-настройки.
+- `releaseCommand` из railway.json Railway фактически не применяет (в манифесте
+  `preDeployCommand: null`); миграции гарантируются на старте сервера (`runMigrations()`
+  до `listen`, ошибка фатальна) — это и есть рабочий путь.
+
 ## Схема БД (основные таблицы)
 
 ```
