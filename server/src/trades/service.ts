@@ -32,9 +32,11 @@ import {
 } from "../risk/service.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
+  computeAdjustedOrders,
   computePartialTpQuantity,
   computeResultFromPrices,
   computeRiskUsd,
+  parseAdjustingTpRatio,
   computeTakeProfitPrice,
   decimalsOf,
   decideMoveSlAfterPartial,
@@ -277,6 +279,8 @@ export type SetTakeProfitResult = {
   trade: Trade;
   /** Если не null — основной TP выставлен, но частичный ордер не удалось поставить на бирже. */
   partialTpWarning: string | null;
+  /** Выравнивающий пресет (1/0.9, 1/1.9): TP выставлен, но перенести SL не удалось. */
+  slAdjustWarning: string | null;
 };
 
 export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput): Promise<SetTakeProfitResult> {
@@ -297,14 +301,27 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
 
   let tpPrice: number;
   let rrPreset: string | undefined;
+  /** Выравнивающий пресет (1/0.9, 1/1.9): после постановки TP стоп переносится на −0.9×R₀. */
+  let adjustedSlPrice: number | null = null;
 
   if (input.rrPreset) {
-    const ratio = parseRRRatio(input.rrPreset);
-    if (ratio === null) {
-      throw new TradeError("Некорректный пресет соотношения риск/прибыль");
+    const adjustingRatio = parseAdjustingTpRatio(input.rrPreset);
+    if (adjustingRatio !== null) {
+      const adjusted = computeAdjustedOrders(entryPrice, slPrice, side, adjustingRatio);
+      if (!adjusted) {
+        throw new TradeError("Выравнивание невозможно: у стопа нет дистанции от входа");
+      }
+      tpPrice = adjusted.tpPrice;
+      adjustedSlPrice = adjusted.newSlPrice;
+      rrPreset = input.rrPreset;
+    } else {
+      const ratio = parseRRRatio(input.rrPreset);
+      if (ratio === null) {
+        throw new TradeError("Некорректный пресет соотношения риск/прибыль");
+      }
+      tpPrice = computeTakeProfitPrice(entryPrice, slPrice, side, ratio);
+      rrPreset = input.rrPreset;
     }
-    tpPrice = computeTakeProfitPrice(entryPrice, slPrice, side, ratio);
-    rrPreset = input.rrPreset;
   } else if (input.tpPrice !== undefined) {
     tpPrice = input.tpPrice;
   } else {
@@ -400,26 +417,73 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     }
   }
 
+  const existingOrderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
+
+  // Выравнивающий пресет: TP уже стоит — переносим стоп на −0.9×R₀ через безопасную
+  // замену (при сбое прежний стоп вернётся на место, позиция без стопа не останется).
+  // Двигаем только К входу (сужение): расширение риска этой операции запрещено.
+  let slAdjustWarning: string | null = null;
+  let newSlPriceForDb: number | null = null;
+  let newSlOrderId: string | number | null = null;
+  if (adjustedSlPrice !== null) {
+    const tightens =
+      side === "long"
+        ? adjustedSlPrice > slPrice && adjustedSlPrice < entryPrice
+        : adjustedSlPrice < slPrice && adjustedSlPrice > entryPrice;
+    if (!tightens) {
+      slAdjustWarning = "Стоп не перенесён: выравнивание не сузило бы его (стоп уже ближе −0.9R)";
+    } else {
+      const moved = await replaceConditionalOrder(credentials, {
+        symbol: trade.symbol,
+        exitSide,
+        type: "STOP_MARKET",
+        oldOrderId: existingOrderIds.sl,
+        oldStopPrice: slPrice,
+        newStopPrice: adjustedSlPrice,
+        quantity: totalQuantity,
+        failureMessage:
+          "TP выставлен, но перенести SL на −0.9R не удалось — стоп остался на прежнем месте",
+      });
+      if (moved.ok) {
+        newSlPriceForDb = adjustedSlPrice;
+        newSlOrderId = moved.orderId;
+      } else {
+        slAdjustWarning = moved.message;
+        if (moved.restoredOrderId !== null) {
+          newSlOrderId = moved.restoredOrderId;
+        }
+      }
+    }
+  }
+
   // TP уже реально выставлен на бирже — ошибка записи в БД не должна выглядеть
   // как отказ всей операции, но должна быть явно видна пользователю.
   try {
-    const existingOrderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
     const updated = await updateTrade(tradeId, {
       tpPrice,
       rrPreset,
       partialTpPrice: partialTpOrderId !== undefined ? input.partialTpPrice : undefined,
       partialTpPercent: partialTpOrderId !== undefined ? PARTIAL_TP_PERCENT : undefined,
       partialTpQuantity: partialTpOrderId !== undefined ? (partialQuantity ?? undefined) : undefined,
+      // Стоп перенесён — риск сделки СУЖЕН до 0.9 исходного: пересчитываем riskUsd,
+      // чтобы R (результат, статистика, ночное правило) считался от нового стопа.
+      ...(newSlPriceForDb !== null
+        ? {
+            slPrice: newSlPriceForDb,
+            riskUsd: computeRiskUsd(entryPrice, newSlPriceForDb, totalQuantity),
+          }
+        : {}),
       bingxOrderIds: {
         ...existingOrderIds,
         tp: tpOrderId,
         ...(partialTpOrderId !== undefined ? { partialTp: partialTpOrderId } : {}),
+        ...(newSlOrderId !== null ? { sl: newSlOrderId } : {}),
       },
     });
     if (!updated) {
       throw new Error("update returned null");
     }
-    return { trade: updated, partialTpWarning };
+    return { trade: updated, partialTpWarning, slAdjustWarning };
   } catch {
     throw new TradeError(
       "TP выставлен на бирже, но не удалось сохранить это в приложении — перезагрузите дашборд",

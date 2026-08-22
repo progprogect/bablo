@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  computeAdjustedOrders,
+  parseAdjustingTpRatio,
   computePartialTpQuantity,
   computeRemainderQuantity,
   computeResultFromPrices,
@@ -270,4 +272,37 @@ test("computeRemainderQuantity: не уходит в минус", () => {
   assert.equal(computeRemainderQuantity(10, 7), 3);
   assert.equal(computeRemainderQuantity(10, 10), 0);
   assert.equal(computeRemainderQuantity(10, 12), 0);
+});
+
+test("computeAdjustedOrders: лонг 1/0.9 — TP на 0.9R, SL на −0.9R (соотношение 1/1)", () => {
+  // вход 100, SL 90 → R₀ = 10
+  const result = computeAdjustedOrders(100, 90, "long", 0.9);
+  assert.ok(result);
+  assert.equal(result.tpPrice, 109);
+  assert.equal(result.newSlPrice, 91);
+});
+
+test("computeAdjustedOrders: лонг 1/1.9 — TP на 1.9R, SL на −0.9R", () => {
+  const result = computeAdjustedOrders(100, 90, "long", 1.9);
+  assert.ok(result);
+  assert.equal(result.tpPrice, 119);
+  assert.equal(result.newSlPrice, 91);
+});
+
+test("computeAdjustedOrders: шорт — зеркально", () => {
+  const result = computeAdjustedOrders(100, 110, "short", 0.9);
+  assert.ok(result);
+  assert.equal(result.tpPrice, 91);
+  assert.equal(result.newSlPrice, 109);
+});
+
+test("computeAdjustedOrders: SL на входе (нет дистанции) — null", () => {
+  assert.equal(computeAdjustedOrders(100, 100, "long", 0.9), null);
+});
+
+test("parseAdjustingTpRatio: только выравнивающие пресеты", () => {
+  assert.equal(parseAdjustingTpRatio("1/0.9"), 0.9);
+  assert.equal(parseAdjustingTpRatio("1/1.9"), 1.9);
+  assert.equal(parseAdjustingTpRatio("1/1"), null);
+  assert.equal(parseAdjustingTpRatio("1/2"), null);
 });

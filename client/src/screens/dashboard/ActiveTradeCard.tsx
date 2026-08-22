@@ -3,7 +3,13 @@ import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/cli
 import type { ActiveTradeView, TradeSide } from "../../api/types";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
-const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
+const RR_PRESETS = ["1/0.9", "1/1", "1/1.5", "1/1.9", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
+/**
+ * «Выравнивающие» пресеты для входа с проскальзыванием — синхрон с server ADJUSTING_TP_PRESETS:
+ * TP на 0.9/1.9 исходного риска + перенос SL на −0.9 (сервер делает перенос сам).
+ */
+const ADJUSTING_TP_PRESETS = ["1/0.9", "1/1.9"];
+const ADJUSTED_SL_RATIO = 0.9;
 /** Пресеты частичной фиксации — синхрон с server PARTIAL_TP_PRESETS (не дальше 1/3). */
 const PARTIAL_TP_PRESETS = ["1/1", "1/2", "1/3"];
 const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
@@ -354,12 +360,13 @@ function TakeProfitForm({
       // подправил значение вручную — отправляем именно его как обычный tpPrice.
       const input = selectedPreset ? { rrPreset: selectedPreset } : { tpPrice: Number(tpPrice) };
       const parsedPartial = partialTpPrice ? Number(partialTpPrice) : undefined;
-      const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
+      const { trade: updated, partialTpWarning, slAdjustWarning } = await setTakeProfitRequest(trade.id, {
         ...input,
         ...(parsedPartial !== undefined ? { partialTpPrice: parsedPartial } : {}),
       });
       onUpdated({ ...trade, ...updated });
-      onWarning(partialTpWarning);
+      const warnings = [partialTpWarning, slAdjustWarning].filter(Boolean).join(" · ");
+      onWarning(warnings.length > 0 ? warnings : null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось выставить TP");
     } finally {
@@ -397,6 +404,21 @@ function TakeProfitForm({
         onChange={(event) => editTpPrice(event.target.value)}
         className={inputClass}
       />
+
+      {/* Выравнивание после проскальзывания: сервер вместе с TP перенесёт стоп на −0.9R₀.
+          Показываем новую цену стопа заранее — перенос ордера не должен быть сюрпризом. */}
+      {selectedPreset && ADJUSTING_TP_PRESETS.includes(selectedPreset) && (
+        <p className="rounded-lg bg-accent/10 px-3 py-2 text-xs text-accent">
+          {(() => {
+            const entry = Number(trade.entryPrice);
+            const sl = Number(trade.slPrice);
+            const risk = Math.abs(entry - sl);
+            const newSl = trade.side === "long" ? entry - risk * ADJUSTED_SL_RATIO : entry + risk * ADJUSTED_SL_RATIO;
+            const target = selectedPreset === "1/0.9" ? "1/1" : "≈1/2.1";
+            return `Стоп будет перенесён на ${formatComputedPrice(newSl)} (−0.9 исходного риска) — соотношение станет ${target}`;
+          })()}
+        </p>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-baseline justify-between gap-2">
