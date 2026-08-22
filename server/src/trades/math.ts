@@ -74,6 +74,47 @@ export function requiresPartialTakeProfit(ratio: number): boolean {
   return Number.isFinite(ratio) && ratio >= PARTIAL_TP_REQUIRED_MIN_RATIO;
 }
 
+/**
+ * «Выравнивающие» пресеты TP — для входа с проскальзыванием (решение от 21.08.2026).
+ * Кейс: вход проскользнул, и желаемый ценовой уровень тейка стал ближе стопа — сделка
+ * 1/1 превратилась бы в «прибыль меньше убытка». Вместо переноса тейка ДАЛЬШЕ (за
+ * торговый уровень) сужаем стоп: выбор «1/0.9» ставит TP на 0.9×R₀ и переносит SL на
+ * −0.9×R₀ (R₀ — исходная дистанция стопа) → соотношение 1/1; «1/1.9» — TP на 1.9×R₀,
+ * SL так же на −0.9×R₀ → соотношение ≈1/2.1. Риск сделки при этом ужимается до 0.9
+ * планового — осознанный компромисс вместо раздутого проскальзыванием убытка.
+ *
+ * Намеренно НЕ в RR_PRESETS: это не «столбцы статистики», а операция выравнивания;
+ * в сетке месяца такие сделки лягут по фактически достигнутому R (1R / 2R).
+ */
+export const ADJUSTING_TP_PRESETS = { "1/0.9": 0.9, "1/1.9": 1.9 } as const;
+
+/** Куда переносится стоп при выравнивающем пресете: −0.9 исходной дистанции. */
+export const ADJUSTED_SL_RATIO = 0.9;
+
+export function parseAdjustingTpRatio(preset: string): number | null {
+  return (ADJUSTING_TP_PRESETS as Record<string, number>)[preset] ?? null;
+}
+
+/**
+ * Цены TP и нового SL для выравнивающего пресета — от ТЕКУЩЕЙ дистанции стопа R₀.
+ * null, если дистанции нет (SL на входе и т.п.).
+ */
+export function computeAdjustedOrders(
+  entryPrice: number,
+  slPrice: number,
+  side: TradeSide,
+  tpRatio: number,
+): { tpPrice: number; newSlPrice: number } | null {
+  if (!(entryPrice > 0) || !(slPrice > 0) || !(tpRatio > 0)) return null;
+  const riskDistance = Math.abs(entryPrice - slPrice);
+  if (!(riskDistance > 0)) return null;
+  const direction = side === "long" ? 1 : -1;
+  return {
+    tpPrice: entryPrice + direction * riskDistance * tpRatio,
+    newSlPrice: entryPrice - direction * riskDistance * ADJUSTED_SL_RATIO,
+  };
+}
+
 /** Фактическое R/R по ценам входа, SL и целевого уровня (null, если риск нулевой). */
 export function computeRiskRewardRatio(entryPrice: number, slPrice: number, targetPrice: number): number | null {
   const risk = Math.abs(entryPrice - slPrice);

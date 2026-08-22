@@ -130,6 +130,8 @@ export type OpenTradeResult = {
 export type SetTakeProfitResult = {
   trade: Trade;
   partialTpWarning: string | null;
+  /** Выравнивающий пресет (1/0.9, 1/1.9): TP выставлен, но перенести SL не удалось. */
+  slAdjustWarning: string | null;
 };
 
 export type RiskLevel = {
