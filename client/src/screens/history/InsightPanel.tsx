@@ -58,10 +58,34 @@ const DAY_START_HOUR = 7;
 const HOURS_IN_DAY = 24;
 
 /**
+ * Милая галочка у сильных часов: мягкий изумрудный кружок с округлым чеком — вместо
+ * тяжёлого эмодзи ✅ (просьба от 30.08.2026). Цвет тот же, что у прибыли в истории.
+ */
+function StrongHourMark() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="ml-1 inline-block h-3.5 w-3.5 align-[-2.5px]"
+      aria-label="прибыльный час"
+    >
+      <circle cx="8" cy="8" r="8" className="fill-emerald-100" />
+      <path
+        d="M4.6 8.4 L7 10.8 L11.4 5.6"
+        className="stroke-emerald-600"
+        strokeWidth="1.8"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
  * Все 24 часа торгового дня подряд (решение от 30.08.2026; раньше показывались только
  * «прибыльные» часы с долей тейков ≥ 50%, отсортированные по силе). Час со сделками —
- * `7ч - 5/7 TP (71%)`, час без сделок — просто `7ч`. Галочка ✅ у часов, где тейков
- * СТРОГО больше половины — визуальная метка самых прибыльных часов.
+ * `7ч - 5/7 TP (71%)`, час без сделок — просто `7ч`. Галочка (StrongHourMark) у часов,
+ * где тейков СТРОГО больше половины — визуальная метка самых прибыльных часов.
  */
 function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
   const byHour = new Map(items.map((entry) => [entry.hour, entry]));
@@ -84,7 +108,8 @@ function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
           const isStrong = entry.tpCount / entry.total > 0.5;
           return (
             <p key={hour}>
-              {hour}ч - {entry.tpCount}/{entry.total} TP ({pct}%){isStrong ? " ✅" : ""}
+              {hour}ч - {entry.tpCount}/{entry.total} TP ({pct}%)
+              {isStrong && <StrongHourMark />}
             </p>
           );
         })}
