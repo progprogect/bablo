@@ -164,10 +164,8 @@ export type PresetOutcome = {
 };
 
 export type TradeInsights = {
-  topProfitableHours: { hour: number; tpCount: number; total: number }[];
-  topStopHours: { hour: number; slCount: number; total: number }[];
-  assetOutcomes: { symbol: string; tpCount: number; totalTrades: number }[];
-  topStopAssets: { symbol: string; count: number }[];
+  /** Все часы открытия с хотя бы одной закрытой сделкой: доля тейков, по номеру часа ↑. */
+  hourlyOutcomes: { hour: number; tpCount: number; total: number }[];
   dailyTargetHour: { targetR: number; hour: number } | null;
   rrHoldDuration: { preset: string; minHours: number; maxHours: number; sampleCount: number } | null;
   presetOutcomes: PresetOutcome[];
