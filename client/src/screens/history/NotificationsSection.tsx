@@ -23,6 +23,9 @@ type PushState = "checking" | "unsupported" | "off" | "on";
  * Включение push-уведомлений о закрытии сделки НА ЭТОМ УСТРОЙСТВЕ. Каждое устройство
  * подписывается отдельно (подписка живёт в браузере/PWA), сервер хранит список подписок
  * и шлёт на все. На iPhone работает только из PWA, добавленного на экран «Домой» (iOS 16.4+).
+ *
+ * Живёт вкладкой на экране «История» (решение от 30.08.2026; изначально была в админке —
+ * пользователь попросил ближе, админка спрятана и открывается только по прямому URL).
  */
 export function NotificationsSection() {
   const [state, setState] = useState<PushState>("checking");
@@ -87,7 +90,7 @@ export function NotificationsSection() {
   }
 
   return (
-    <section className="flex flex-col gap-3 border-b border-line pb-6">
+    <section className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <div>
         <h2 className="text-sm font-medium text-ink">Уведомления</h2>
         <p className="mt-0.5 text-xs text-slate-500">
