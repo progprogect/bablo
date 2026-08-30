@@ -4,11 +4,12 @@ import type { StatsResponse, Trade } from "../api/types";
 import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
+import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
 
 const PAGE_SIZE = 20;
 
-type Tab = "trades" | "stats";
+type Tab = "trades" | "stats" | "notifications";
 
 export function History() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -65,9 +66,20 @@ export function History() {
       <div className="flex justify-center gap-2 px-4">
         <TabButton label="Сделки" active={tab === "trades"} onClick={() => setTab("trades")} />
         <TabButton label="Статистика" active={tab === "stats"} onClick={() => setTab("stats")} />
+        <TabButton
+          label="Уведомления"
+          active={tab === "notifications"}
+          onClick={() => setTab("notifications")}
+        />
       </div>
 
-      {tab === "trades" ? (
+      {tab === "notifications" && (
+        <div className="mx-4 flex flex-col gap-3">
+          <NotificationsSection />
+        </div>
+      )}
+
+      {tab === "trades" && (
         <>
           <InsightPanel insights={stats.insights} />
 
@@ -92,7 +104,9 @@ export function History() {
             </button>
           )}
         </>
-      ) : (
+      )}
+
+      {tab === "stats" && (
         <div className="mx-4 flex flex-col gap-3">
           <button
             type="button"
