@@ -85,7 +85,8 @@ function StrongHourMark() {
  * Все 24 часа торгового дня подряд (решение от 30.08.2026; раньше показывались только
  * «прибыльные» часы с долей тейков ≥ 50%, отсортированные по силе). Час со сделками —
  * `7ч - 5/7 TP (71%)`, час без сделок — просто `7ч`. Галочка (StrongHourMark) у часов,
- * где тейков СТРОГО больше половины — визуальная метка самых прибыльных часов.
+ * где тейков НЕ МЕНЬШЕ половины (ровно 50% тоже считается — уточнение от 30.08.2026) —
+ * визуальная метка прибыльных часов.
  */
 function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
   const byHour = new Map(items.map((entry) => [entry.hour, entry]));
@@ -105,7 +106,7 @@ function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
             );
           }
           const pct = Math.round((entry.tpCount / entry.total) * 100);
-          const isStrong = entry.tpCount / entry.total > 0.5;
+          const isStrong = entry.tpCount / entry.total >= 0.5;
           return (
             <p key={hour}>
               {hour}ч - {entry.tpCount}/{entry.total} TP ({pct}%)
