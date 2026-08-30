@@ -56,6 +56,12 @@ const VISIBLE_PRESETS_LIMIT = 2;
 /** Торговый день начинается в 7ч МСК (час сброса дня, см. risk-settings) — список часов идёт 7ч…6ч. */
 const DAY_START_HOUR = 7;
 const HOURS_IN_DAY = 24;
+/**
+ * Сразу показываем 7ч…21ч, ночные 22ч…6ч — по кнопке (просьба от 30.08.2026):
+ * ночью торговли почти нет, а хвост из пустых часов растягивал карточку.
+ */
+const VISIBLE_LAST_HOUR = 21;
+const VISIBLE_HOURS_COUNT = VISIBLE_LAST_HOUR - DAY_START_HOUR + 1;
 
 /**
  * Милая галочка у сильных часов: мягкий изумрудный кружок с округлым чеком — вместо
@@ -89,8 +95,10 @@ function StrongHourMark() {
  * визуальная метка прибыльных часов.
  */
 function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
+  const [expanded, setExpanded] = useState(false);
   const byHour = new Map(items.map((entry) => [entry.hour, entry]));
-  const hours = Array.from({ length: HOURS_IN_DAY }, (_, i) => (DAY_START_HOUR + i) % HOURS_IN_DAY);
+  const allHours = Array.from({ length: HOURS_IN_DAY }, (_, i) => (DAY_START_HOUR + i) % HOURS_IN_DAY);
+  const hours = expanded ? allHours : allHours.slice(0, VISIBLE_HOURS_COUNT);
 
   return (
     <li>
@@ -114,6 +122,13 @@ function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
             </p>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="self-start font-medium text-accent underline-offset-2 hover:underline"
+        >
+          {expanded ? "свернуть" : "показать 22ч–6ч"}
+        </button>
       </div>
     </li>
   );
