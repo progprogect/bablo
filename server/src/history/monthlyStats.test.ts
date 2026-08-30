@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeMonthlyStats, type MonthlyStatTradeInput } from "./monthlyStats.js";
-import { RR_PRESETS } from "../trades/math.js";
+import { computeMonthlyStats, STATS_GRID_PRESETS, type MonthlyStatTradeInput } from "./monthlyStats.js";
 
 const TZ = 180; // UTC+3
 
@@ -82,10 +81,10 @@ test("computeMonthlyStats: группирует по месяцу ЗАКРЫТИ
   assert.equal(stat.sumNegativeR, -1);
   assert.equal(stat.winRate, 0.5);
   assert.equal(stat.tradingDays, 2);
-  // Все пресеты присутствуют в списке (даже с нулём сделок), чтобы клиент мог показать полную сетку.
+  // Все пресеты сетки присутствуют в списке (даже с нулём сделок), чтобы клиент мог показать полную сетку.
   assert.deepEqual(
     stat.byRRPreset,
-    RR_PRESETS.map((preset) => ({ preset, count: preset === "1/2" ? 1 : 0 })),
+    STATS_GRID_PRESETS.map((preset) => ({ preset, count: preset === "1/2" ? 1 : 0 })),
   );
 });
 
@@ -196,7 +195,7 @@ test("computeMonthlyStats: исполненная partial 2R → столбец 
   assert.ok(stat);
   assert.equal(stat.beCount, 1);
   assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
-  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/10")?.count, 0);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/4")?.count, 0);
 });
 
 test("computeMonthlyStats: partial 3R не сработала, выбило по стопу — в сетке R нет, это SL", () => {
@@ -286,7 +285,7 @@ test("computeMonthlyStats: partial 2R исполнена, затем остат�
   assert.ok(stat);
   assert.equal(stat.tpCount, 1);
   assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
-  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/10")?.count, 0);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/4")?.count, 0);
 });
 
 test("computeMonthlyStats: statsRrPreset оверрайд побеждает авто и ночной тейк", () => {

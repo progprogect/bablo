@@ -17,6 +17,13 @@ import {
 
 export { STATS_RR_PRESET_NONE };
 
+/**
+ * Пресеты, отображаемые в сетке R месячной карточки — только до 1/4 (решение от
+ * 21.08.2026): при R/R 1/5+ обязательна частичная фиксация ≤1/3, и такая сделка ложится
+ * в сетку по пресету partial — столбцы 5R/6R стояли вечными нулями.
+ */
+export const STATS_GRID_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4"] as const;
+
 export type MonthlyStatTradeInput = {
   openedAt: Date;
   closedAt: Date | null;
@@ -374,7 +381,7 @@ export function computeMonthlyStats(
       tradingDays: tradingDays.size,
       daysWithoutTrading: Math.max(daysElapsed - tradingDays.size, 0),
       daysInMonth: totalDaysInMonth,
-      byRRPreset: RR_PRESETS.map((preset) => ({
+      byRRPreset: STATS_GRID_PRESETS.map((preset) => ({
         preset,
         count: byRRPresetCounts.get(preset) ?? 0,
       })),

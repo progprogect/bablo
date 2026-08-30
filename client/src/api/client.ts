@@ -287,3 +287,13 @@ export const getRiskSettings = () => request<RiskSettings>("/admin/risk-settings
 
 export const updateRiskSettingsRequest = (patch: Partial<RiskSettings>) =>
   request<RiskSettings>("/admin/risk-settings", { method: "PUT", body: JSON.stringify(patch) });
+
+// --- Уведомления (Web Push) ---
+
+export const getPushPublicKey = () => request<{ publicKey: string }>("/push/public-key");
+
+export const subscribePushRequest = (subscription: PushSubscriptionJSON) =>
+  request<void>("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) });
+
+export const unsubscribePushRequest = (endpoint: string) =>
+  request<void>("/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) });

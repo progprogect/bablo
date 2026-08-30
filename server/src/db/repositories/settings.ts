@@ -7,6 +7,8 @@ import type { BingXCredentials } from "../../bingx/client.js";
 const PIN_HASH_KEY = "pin_hash";
 const BINGX_CREDENTIALS_KEY = "bingx_credentials";
 const RISK_SETTINGS_KEY = "risk_settings";
+const PUSH_VAPID_KEYS_KEY = "push_vapid_keys";
+const PUSH_SUBSCRIPTIONS_KEY = "push_subscriptions";
 
 async function getValue<T>(key: string): Promise<T | null> {
   const db = getDb();
@@ -85,4 +87,37 @@ export async function setRiskSettings(settingsPatch: Partial<RiskSettings>): Pro
   const merged: RiskSettings = { ...current, ...settingsPatch };
   await setValue(RISK_SETTINGS_KEY, merged);
   return merged;
+}
+
+// --- Web Push: VAPID-ключи и подписки устройств живут в том же kv, без миграций ---
+
+export type PushVapidKeys = {
+  publicKey: string;
+  privateKey: string;
+};
+
+export async function getPushVapidKeys(): Promise<PushVapidKeys | null> {
+  return getValue<PushVapidKeys>(PUSH_VAPID_KEYS_KEY);
+}
+
+export async function setPushVapidKeys(keys: PushVapidKeys): Promise<void> {
+  await setValue(PUSH_VAPID_KEYS_KEY, keys);
+}
+
+/** Подписка в формате PushSubscription.toJSON() — ровно то, что нужно web-push. */
+export type StoredPushSubscription = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+};
+
+export async function getPushSubscriptions(): Promise<StoredPushSubscription[]> {
+  return (await getValue<StoredPushSubscription[]>(PUSH_SUBSCRIPTIONS_KEY)) ?? [];
+}
+
+export async function setPushSubscriptions(subscriptions: StoredPushSubscription[]): Promise<void> {
+  await setValue(PUSH_SUBSCRIPTIONS_KEY, subscriptions);
 }

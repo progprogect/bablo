@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Свой sw.ts вместо сгенерированного: то же кэширование + обработчики Web Push
+      // (уведомление «Сделка закрыта» на устройство). См. src/sw.ts.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       registerType: "autoUpdate",
       includeAssets: ["favicon.png"],
       manifest: {
@@ -37,11 +42,10 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Кэшируем только статику приложения (app shell). API-запросы всегда идут в сеть —
-        // торговые данные не должны отдаваться из кэша.
+      injectManifest: {
+        // Пречекэш только статики приложения (app shell); стратегия обхода API —
+        // внутри src/sw.ts (NavigationRoute с denylist /api).
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
-        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],
