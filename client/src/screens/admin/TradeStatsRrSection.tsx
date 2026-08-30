@@ -11,7 +11,8 @@ import {
 } from "../../api/client";
 import { formatSignedUsd } from "../../lib/format";
 
-const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
+// Только пресеты, отображаемые в сетке месяца (синхрон с server STATS_GRID_PRESETS).
+const RR_PRESETS = ["1/1", "1/1.5", "1/2", "1/3", "1/4"];
 const PAGE_SIZE = 40;
 const AUTO_VALUE = "__auto__";
 const NONE_VALUE = "none";

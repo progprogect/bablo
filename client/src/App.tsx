@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import { AuthGate } from "./auth/AuthGate";
 import { BottomNav } from "./components/BottomNav";
+import { TradeCloseChime } from "./components/TradeCloseChime";
 import { SideNav } from "./components/SideNav";
 import { Dashboard } from "./screens/Dashboard";
 import { History } from "./screens/History";
@@ -10,6 +11,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface">
       <AuthGate>
+        <TradeCloseChime />
         <div className="mx-auto flex min-h-screen w-full max-w-5xl md:items-start">
           <SideNav />
           {/* На мобильном — обычная колонка на всю ширину с отступом под BottomNav

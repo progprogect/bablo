@@ -23,6 +23,7 @@ import {
   type Trade,
 } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
+import { sendTradeClosedPush } from "../push/service.js";
 import {
   checkCanOpenTrade,
   checkVolumeRisk,
@@ -569,6 +570,8 @@ export async function finalizeTradeClose(
   });
   stopTracking();
   eventBus.emitTyped("refresh", { reason: "trade.closed" });
+  // Пуш на устройства — fire-and-forget: закрытие сделки не должно ждать push-сервисы.
+  sendTradeClosedPush({ ...toOutcomeInput(updated), symbol: updated.symbol }, resultR);
   return updated;
 }
 

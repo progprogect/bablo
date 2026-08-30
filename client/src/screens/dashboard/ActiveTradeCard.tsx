@@ -3,7 +3,8 @@ import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/cli
 import type { ActiveTradeView, TradeSide } from "../../api/types";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
-const RR_PRESETS = ["1/0.9", "1/1", "1/1.5", "1/1.9", "1/2", "1/3", "1/4", "1/5", "1/6", "1/7", "1/8", "1/9", "1/10"];
+// До 1/6 (решение от 21.08.2026): дальние цели не используются, при 1/5+ обязательна partial.
+const RR_PRESETS = ["1/0.9", "1/1", "1/1.5", "1/1.9", "1/2", "1/3", "1/4", "1/5", "1/6"];
 /**
  * «Выравнивающие» пресеты для входа с проскальзыванием — синхрон с server ADJUSTING_TP_PRESETS:
  * TP на 0.9/1.9 исходного риска + перенос SL на −0.9 (сервер делает перенос сам).

@@ -114,6 +114,16 @@ bablo/
   `lock.changed`, `balance.updated`, `level.progressed`.
 - Endpoint `GET /api/events` — SSE-стрим для клиента.
 
+### Web Push (`server/src/push`)
+- Уведомление «Сделка закрыта» на устройства через Web Push (`web-push`), вызывается из
+  `finalizeTradeClose` fire-and-forget — сбой рассылки не влияет на закрытие сделки.
+- Всё состояние в kv-таблице `settings`, без миграций: `push_vapid_keys` (генерируются
+  один раз при первом обращении; потерять их = потерять все подписки) и
+  `push_subscriptions` (список `PushSubscription.toJSON()` устройств, дедуп по endpoint).
+- Протухшие подписки (404/410 от push-сервиса) удаляются при отправке.
+- Текст уведомления использует ту же логику исхода, что и статистика
+  (`resolveTradeOutcome` + `roundStatsR`) — цифры в пуше и в приложении совпадают.
+
 ### Деплой (Railway)
 - Один сервис из корня монорепо: собирает и клиент, и сервер (`npm run build`).
 - **Watch Paths: НЕ задавать нигде** — ни в railway.json, ни в UI сервиса (там выставлено
@@ -130,7 +140,7 @@ bablo/
 
 ```
 settings        — ключ/значение: API-ключи (зашифрованы AES-256-GCM, ключ в ENV),
-                  таймзона/время сброса, PIN-хэш
+                  таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств
 assets          — symbol, leverage, sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
@@ -172,6 +182,9 @@ GET/POST/DELETE /api/admin/equity-adjustments — пополнения/выво�
 POST /api/admin/reclassify-trades — пересверка "external"-сделок с BingX (см. выше)
 POST /api/admin/trades/:id/stats-outcome — ручной исход сделки для статистики
                                    ('tp' | 'sl' | 'be' | null — авто); closeReason не меняет
+GET  /api/push/public-key       — публичный VAPID-ключ для подписки на push
+POST /api/push/subscribe        — { subscription } — регистрация устройства
+POST /api/push/unsubscribe      — { endpoint } — снятие подписки устройства
 ```
 
 Контракт стабилен: клиент не знает про BingX напрямую, все специфичные детали — за прослойкой.
@@ -180,7 +193,14 @@ POST /api/admin/trades/:id/stats-outcome — ручной исход сделк�
 
 - `manifest.webmanifest`: name, icons (180/192/512), `display: standalone`, theme-color.
 - iOS-мета: `apple-mobile-web-app-capable`, `apple-touch-icon`.
-- Service worker: кэш статики (app shell). API не кэшируем — торговые данные всегда живые.
+- Service worker — собственный `client/src/sw.ts` (`strategies: "injectManifest"` в
+  vite-plugin-pwa, 30.08.2026; раньше generateSW): то же кэширование статики (app shell,
+  API не кэшируем — торговые данные всегда живые) плюс обработчики `push` /
+  `notificationclick` для уведомлений о закрытии сделки. На iPhone push работает только
+  из PWA с экрана «Домой» (iOS 16.4+).
+- Звук о закрытии в открытом приложении — `client/src/lib/chime.ts` (Web Audio, два тона,
+  без аудиофайла; AudioContext разблокируется первым касанием) по SSE `refresh
+  { reason: "trade.closed" }`, слушает `components/TradeCloseChime.tsx` на уровне App.
 - Нижняя таб-навигация (Дашборд · История) — под большой палец. Админка доступна только
   прямым переходом по `/admin`, в меню не выведена (см. `client/src/components/navTabs.tsx`).
 
