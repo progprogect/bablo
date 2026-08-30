@@ -5,24 +5,10 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-/** "9" → "9ч". */
-function formatHourShort(hour: number): string {
-  return `${hour}ч`;
-}
-
-function displaySymbol(symbol: string): string {
-  return symbol.replace(/-USDT$/, "");
-}
-
 /** "R/R 1/2 — по тейку 1/2 (50%)." — без разбора причины промаха, чтобы не повторять её в каждой строке. */
 function formatPresetOutcome(entry: PresetOutcome): string {
   const hitPct = Math.round(entry.hitRate * 100);
   return `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
-}
-
-function formatAssetOutcome(entry: { symbol: string; tpCount: number; totalTrades: number }): string {
-  const hitPct = Math.round((entry.tpCount / entry.totalTrades) * 100);
-  return `${displaySymbol(entry.symbol)} - ${entry.tpCount}/${entry.totalTrades} TP (${hitPct}%)`;
 }
 
 /** «2ч - 7ч» или одно значение, если все тейки 1/3 шли одинаково по длительности. */
@@ -66,63 +52,53 @@ function PresetOutcomesList({ items, limit }: { items: PresetOutcome[]; limit: n
 }
 
 const VISIBLE_PRESETS_LIMIT = 2;
-/**
- * Часы идут по времени суток, поэтому обрезка съедает вечер — держим лимит достаточно
- * большим, чтобы реальный список (только часы с долей ≥ 50%) почти всегда влезал целиком.
- */
-const VISIBLE_HOURS_LIMIT = 6;
+
+/** Торговый день начинается в 7ч МСК (час сброса дня, см. risk-settings) — список часов идёт 7ч…6ч. */
+const DAY_START_HOUR = 7;
+const HOURS_IN_DAY = 24;
 
 /**
- * Часы — В СТОЛБИК, как список активов в «% прибыльности» (решение от 21.08.2026;
- * раньше шли одной строкой через запятую и читались хуже). Первые VISIBLE_HOURS_LIMIT
- * сразу, остальные — по кнопке. Сервер отдаёт все подходящие часы, поэтому час, который
- * виден в истории как тейк, всегда можно найти в подсказке.
+ * Все 24 часа торгового дня подряд (решение от 30.08.2026; раньше показывались только
+ * «прибыльные» часы с долей тейков ≥ 50%, отсортированные по силе). Час со сделками —
+ * `7ч - 5/7 TP (71%)`, час без сделок — просто `7ч`. Галочка ✅ у часов, где тейков
+ * СТРОГО больше половины — визуальная метка самых прибыльных часов.
  */
-function HoursColumn({ label, items }: { label: string; items: string[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? items : items.slice(0, VISIBLE_HOURS_LIMIT);
-  const hiddenCount = items.length - shown.length;
+function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
+  const byHour = new Map(items.map((entry) => [entry.hour, entry]));
+  const hours = Array.from({ length: HOURS_IN_DAY }, (_, i) => (DAY_START_HOUR + i) % HOURS_IN_DAY);
 
   return (
     <li>
       <div className="flex flex-col gap-1">
-        <p>{label}:</p>
-        {shown.map((item) => (
-          <p key={item}>{item}</p>
-        ))}
-        {hiddenCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="self-start font-medium text-accent underline-offset-2 hover:underline"
-          >
-            и ещё {hiddenCount}
-          </button>
-        )}
-        {expanded && items.length > VISIBLE_HOURS_LIMIT && (
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="self-start font-medium text-accent underline-offset-2 hover:underline"
-          >
-            свернуть
-          </button>
-        )}
+        <p>Тейки по часам открытия:</p>
+        {hours.map((hour) => {
+          const entry = byHour.get(hour);
+          if (!entry) {
+            return (
+              <p key={hour} className="text-slate-400">
+                {hour}ч
+              </p>
+            );
+          }
+          const pct = Math.round((entry.tpCount / entry.total) * 100);
+          const isStrong = entry.tpCount / entry.total > 0.5;
+          return (
+            <p key={hour}>
+              {hour}ч - {entry.tpCount}/{entry.total} TP ({pct}%){isStrong ? " ✅" : ""}
+            </p>
+          );
+        })}
       </div>
     </li>
   );
 }
 
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
-  const assetOutcomes = insights.assetOutcomes ?? [];
-  const topStopAssets = insights.topStopAssets ?? [];
+  const hourlyOutcomes = insights.hourlyOutcomes ?? [];
   const rrHoldDuration = insights.rrHoldDuration ?? null;
 
   const hasAnyData =
-    insights.topProfitableHours.length > 0 ||
-    insights.topStopHours.length > 0 ||
-    assetOutcomes.length > 0 ||
-    topStopAssets.length > 0 ||
+    hourlyOutcomes.length > 0 ||
     insights.dailyTargetHour !== null ||
     rrHoldDuration !== null ||
     insights.presetOutcomes.length > 0;
@@ -133,47 +109,11 @@ export function InsightPanel({ insights }: { insights: TradeInsights }) {
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <h3 className="text-sm font-medium text-ink">Подсказка</h3>
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
-        {insights.topProfitableHours.length > 0 && (
-          <HoursColumn
-            label="Прибыльные часы"
-            items={insights.topProfitableHours.map(
-              (bucket) => `${formatHourShort(bucket.hour)} — ${bucket.tpCount}/${bucket.total} TP`,
-            )}
-          />
-        )}
-
-        {assetOutcomes.length > 0 && (
-          <li>
-            <div className="flex flex-col gap-1">
-              <p>% прибыльности:</p>
-              {assetOutcomes.map((entry) => (
-                <p key={entry.symbol}>{formatAssetOutcome(entry)}</p>
-              ))}
-            </div>
-          </li>
-        )}
+        {hourlyOutcomes.length > 0 && <HoursList items={hourlyOutcomes} />}
 
         {insights.presetOutcomes.length > 0 && (
           <li>
             <PresetOutcomesList items={insights.presetOutcomes} limit={VISIBLE_PRESETS_LIMIT} />
-          </li>
-        )}
-
-        {insights.topStopHours.length > 0 && (
-          <HoursColumn
-            label="Чаще убыточные сделки в"
-            items={insights.topStopHours.map(
-              (bucket) => `${formatHourShort(bucket.hour)} — ${bucket.slCount}/${bucket.total} SL`,
-            )}
-          />
-        )}
-
-        {topStopAssets.length > 0 && (
-          <li>
-            Чаще убыточные сделки по:{" "}
-            {topStopAssets
-              .map((entry) => `${displaySymbol(entry.symbol)} (${entry.count})`)
-              .join(", ")}
           </li>
         )}
 

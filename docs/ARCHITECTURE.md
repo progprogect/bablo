@@ -171,7 +171,7 @@ GET  /api/trades/active         — активная сделка + живые �
 POST /api/trades/:id/takeprofit — { tpPrice | rrPreset } → выставить TP
 POST /api/trades/:id/close      — закрыть вручную (этап 3+)
 GET  /api/trades                — история (пагинация limit/offset), сначала новые
-GET  /api/stats                 — { insights, monthly }: инсайты по времени дня/активу/
+GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия/пресетам/
                                    дневной цели (history/insights.ts) и месячная статистика
                                    (history/monthlyStats.ts), см. docs/PROJECT.md
 GET  /api/stats/equity-history  — [{ date, equity }] по всем снимкам equity_snapshots,
