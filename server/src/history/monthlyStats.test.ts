@@ -685,3 +685,31 @@ test("localMonthUtcRange: границы локального месяца со�
   assert.equal(stat?.month, 8);
   assert.ok(closedAt >= from && closedAt < to);
 });
+
+test("computeMonthlyStats: депозит на начало/конец месяца и пополнения", () => {
+  const trades = [
+    trade({ openedAt: "2026-07-01T10:00:00Z", closedAt: "2026-07-01T12:00:00Z", resultR: 5, riskUsd: 20 }), // +100$ в июле
+    trade({ openedAt: "2026-08-02T10:00:00Z", closedAt: "2026-08-02T12:00:00Z", resultR: 2, riskUsd: 20 }), // +40$ в августе
+  ];
+  // Якорь — снимок 10.08 (внутри августа): 1000 базы + 100 (июль) + 50 (пополнение 05.07)
+  // + 40 (август) + 30 (пополнение 03.08) = 1220.
+  const anchor = { date: "2026-08-10", equity: 1220 };
+  const adjustments = [
+    { date: "2026-07-05", amountUsd: 50 },
+    { date: "2026-08-03", amountUsd: 30 },
+  ];
+  const stats = computeMonthlyStats(trades, TZ, anchor, adjustments, new Date("2026-08-10T12:00:00Z"));
+  const august = stats.find((s) => s.month === 8);
+  const july = stats.find((s) => s.month === 7);
+
+  // Текущий месяц: конец = сам якорный снимок (сегодняшний факт).
+  assert.equal(august?.startEquity, 1150); // 1220 − 40 (PnL августа) − 30 (пополнение августа)
+  assert.equal(august?.endEquity, 1220);
+  assert.equal(august?.adjustmentsUsd, 30);
+
+  // Прошлый месяц: конец июля = восстановленное начало августа; из-за пополнения 50$
+  // конец ≠ начало + PnL (1000 + 100 = 1100, а факт 1150).
+  assert.equal(july?.startEquity, 1000);
+  assert.equal(july?.endEquity, 1150);
+  assert.equal(july?.adjustmentsUsd, 50);
+});

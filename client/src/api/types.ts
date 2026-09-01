@@ -190,6 +190,12 @@ export type MonthlyStat = {
   daysWithoutTrading: number;
   daysInMonth: number;
   byRRPreset: MonthlyRRPresetCount[];
+  /** Депозит на начало месяца (факт, восстановлен от снимков эквити). Null — снимков ещё нет. */
+  startEquity: number | null;
+  /** Депозит на конец месяца; для текущего месяца — последний снимок (сейчас). */
+  endEquity: number | null;
+  /** Ручные пополнения/выводы за месяц — из-за них конец ≠ начало + результат сделок. */
+  adjustmentsUsd: number;
 };
 
 export type StatsResponse = {

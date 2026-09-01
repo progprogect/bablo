@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getMonthTrades } from "../../api/client";
-import type { Trade } from "../../api/types";
+import type { MonthlyStat, Trade } from "../../api/types";
 import { formatSignedUsd } from "../../lib/format";
 import { MONTH_LABELS } from "./MonthlyStatCard";
 import { TradeRow } from "./TradeRow";
@@ -55,23 +55,24 @@ function BarRow({
   );
 }
 
+function formatEquity(value: number): string {
+  return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+}
+
 /**
  * Детализация месяца: открывается нажатием на карточку месяца в «Статистике».
  * Сверху — диаграмма «сумма плюса против суммы минуса» с итогом (видно, чего по деньгам
- * вышло больше), ниже — сами сделки месяца, разложенные на плюсовые и минусовые.
+ * вышло больше) и фактический депозит на начало/конец месяца, ниже — ВСЕ сделки месяца
+ * (включая внешние/ручные закрытия без классификации — попадание в плюс/минус решает
+ * только знак результата), разложенные на плюсовые и минусовые.
  * Суммы в USDT считаются так же, как в карточках сделок: resultR × риск сделки.
  */
-export function MonthDetailSheet({
-  year,
-  month,
-  onClose,
-}: {
-  year: number;
-  month: number;
-  onClose: () => void;
-}) {
+export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose: () => void }) {
+  const { year, month } = stat;
   const [trades, setTrades] = useState<Trade[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const now = new Date();
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month;
 
   useEffect(() => {
     setTrades(null);
@@ -135,6 +136,41 @@ export function MonthDetailSheet({
                 </span>
               </div>
             </div>
+
+            {(stat.startEquity !== null || stat.endEquity !== null) && (
+              <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
+                <h3 className="text-sm font-medium text-ink">Депозит</h3>
+                {stat.startEquity !== null && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">На начало месяца</span>
+                    <span className="font-medium tabular-nums text-ink">
+                      {formatEquity(stat.startEquity)}
+                    </span>
+                  </div>
+                )}
+                {stat.endEquity !== null && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">{isCurrentMonth ? "Сейчас" : "На конец месяца"}</span>
+                    <span className="font-medium tabular-nums text-ink">
+                      {formatEquity(stat.endEquity)}
+                    </span>
+                  </div>
+                )}
+                {stat.adjustmentsUsd !== 0 && (
+                  <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
+                    <span className="text-xs text-slate-500">Пополнения/выводы за месяц</span>
+                    <span className="font-medium tabular-nums text-slate-600">
+                      {formatSignedUsd(stat.adjustmentsUsd)}
+                    </span>
+                  </div>
+                )}
+                {stat.adjustmentsUsd !== 0 && (
+                  <p className="text-xs text-slate-400">
+                    Из-за пополнений/выводов конец месяца не равен «начало + итог сделок».
+                  </p>
+                )}
+              </div>
+            )}
 
             {plus.length > 0 && (
               <TradeGroup title={`Плюсовые (${plus.length})`} trades={plus} />
