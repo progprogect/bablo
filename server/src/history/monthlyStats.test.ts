@@ -753,3 +753,47 @@ test("computeMonthlyStats: без снимков на границах — от�
   assert.equal(july?.startEquity, 1000);
   assert.equal(july?.endEquity, 1100);
 });
+
+test("computeMonthlyStats: значение с точного снимка помечено exact, восстановленное — нет", () => {
+  // Баг от 30.08.2026: восстановленные откруткой границы выглядели как факт, и сверка
+  // с начислениями биржи на них показывала мнимое расхождение (открутка не знает комиссий).
+  const trades = [
+    trade({ openedAt: "2026-07-10T10:00:00Z", closedAt: "2026-07-10T12:00:00Z", resultR: 5, riskUsd: 20 }),
+    trade({ openedAt: "2026-08-05T10:00:00Z", closedAt: "2026-08-05T12:00:00Z", resultR: 1, riskUsd: 20 }),
+  ];
+  const snapshots = [
+    { date: "2026-07-01", equity: 1000, balance: 990 }, // ровно на границе июля
+    { date: "2026-08-14", equity: 1100, balance: 1100 }, // середина августа, не граница
+  ];
+  const anchor = snapshots[snapshots.length - 1]!;
+  const stats = computeMonthlyStats(trades, TZ, anchor, [], new Date("2026-08-14T12:00:00Z"), snapshots);
+  const july = stats.find((s) => s.month === 7)!;
+  const august = stats.find((s) => s.month === 8)!;
+
+  // Июль: начало — точный снимок, конец — восстановлен (снимка на 01.08 нет).
+  assert.equal(july.startEquityExact, true);
+  assert.equal(july.startBalance, 990);
+  assert.equal(july.endEquityExact, false);
+  assert.equal(july.endBalance, null); // на приблизительном значении сверку не строим
+
+  // Август — текущий месяц: конец = сегодняшний снимок, это факт.
+  assert.equal(august.endEquityExact, true);
+  assert.equal(august.endBalance, 1100);
+  assert.equal(august.startEquityExact, false);
+});
+
+test("computeMonthlyStats: снимок без balance не даёт базу для сверки", () => {
+  // Старые снимки (до 30.08.2026) хранят только equity — сверять с начислениями нечем.
+  const snapshots = [{ date: "2026-08-01", equity: 500, balance: null }];
+  const stats = computeMonthlyStats(
+    [trade({ openedAt: "2026-08-05T10:00:00Z", closedAt: "2026-08-05T12:00:00Z", resultR: 1, riskUsd: 20 })],
+    TZ,
+    snapshots[0]!,
+    [],
+    new Date("2026-08-20T12:00:00Z"),
+    snapshots,
+  );
+  const august = stats[0]!;
+  assert.equal(august.startEquityExact, true);
+  assert.equal(august.startBalance, null);
+});

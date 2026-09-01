@@ -60,6 +60,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
     const snapshots: EquityAnchor[] = snapshotRows.map((row) => ({
       date: row.date,
       equity: Number(row.equity),
+      balance: row.balance !== null ? Number(row.balance) : null,
     }));
     const anchor: EquityAnchor | null = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
     const adjustments = adjustmentRows.map((row) => ({ date: row.date, amountUsd: Number(row.amountUsd) }));

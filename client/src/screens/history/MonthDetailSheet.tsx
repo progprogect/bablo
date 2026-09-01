@@ -168,15 +168,19 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
 
   /**
    * Сверка с фактом биржи (exchange = записи BingX user/income за месяц): комиссии,
-   * funding и переводы — не наша оценка, а реальные начисления. Контрольная строка
-   * «Расхождение» = конец − начало − (PnL биржи + комиссии + funding + прочее + переводы):
-   * ≈ 0 — всё учтено; заметная величина — сигнал (например, незакрытая позиция на границе
-   * месяца, чей нереализованный PnL сидит в снимке).
+   * funding и переводы — не наша оценка, а реальные начисления. Расхождение =
+   * баланс конца − баланс начала − (PnL + комиссии + funding + прочее + переводы).
+   *
+   * Считается ТОЛЬКО по balance из точных снимков на границах месяца (решение от
+   * 30.08.2026). Раньше в формулу шло восстановленное расчётом equity, и «не сходится
+   * на ~95 USDT» было артефактом: открутка не знает комиссий, а equity включает
+   * нереализованный PnL открытых позиций, которого нет в начислениях.
    */
+  const canReconcile = stat.startBalance !== null && stat.endBalance !== null;
   const mismatchUsd =
-    exchange && stat.startEquity !== null && stat.endEquity !== null
-      ? stat.endEquity -
-        stat.startEquity -
+    exchange && canReconcile
+      ? stat.endBalance! -
+        stat.startBalance! -
         exchange.realizedPnlUsd -
         exchange.commissionUsd -
         exchange.fundingUsd -
@@ -240,6 +244,7 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="text-xs text-slate-500">На начало месяца</span>
                     <span className="font-medium tabular-nums text-ink">
+                      {stat.startEquityExact ? "" : "≈ "}
                       {formatEquity(stat.startEquity)}
                     </span>
                   </div>
@@ -248,10 +253,18 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="text-xs text-slate-500">{isCurrentMonth ? "Сейчас" : "На конец месяца"}</span>
                     <span className="font-medium tabular-nums text-ink">
+                      {stat.endEquityExact ? "" : "≈ "}
                       {formatEquity(stat.endEquity)}
                     </span>
                   </div>
                 )}
+                {(stat.startEquity !== null && !stat.startEquityExact) ||
+                (stat.endEquity !== null && !stat.endEquityExact) ? (
+                  <p className="text-xs text-slate-400">
+                    «≈» — снимка баланса на эту дату нет, значение восстановлено расчётом от
+                    ближайшего снимка и не учитывает комиссии за этот промежуток.
+                  </p>
+                ) : null}
                 {exchange ? (
                   <>
                     <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
@@ -281,8 +294,8 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                           : "Возможно, часть сделок не учтена в приложении."}
                       </p>
                     )}
-                    {mismatchUsd !== null &&
-                      (Math.abs(mismatchUsd) >= 0.5 ? (
+                    {mismatchUsd !== null ? (
+                      Math.abs(mismatchUsd) >= 0.5 ? (
                         <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
                           <span className="text-xs text-amber-700">Не сходится на</span>
                           <span className="font-medium tabular-nums text-amber-700">
@@ -291,10 +304,18 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                         </div>
                       ) : (
                         <p className="border-t border-line pt-2 text-xs text-emerald-600">
-                          Сходится с фактом биржи: начало + PnL + комиссии + funding + переводы
-                          = конец месяца.
+                          Сходится с фактом биржи: баланс начала + PnL + комиссии + funding +
+                          переводы = баланс конца месяца.
                         </p>
-                      ))}
+                      )
+                    ) : (
+                      <p className="border-t border-line pt-2 text-xs text-slate-400">
+                        Точная сверка появится, когда будут снимки баланса ровно на границах
+                        месяца: депозит выше включает нереализованный PnL открытых позиций и
+                        частично восстановлен расчётом, поэтому сводить его с начислениями
+                        биржи некорректно.
+                      </p>
+                    )}
                     <p className="text-xs text-slate-400">
                       Комиссии, funding и переводы — фактические записи BingX за месяц. Итог
                       сделок — чистый результат по цене, поэтому он не включает эти списания.

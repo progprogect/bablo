@@ -83,6 +83,19 @@ export type MonthlyStat = {
    * (adjustmentsUsd) меняют депозит отдельно от торговли.
    */
   endEquity: number | null;
+  /**
+   * true — значение взято из РЕАЛЬНОГО снимка на эту дату; false — восстановлено откруткой
+   * от соседнего снимка и потому приблизительно (открутка не знает комиссий и funding).
+   * UI показывает такие значения как «≈» и не строит на них сверку с фактом биржи.
+   */
+  startEquityExact: boolean;
+  endEquityExact: boolean;
+  /**
+   * Баланс без нереализованного PnL на границах — только из ТОЧНЫХ снимков (иначе null).
+   * Именно с ним сходятся начисления BingX, поэтому сверка месяца считается по нему.
+   */
+  startBalance: number | null;
+  endBalance: number | null;
   /** Сумма ручных пополнений/выводов за месяц (пополнения > 0, выводы < 0). */
   adjustmentsUsd: number;
 };
@@ -237,8 +250,12 @@ function parseDateKey(dateKey: string): { year: number; month: number; day: numb
   return { year: parts[0]!, month: parts[1]!, day: parts[2]! };
 }
 
-/** Последний известный снимок эквити — точка отсчёта для восстановления баланса прошлых месяцев (см. computeBaselineEquity). */
-export type EquityAnchor = { date: string; equity: number };
+/**
+ * Снимок депозита за день. `equity` — как показывает BingX (включает нереализованный PnL
+ * открытых позиций), `balance` — без него; с начислениями BingX сходится именно balance,
+ * поэтому сверка месяца идёт по нему. balance = null у снимков до 30.08.2026.
+ */
+export type EquityAnchor = { date: string; equity: number; balance?: number | null };
 
 /** Ручное пополнение (amountUsd > 0) или вывод (amountUsd < 0) средств — см. db/repositories/equityAdjustments.ts. */
 export type EquityAdjustmentInput = { date: string; amountUsd: number };
@@ -255,6 +272,13 @@ function pad2(value: number): string {
  * Работает и в обратную сторону (monthStartKey после даты якоря) — на практике не
  * встречается, так как якорь всегда актуальнее любого начала месяца, но так функция не
  * даёт неверный результат, если это условие когда-нибудь не выполнится.
+ *
+ * ВАЖНО — результат ПРИБЛИЗИТЕЛЬНЫЙ, и на зазоре в недели ошибка большая: комиссии биржи
+ * и funding здесь не откручиваются (их нет в trades), а за месяц активной торговли они
+ * набегают на десятки процентов депозита. Поэтому значение, полученное откруткой,
+ * помечается флагом `exact: false` — UI показывает его как «≈» и не строит на нём сверку
+ * с фактом биржи (баг найден 30.08.2026: сверка на восстановленных границах показывала
+ * «не сходится на ~95 USDT», хотя это была ошибка самой открутки, а не потеря данных).
  */
 function computeBaselineEquity(
   monthStartKey: string,
@@ -413,6 +437,7 @@ export function computeMonthlyStats(
     const nextMonthStartKey =
       month === 12 ? `${year + 1}-01-01` : `${year}-${pad2(month + 1)}-01`;
     const startAnchor = nearestAnchor(monthStartKey);
+    const startEquityExact = startAnchor?.date === monthStartKey;
     const equityBaseline = startAnchor
       ? computeBaselineEquity(monthStartKey, startAnchor, trades, adjustments, tzOffsetMinutes)
       : null;
@@ -421,14 +446,26 @@ export function computeMonthlyStats(
     // Конец месяца: последний снимок внутри текущего месяца — это и есть сегодняшний факт;
     // для прошлых месяцев конец = начало следующего месяца (от ближайшего к нему снимка).
     let endEquity: number | null = null;
+    let endEquityExact = false;
+    let endAnchor: EquityAnchor | null = null;
     if (anchor && anchor.date >= monthStartKey && anchor.date < nextMonthStartKey) {
       endEquity = anchor.equity;
+      endEquityExact = true; // сегодняшний снимок — факт, откручивать нечего
+      endAnchor = anchor;
     } else {
-      const endAnchor = nearestAnchor(nextMonthStartKey);
+      endAnchor = nearestAnchor(nextMonthStartKey);
+      endEquityExact = endAnchor?.date === nextMonthStartKey;
       endEquity = endAnchor
         ? computeBaselineEquity(nextMonthStartKey, endAnchor, trades, adjustments, tzOffsetMinutes)
         : null;
     }
+
+    // Баланс — только из точных снимков: откручивать его тем же способом бессмысленно
+    // (та же слепота к комиссиям), а сверка с биржей на приблизительных числах врёт.
+    const startBalance =
+      startEquityExact && typeof startAnchor?.balance === "number" ? startAnchor.balance : null;
+    const endBalance =
+      endEquityExact && typeof endAnchor?.balance === "number" ? endAnchor.balance : null;
 
     let monthAdjustmentsUsd = 0;
     for (const adjustment of adjustments) {
@@ -459,6 +496,10 @@ export function computeMonthlyStats(
       })),
       startEquity: equityBaseline,
       endEquity,
+      startEquityExact,
+      endEquityExact,
+      startBalance,
+      endBalance,
       adjustmentsUsd: monthAdjustmentsUsd,
     });
   }

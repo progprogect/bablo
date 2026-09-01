@@ -130,6 +130,12 @@ export const dailyStats = pgTable("daily_stats", {
 export const equitySnapshots = pgTable("equity_snapshots", {
   date: date("date").primaryKey(),
   equity: numeric("equity", { precision: 20, scale: 8 }).notNull(),
+  /**
+   * Баланс БЕЗ нереализованного PnL открытых позиций (equity его включает). Именно с ним
+   * сходятся начисления BingX (user/income), поэтому сверка месяца считается по balance,
+   * а «депозит» показывается по equity. Nullable: у снимков до 30.08.2026 его нет.
+   */
+  balance: numeric("balance", { precision: 20, scale: 8 }),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
