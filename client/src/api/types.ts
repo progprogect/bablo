@@ -208,3 +208,13 @@ export type EquitySnapshot = {
   date: string;
   equity: number;
 };
+
+/** Факт начислений BingX за месяц — сверка блока «Депозит» в детализации месяца. */
+export type MonthExchangeSummary = {
+  commissionUsd: number;
+  fundingUsd: number;
+  transfersUsd: number;
+  realizedPnlUsd: number;
+  otherUsd: number;
+  recordCount: number;
+};
