@@ -16,11 +16,19 @@ export async function getLatestEquitySnapshot(): Promise<EquitySnapshotRow | nul
  * Best-effort: вызывается лениво из GET /dashboard (см. api/dashboard.ts), максимум
  * одна запись в день, без отдельного планировщика.
  */
-export async function captureEquitySnapshotIfMissing(dateKey: string, equity: number): Promise<void> {
+export async function captureEquitySnapshotIfMissing(
+  dateKey: string,
+  equity: number,
+  balance: number | null = null,
+): Promise<void> {
   const db = getDb();
   await db
     .insert(equitySnapshots)
-    .values({ date: dateKey, equity: String(equity) })
+    .values({
+      date: dateKey,
+      equity: String(equity),
+      balance: balance === null ? null : String(balance),
+    })
     .onConflictDoNothing();
 }
 

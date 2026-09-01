@@ -15,13 +15,23 @@ import { requireAuth } from "./plugins/auth-guard.js";
  * "% к депозиту" в месячной статистике невозможно посчитать для месяцев без снимков —
  * истории баланса до сих пор не было. Best-effort: ошибка не должна портить дашборд.
  */
-async function captureTodaysEquity(equity: string | number | null | undefined): Promise<void> {
+async function captureTodaysEquity(
+  equity: string | number | null | undefined,
+  balance: string | number | null | undefined,
+): Promise<void> {
   const value = Number(equity);
   if (!Number.isFinite(value)) return;
+  // balance — без нереализованного PnL: только он сходится с начислениями BingX,
+  // поэтому сверка месяца считается по нему (см. history/monthlyStats.ts).
+  const balanceValue = Number(balance);
   try {
     const settings = await getRiskSettings();
     const dateKey = getLocalDateKey(new Date(), settings.tzOffsetMinutes);
-    await captureEquitySnapshotIfMissing(dateKey, value);
+    await captureEquitySnapshotIfMissing(
+      dateKey,
+      value,
+      Number.isFinite(balanceValue) ? balanceValue : null,
+    );
   } catch (error) {
     console.error("[dashboard] не удалось сохранить снимок эквити:", error);
   }
@@ -59,7 +69,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
 
     try {
       const balance = await getBalance(credentials);
-      void captureTodaysEquity(balance.equity);
+      void captureTodaysEquity(balance.equity, balance.balance);
       return { balance, balanceError: null, assets, activeTrade, externalPositions, risk };
     } catch (error) {
       const message =

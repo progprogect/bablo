@@ -194,6 +194,12 @@ export type MonthlyStat = {
   startEquity: number | null;
   /** Депозит на конец месяца; для текущего месяца — последний снимок (сейчас). */
   endEquity: number | null;
+  /** false — значение восстановлено расчётом (приблизительное, показывается с «≈»). */
+  startEquityExact: boolean;
+  endEquityExact: boolean;
+  /** Баланс без нереализованного PnL из точных снимков — база для сверки с биржей. */
+  startBalance: number | null;
+  endBalance: number | null;
   /** Ручные пополнения/выводы за месяц — из-за них конец ≠ начало + результат сделок. */
   adjustmentsUsd: number;
 };
