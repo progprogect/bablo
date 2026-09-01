@@ -236,10 +236,4 @@ export type MonthExchangeSummary = {
   /** PnL записей, не привязавшихся ни к одной сделке — позиции, открытые мимо приложения. */
   unmatchedPnlUsd: number;
   unmatchedCount: number;
-  /**
-   * Баланс на ТОЧНЫЕ границы месяца (те же даты, что у статистики), восстановленный из
-   * журнала биржи: текущий баланс минус записи после границы. Null — журнал неполный.
-   */
-  balanceStartUsd: number | null;
-  balanceEndUsd: number | null;
 };
