@@ -4,14 +4,8 @@ import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } 
 import type { TradeSide } from "../trades/math.js";
 import { listClosedTrades, listClosedTradesBetween, type Trade } from "../db/repositories/trades.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
+import { getIncomeHistory, type BingXCredentials, type BingXIncomeRecord } from "../bingx/client.js";
 import {
-  getBalance,
-  getIncomeHistory,
-  type BingXCredentials,
-  type BingXIncomeRecord,
-} from "../bingx/client.js";
-import {
-  balanceAtBoundary,
   matchIncomeToTrades,
   summarizeIncome,
   type IncomeSummary,
@@ -110,55 +104,33 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       const { from, to } = localMonthUtcRange(year, month, tzOffsetMinutes);
       const rows = await listClosedTradesBetween(from, to);
 
-      let exchange:
-        | (IncomeSummary & {
-            unmatchedPnlUsd: number;
-            unmatchedCount: number;
-            balanceStartUsd: number | null;
-            balanceEndUsd: number | null;
-          })
-        | null = null;
+      // ВАЖНО (урок от 30.08.2026): восстанавливать балансы границ месяца из журнала
+      // user/income НЕЛЬЗЯ — журнал не содержит переводов (пополнения/выводы невидимы),
+      // и при откате назад все внесённые с тех пор деньги приписываются прошлому
+      // (июльская граница показала 733 USDT при реальном старте в разы меньше).
+      // Журнал — источник только ТОРГОВОГО результата месяца (PnL/комиссии/funding);
+      // границы депозита — по дневным снимкам (см. history/monthlyStats.ts).
+      let exchange: (IncomeSummary & { unmatchedPnlUsd: number; unmatchedCount: number }) | null =
+        null;
       let pnlByTradeId = new Map<number, number>();
       try {
         const credentials = await getBingxCredentials();
         if (credentials) {
-          // Журнал тянем от начала месяца до «сейчас»: хвост после конца месяца нужен,
-          // чтобы восстановить баланс на ТОЧНЫЕ границы месяца (balanceAtBoundary) —
-          // те же даты, что у всей статистики, без «≈» по снимкам.
-          const nowMs = Date.now();
           const { records, complete } = await listIncomeForRange(
             credentials,
             from.getTime(),
-            Math.max(to.getTime(), nowMs),
+            to.getTime(),
           );
-          const monthRecords = records.filter((record) => record.time < to.getTime());
-          const summary = summarizeIncome(monthRecords);
-          // Пустой ответ при наличии сделок — глубина хранения BingX закончилась,
-          // а не «месяц без комиссий»: сверку не показываем, чтобы не врать нулями.
-          if (summary.recordCount > 0) {
-            const matched = matchIncomeToTrades(monthRecords, rows);
+          const summary = summarizeIncome(records);
+          // Пустой или неполный (кап пагинации) журнал — не показываем, чтобы не врать:
+          // пустота при наличии сделок означает конец глубины хранения BingX.
+          if (summary.recordCount > 0 && complete) {
+            const matched = matchIncomeToTrades(records, rows);
             pnlByTradeId = matched.pnlByTradeId;
-
-            let balanceStartUsd: number | null = null;
-            let balanceEndUsd: number | null = null;
-            if (complete) {
-              const currentBalance = Number((await getBalance(credentials)).balance);
-              if (Number.isFinite(currentBalance)) {
-                balanceStartUsd = balanceAtBoundary(currentBalance, records, from.getTime());
-                // Текущий месяц ещё не кончился — его «конец» это сам текущий баланс.
-                balanceEndUsd =
-                  to.getTime() > nowMs
-                    ? currentBalance
-                    : balanceAtBoundary(currentBalance, records, to.getTime());
-              }
-            }
-
             exchange = {
               ...summary,
               unmatchedPnlUsd: matched.unmatchedPnlUsd,
               unmatchedCount: matched.unmatchedCount,
-              balanceStartUsd,
-              balanceEndUsd,
             };
           }
         }

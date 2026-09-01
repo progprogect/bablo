@@ -119,12 +119,6 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
   const netColorClass =
     netSum > 0 ? "text-emerald-600" : netSum < 0 ? "text-red-600" : "text-slate-600";
 
-  // Границы месяца из журнала биржи — точные значения на те же даты, что у статистики
-  // (полночь 1-го числа МСК). Null — журнал недоступен/неполный, запасной путь — снимки.
-  const ledgerStart = exchange?.balanceStartUsd ?? null;
-  const ledgerEnd = exchange?.balanceEndUsd ?? null;
-  const hasLedgerBalances = ledgerStart !== null && ledgerEnd !== null;
-
   const monthPnl = exchange ? exchangeMonthPnl(exchange) : null;
   const monthPnlColorClass =
     monthPnl === null
@@ -169,57 +163,40 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
               </div>
             </div>
 
-            {(stat.startEquity !== null || stat.endEquity !== null || hasLedgerBalances) && (
+            {(stat.startEquity !== null || stat.endEquity !== null || monthPnl !== null) && (
               <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
                 <h3 className="text-sm font-medium text-ink">Депозит</h3>
-                {hasLedgerBalances ? (
-                  <>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-xs text-slate-500">На начало месяца</span>
-                      <span className="font-medium tabular-nums text-ink">
-                        {formatEquity(ledgerStart!)}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-xs text-slate-500">
-                        {isCurrentMonth ? "Сейчас" : "На конец месяца"}
-                      </span>
-                      <span className="font-medium tabular-nums text-ink">
-                        {formatEquity(ledgerEnd!)}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {stat.startEquity !== null && (
-                      <div className="flex items-baseline justify-between text-sm">
-                        <span className="text-xs text-slate-500">На начало месяца</span>
-                        <span className="font-medium tabular-nums text-ink">
-                          {stat.startEquityExact ? "" : "≈ "}
-                          {formatEquity(stat.startEquity)}
-                        </span>
-                      </div>
-                    )}
-                    {stat.endEquity !== null && (
-                      <div className="flex items-baseline justify-between text-sm">
-                        <span className="text-xs text-slate-500">
-                          {isCurrentMonth ? "Сейчас" : "На конец месяца"}
-                        </span>
-                        <span className="font-medium tabular-nums text-ink">
-                          {stat.endEquityExact ? "" : "≈ "}
-                          {formatEquity(stat.endEquity)}
-                        </span>
-                      </div>
-                    )}
-                    {(stat.startEquity !== null && !stat.startEquityExact) ||
-                    (stat.endEquity !== null && !stat.endEquityExact) ? (
-                      <p className="text-xs text-slate-400">
-                        «≈» — точных данных биржи на эту дату уже нет, значение восстановлено
-                        от ближайшего дневного снимка.
-                      </p>
-                    ) : null}
-                  </>
+                {/* Границы — только по нашим дневным снимкам. Восстанавливать их из журнала
+                    биржи нельзя: журнал не содержит переводов, и все пополнения, внесённые
+                    после границы, приписались бы прошлому (баг от 30.08.2026 — «733 USDT
+                    на старте июля»). */}
+                {stat.startEquity !== null && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">На начало месяца</span>
+                    <span className="font-medium tabular-nums text-ink">
+                      {stat.startEquityExact ? "" : "≈ "}
+                      {formatEquity(stat.startEquity)}
+                    </span>
+                  </div>
                 )}
+                {stat.endEquity !== null && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">
+                      {isCurrentMonth ? "Сейчас" : "На конец месяца"}
+                    </span>
+                    <span className="font-medium tabular-nums text-ink">
+                      {stat.endEquityExact ? "" : "≈ "}
+                      {formatEquity(stat.endEquity)}
+                    </span>
+                  </div>
+                )}
+                {(stat.startEquity !== null && !stat.startEquityExact) ||
+                (stat.endEquity !== null && !stat.endEquityExact) ? (
+                  <p className="text-xs text-slate-400">
+                    «≈» — снимка депозита на эту дату нет, значение восстановлено от
+                    ближайшего дневного снимка (приблизительно).
+                  </p>
+                ) : null}
 
                 {monthPnl !== null && (
                   <div className="flex items-baseline justify-between border-t border-line pt-2.5">
