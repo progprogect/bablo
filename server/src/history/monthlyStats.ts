@@ -71,6 +71,16 @@ export type MonthlyStat = {
   daysInMonth: number;
   /** Разбивка по пресетам RR_PRESETS: полные тейки + исполненные partial (см. resolveMonthlyRrPresetBucket). */
   byRRPreset: MonthlyRRPresetCount[];
+  /** Депозит на начало месяца — восстановлен от последнего снимка эквити (computeBaselineEquity). Null — снимков ещё не было. */
+  startEquity: number | null;
+  /**
+   * Депозит на конец месяца; для текущего месяца — сам якорный снимок (сегодняшний факт).
+   * Конец НЕ обязан сходиться с «начало + результат сделок»: ручные пополнения/выводы
+   * (adjustmentsUsd) меняют депозит отдельно от торговли.
+   */
+  endEquity: number | null;
+  /** Сумма ручных пополнений/выводов за месяц (пополнения > 0, выводы < 0). */
+  adjustmentsUsd: number;
 };
 
 /** @deprecated Используйте isBreakevenClose из history/outcome.ts — единый источник правды. */
@@ -377,10 +387,27 @@ export function computeMonthlyStats(
     const daysElapsed = isCurrentMonth ? todayKey.day : totalDaysInMonth;
 
     const monthStartKey = `${year}-${pad2(month)}-01`;
+    const nextMonthStartKey =
+      month === 12 ? `${year + 1}-01-01` : `${year}-${pad2(month + 1)}-01`;
     const equityBaseline = anchor
       ? computeBaselineEquity(monthStartKey, anchor, trades, adjustments, tzOffsetMinutes)
       : null;
     const resultPct = equityBaseline && equityBaseline > 0 ? (sumUsd / equityBaseline) * 100 : null;
+
+    // Конец месяца: якорь (последний снимок) внутри месяца — это и есть сегодняшний факт;
+    // для прошлых месяцев конец = восстановленное начало следующего месяца.
+    const endEquity = anchor
+      ? anchor.date >= monthStartKey && anchor.date < nextMonthStartKey
+        ? anchor.equity
+        : computeBaselineEquity(nextMonthStartKey, anchor, trades, adjustments, tzOffsetMinutes)
+      : null;
+
+    let monthAdjustmentsUsd = 0;
+    for (const adjustment of adjustments) {
+      if (adjustment.date >= monthStartKey && adjustment.date < nextMonthStartKey) {
+        monthAdjustmentsUsd += adjustment.amountUsd;
+      }
+    }
 
     result.push({
       year,
@@ -402,6 +429,9 @@ export function computeMonthlyStats(
         preset,
         count: byRRPresetCounts.get(preset) ?? 0,
       })),
+      startEquity: equityBaseline,
+      endEquity,
+      adjustmentsUsd: monthAdjustmentsUsd,
     });
   }
 

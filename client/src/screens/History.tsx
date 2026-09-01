@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getStats, getTradeHistory } from "../api/client";
-import type { StatsResponse, Trade } from "../api/types";
+import type { MonthlyStat, StatsResponse, Trade } from "../api/types";
 import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
 import { MonthDetailSheet } from "./history/MonthDetailSheet";
@@ -20,7 +20,7 @@ export function History() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tab, setTab] = useState<Tab>("trades");
   const [showEquityChart, setShowEquityChart] = useState(false);
-  const [monthDetail, setMonthDetail] = useState<{ year: number; month: number } | null>(null);
+  const [monthDetail, setMonthDetail] = useState<MonthlyStat | null>(null);
 
   useEffect(() => {
     Promise.all([getTradeHistory(PAGE_SIZE, 0), getStats()])
@@ -127,7 +127,7 @@ export function History() {
               <button
                 key={`${stat.year}-${stat.month}`}
                 type="button"
-                onClick={() => setMonthDetail({ year: stat.year, month: stat.month })}
+                onClick={() => setMonthDetail(stat)}
                 className="w-full text-left"
               >
                 <MonthlyStatCard stat={stat} />
@@ -139,13 +139,7 @@ export function History() {
 
       {showEquityChart && <EquityHistorySheet onClose={() => setShowEquityChart(false)} />}
 
-      {monthDetail && (
-        <MonthDetailSheet
-          year={monthDetail.year}
-          month={monthDetail.month}
-          onClose={() => setMonthDetail(null)}
-        />
-      )}
+      {monthDetail && <MonthDetailSheet stat={monthDetail} onClose={() => setMonthDetail(null)} />}
     </section>
   );
 }
