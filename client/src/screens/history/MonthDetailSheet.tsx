@@ -59,6 +59,55 @@ function formatEquity(value: number): string {
   return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 }
 
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Сырые записи биржи по типам — чтобы «не сходится на X» можно было объяснить данными:
+ * видно каждый incomeType с суммой и числом записей и окно, за которое биржа реально
+ * отдала историю (если оно уже месяца — часть начислений просто не пришла из API).
+ */
+function ExchangeRecordsDetails({ exchange }: { exchange: MonthExchangeSummary }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="border-t border-line pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+      >
+        {open ? "Скрыть записи биржи" : `Показать записи биржи (${exchange.recordCount})`}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-1">
+          {exchange.byType.map((entry) => (
+            <div key={entry.type} className="flex items-baseline justify-between text-xs">
+              <span className="text-slate-500">
+                {entry.type} · {entry.count}
+              </span>
+              <span className="tabular-nums text-slate-600">{formatSignedUsd(entry.sumUsd)}</span>
+            </div>
+          ))}
+          {exchange.firstRecordAt && exchange.lastRecordAt && (
+            <p className="mt-1 text-xs text-slate-400">
+              История биржи с {formatShortDate(exchange.firstRecordAt)} по{" "}
+              {formatShortDate(exchange.lastRecordAt)}. Если период уже месяца — BingX отдал
+              не все записи, и суммы выше неполные.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DepositRow({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
@@ -136,6 +185,13 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
       : null;
   // Итог сделок приложения против PnL биржи: расходятся — какие-то сделки не учтены.
   const pnlGapUsd = exchange ? exchange.realizedPnlUsd - netSum : null;
+  // Число записей REALIZED_PNL = число закрытий на бирже. Сравнение с числом сделок в
+  // приложении отвечает на «все ли сделки учтены» фактом, а не догадкой.
+  const closeRecordCount = exchange
+    ? exchange.byType
+        .filter((entry) => entry.type.toUpperCase().includes("PNL"))
+        .reduce((sum, entry) => sum + entry.count, 0)
+    : null;
   // Оценка на случай, когда факта с биржи нет (месяц старше глубины хранения BingX).
   const estimatedOtherUsd =
     !exchange && stat.startEquity !== null && stat.endEquity !== null
@@ -215,8 +271,14 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                     {pnlGapUsd !== null && Math.abs(pnlGapUsd) >= 0.5 && (
                       <p className="text-xs text-amber-700">
                         Итог сделок в приложении ({formatSignedUsd(netSum)}) расходится с PnL
-                        биржи на {formatSignedUsd(pnlGapUsd)} — возможно, часть сделок не
-                        учтена в приложении.
+                        биржи на {formatSignedUsd(pnlGapUsd)}.{" "}
+                        {closeRecordCount !== null
+                          ? `Закрытий по данным биржи: ${closeRecordCount}, сделок в приложении: ${trades.length}${
+                              closeRecordCount === trades.length
+                                ? " — все сделки на месте, расходятся суммы (комиссии внутри цены закрытия, ручные правки R)."
+                                : " — часть сделок не учтена в приложении."
+                            }`
+                          : "Возможно, часть сделок не учтена в приложении."}
                       </p>
                     )}
                     {mismatchUsd !== null &&
@@ -237,6 +299,7 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                       Комиссии, funding и переводы — фактические записи BingX за месяц. Итог
                       сделок — чистый результат по цене, поэтому он не включает эти списания.
                     </p>
+                    <ExchangeRecordsDetails exchange={exchange} />
                   </>
                 ) : (
                   <>
