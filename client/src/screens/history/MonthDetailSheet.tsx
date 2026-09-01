@@ -103,6 +103,18 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
   const netColorClass =
     netSum > 0 ? "text-emerald-600" : netSum < 0 ? "text-red-600" : "text-slate-600";
 
+  /**
+   * «Комиссии, funding и прочее»: конец − начало − итог сделок − записанные пополнения.
+   * Итог сделок — чистый результат по движению цены; комиссии биржи, funding-платежи и
+   * позиции мимо приложения списываются/зачисляются отдельно и видны только по снимкам
+   * депозита. Для месяцев с восстановленными границами разница ≈ 0 — строка скрывается.
+   */
+  const otherUsd =
+    stat.startEquity !== null && stat.endEquity !== null
+      ? stat.endEquity - stat.startEquity - netSum - stat.adjustmentsUsd
+      : null;
+  const showOther = otherUsd !== null && Math.abs(otherUsd) >= 0.5;
+
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-surface">
       <div
@@ -164,9 +176,19 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                     </span>
                   </div>
                 )}
-                {stat.adjustmentsUsd !== 0 && (
+                {showOther && (
+                  <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
+                    <span className="text-xs text-slate-500">Комиссии, funding и прочее</span>
+                    <span className="font-medium tabular-nums text-slate-600">
+                      {formatSignedUsd(otherUsd)}
+                    </span>
+                  </div>
+                )}
+                {(stat.adjustmentsUsd !== 0 || showOther) && (
                   <p className="text-xs text-slate-400">
-                    Из-за пополнений/выводов конец месяца не равен «начало + итог сделок».
+                    Итог сделок — чистый результат по цене. Депозит дополнительно меняют
+                    комиссии биржи, funding-платежи, пополнения/выводы и позиции, открытые
+                    мимо приложения, — поэтому конец месяца ≠ «начало + итог сделок».
                   </p>
                 )}
               </div>
