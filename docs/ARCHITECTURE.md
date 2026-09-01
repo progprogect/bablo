@@ -172,7 +172,10 @@ POST /api/trades/:id/takeprofit — { tpPrice | rrPreset } → выставит�
 POST /api/trades/:id/close      — закрыть вручную (этап 3+)
 GET  /api/trades                — история (пагинация limit/offset), сначала новые
 GET  /api/trades/month          — ?year&month: все сделки локального месяца (границы —
-                                   localMonthUtcRange, как в группировке monthlyStats);
+                                   localMonthUtcRange, как в группировке monthlyStats) +
+                                   exchange: суммы начислений BingX user/income за месяц
+                                   (комиссии/funding/переводы/PnL, history/incomeSummary.ts;
+                                   best-effort, null при ошибке или пустой истории);
                                    детализация карточки месяца в «Статистике»
 GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия/пресетам/
                                    дневной цели (history/insights.ts) и месячная статистика

@@ -406,6 +406,35 @@ export async function getOrderHistory(
   return orders;
 }
 
+export type BingXIncomeRecord = {
+  symbol?: string;
+  /** TRANSFER | REALIZED_PNL | FUNDING_FEE | TRADING_FEE | INSURANCE_CLEAR | … */
+  incomeType: string;
+  /** Сумма со знаком, строкой: комиссии отрицательные, funding — в обе стороны. */
+  income: string;
+  asset?: string;
+  time: number;
+};
+
+/**
+ * История начислений фьючерсного счёта (комиссии, funding, переводы, реализованный PnL) —
+ * для сверки месячной статистики с фактом биржи. До 1000 записей за запрос; пагинация
+ * по time — на вызывающей стороне. У BingX ограничена глубина хранения (старые месяцы
+ * могут вернуться пустыми) — вызывающая сторона обязана переживать пустой ответ.
+ */
+export async function getIncomeHistory(
+  credentials: BingXCredentials,
+  params: { startTime: number; endTime: number; limit?: number },
+): Promise<BingXIncomeRecord[]> {
+  const data = await bingxRequest<BingXIncomeRecord[] | null>(
+    credentials,
+    "GET",
+    "/openApi/swap/v2/user/income",
+    { startTime: params.startTime, endTime: params.endTime, limit: params.limit ?? 1000 },
+  );
+  return Array.isArray(data) ? data : [];
+}
+
 // --- Listen Key (для приватного WS account stream) ---
 
 /**
