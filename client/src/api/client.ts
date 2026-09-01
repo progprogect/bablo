@@ -297,3 +297,6 @@ export const subscribePushRequest = (subscription: PushSubscriptionJSON) =>
 
 export const unsubscribePushRequest = (endpoint: string) =>
   request<void>("/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) });
+
+export const getMonthTrades = (year: number, month: number) =>
+  request<{ trades: Trade[] }>(`/trades/month?year=${year}&month=${month}`);

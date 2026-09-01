@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { requireAuth } from "./plugins/auth-guard.js";
 import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } from "../trades/service.js";
 import type { TradeSide } from "../trades/math.js";
-import { listClosedTrades, type Trade } from "../db/repositories/trades.js";
+import { listClosedTrades, listClosedTradesBetween, type Trade } from "../db/repositories/trades.js";
+import { getRiskSettings } from "../db/repositories/settings.js";
+import { localMonthUtcRange } from "../history/monthlyStats.js";
 import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
 const DEFAULT_HISTORY_LIMIT = 50;
@@ -52,6 +54,25 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
     // статистике и дневных лимитах — иначе подпись в истории разошлась бы с цифрами.
     return { ...page, trades: page.trades.map(withOutcome) };
   });
+
+  // Все сделки одного локального месяца (детализация карточки в «Статистике»). Границы
+  // месяца — те же, что у группировки monthlyStats (localMonthUtcRange), иначе сделка
+  // на стыке месяцев попала бы в карточку одного месяца, а в список — другого.
+  app.get<{ Querystring: { year?: string; month?: string } }>(
+    "/trades/month",
+    async (request, reply) => {
+      const year = Number(request.query.year);
+      const month = Number(request.query.month);
+      if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        reply.code(400).send({ error: "Укажите year и month (1–12)" });
+        return;
+      }
+      const { tzOffsetMinutes } = await getRiskSettings();
+      const { from, to } = localMonthUtcRange(year, month, tzOffsetMinutes);
+      const rows = await listClosedTradesBetween(from, to);
+      return { trades: rows.map(withOutcome) };
+    },
+  );
 
   app.post<{ Body: { symbol?: string; side?: string; quantity?: number; slPrice?: number } }>(
     "/trades",

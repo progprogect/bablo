@@ -197,6 +197,23 @@ function monthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+/**
+ * UTC-границы локального месяца [from, to) — для выборки сделок месяца из БД той же
+ * логикой, что и группировка статистики ниже (месяц берётся из getLocalDateKey по
+ * closedAt в локальной таймзоне): сделка, закрытая 31.07 в 23:30 UTC при UTC+3,
+ * локально уже августовская и должна попадать и в карточку августа, и в его детализацию.
+ */
+export function localMonthUtcRange(
+  year: number,
+  month: number,
+  tzOffsetMinutes: number,
+): { from: Date; to: Date } {
+  return {
+    from: new Date(Date.UTC(year, month - 1, 1) - tzOffsetMinutes * 60_000),
+    to: new Date(Date.UTC(year, month, 1) - tzOffsetMinutes * 60_000),
+  };
+}
+
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
