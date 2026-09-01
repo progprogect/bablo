@@ -217,4 +217,9 @@ export type MonthExchangeSummary = {
   realizedPnlUsd: number;
   otherUsd: number;
   recordCount: number;
+  /** Сырая разбивка по incomeType биржи — чтобы расхождение можно было объяснить данными. */
+  byType: { type: string; sumUsd: number; count: number }[];
+  /** Границы полученных записей: уже месяца — история биржи неполная. */
+  firstRecordAt: string | null;
+  lastRecordAt: string | null;
 };
