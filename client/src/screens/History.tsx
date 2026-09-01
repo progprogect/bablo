@@ -3,6 +3,7 @@ import { ApiError, getStats, getTradeHistory } from "../api/client";
 import type { StatsResponse, Trade } from "../api/types";
 import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
+import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
@@ -19,6 +20,7 @@ export function History() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tab, setTab] = useState<Tab>("trades");
   const [showEquityChart, setShowEquityChart] = useState(false);
+  const [monthDetail, setMonthDetail] = useState<{ year: number; month: number } | null>(null);
 
   useEffect(() => {
     Promise.all([getTradeHistory(PAGE_SIZE, 0), getStats()])
@@ -119,12 +121,31 @@ export function History() {
           {stats.monthly.length === 0 ? (
             <p className="px-2 text-center text-sm text-slate-500">Пока нет ни одного закрытого месяца.</p>
           ) : (
-            stats.monthly.map((stat) => <MonthlyStatCard key={`${stat.year}-${stat.month}`} stat={stat} />)
+            stats.monthly.map((stat) => (
+              // Карточка сама не меняется — только становится кликабельной: нажатие
+              // открывает детализацию месяца (все сделки + диаграмма плюс/минус).
+              <button
+                key={`${stat.year}-${stat.month}`}
+                type="button"
+                onClick={() => setMonthDetail({ year: stat.year, month: stat.month })}
+                className="w-full text-left"
+              >
+                <MonthlyStatCard stat={stat} />
+              </button>
+            ))
           )}
         </div>
       )}
 
       {showEquityChart && <EquityHistorySheet onClose={() => setShowEquityChart(false)} />}
+
+      {monthDetail && (
+        <MonthDetailSheet
+          year={monthDetail.year}
+          month={monthDetail.month}
+          onClose={() => setMonthDetail(null)}
+        />
+      )}
     </section>
   );
 }

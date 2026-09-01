@@ -1,7 +1,7 @@
 import type { MonthlyStat } from "../../api/types";
 import { formatSignedR, formatSignedRValue, trimTrailingZeros } from "../../lib/format";
 
-const MONTH_LABELS = [
+export const MONTH_LABELS = [
   "Январь",
   "Февраль",
   "Март",

@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeMonthlyStats, STATS_GRID_PRESETS, type MonthlyStatTradeInput } from "./monthlyStats.js";
+import {
+  computeMonthlyStats,
+  localMonthUtcRange,
+  STATS_GRID_PRESETS,
+  type MonthlyStatTradeInput,
+} from "./monthlyStats.js";
 
 const TZ = 180; // UTC+3
 
@@ -654,4 +659,29 @@ test("computeMonthlyStats: убытки тоже суммируются из о�
 
   assert.equal(stats.sumR, -2);
   assert.equal(stats.sumNegativeR, -2);
+});
+
+test("localMonthUtcRange: границы локального месяца совпадают с группировкой статистики", () => {
+  const { from, to } = localMonthUtcRange(2026, 8, TZ);
+  // Август по UTC+3 начинается 31.07 в 21:00 UTC и заканчивается 31.08 в 21:00 UTC.
+  assert.equal(from.toISOString(), "2026-07-31T21:00:00.000Z");
+  assert.equal(to.toISOString(), "2026-08-31T21:00:00.000Z");
+
+  // Сделка, закрытая 31.07 в 22:00 UTC (локально 01:00 первого августа), — августовская
+  // и по группировке карточек, и по границам детализации.
+  const closedAt = new Date("2026-07-31T22:00:00Z");
+  const [stat] = computeMonthlyStats(
+    [
+      trade({
+        openedAt: "2026-07-31T20:00:00Z",
+        closedAt: closedAt.toISOString(),
+        resultR: 1,
+        closeReason: "tp",
+      }),
+    ],
+    TZ,
+    null,
+  );
+  assert.equal(stat?.month, 8);
+  assert.ok(closedAt >= from && closedAt < to);
 });

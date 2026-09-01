@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { trades } from "../schema.js";
 import type { TradeSide } from "../../trades/math.js";
@@ -176,6 +176,16 @@ export async function listClosedTrades(options: { limit: number; offset: number 
     db.select({ value: count() }).from(trades).where(eq(trades.status, "closed")),
   ]);
   return { trades: rows, total: totalRow?.value ?? 0 };
+}
+
+/** Закрытые сделки с closedAt в [from, to), сначала новые — детализация месяца в статистике. */
+export async function listClosedTradesBetween(from: Date, to: Date): Promise<Trade[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.status, "closed"), gte(trades.closedAt, from), lt(trades.closedAt, to)))
+    .orderBy(desc(trades.closedAt));
 }
 
 /**
