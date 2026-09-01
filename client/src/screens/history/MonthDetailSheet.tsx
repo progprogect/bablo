@@ -59,111 +59,24 @@ function formatEquity(value: number): string {
   return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 }
 
-type MismatchedTrade = { trade: Trade; app: number; onExchange: number; diff: number };
-
-/** Список сделок, где сумма приложения разошлась с фактом биржи — раскрывается по кнопке. */
-function MismatchedTradesList({ items }: { items: MismatchedTrade[] }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="text-xs font-medium text-accent underline-offset-2 hover:underline"
-      >
-        {open ? "Скрыть расходящиеся сделки" : `Показать расходящиеся сделки (${items.length})`}
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-1">
-          {items.map(({ trade, app, onExchange, diff }) => (
-            <div key={trade.id} className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="text-slate-500">
-                {trade.symbol.replace(/-USDT$/, "")} ·{" "}
-                {new Date(trade.openedAt).toLocaleString("ru-RU", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-              <span className="tabular-nums text-slate-600">
-                {app.toFixed(2)} → {onExchange.toFixed(2)}{" "}
-                <span className="text-amber-700">({formatSignedUsd(diff)})</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /**
- * Сырые записи биржи по типам — чтобы «не сходится на X» можно было объяснить данными:
- * видно каждый incomeType с суммой и числом записей и окно, за которое биржа реально
- * отдала историю (если оно уже месяца — часть начислений просто не пришла из API).
+ * Полный результат месяца по журналу биржи: реализованный PnL всех позиций (включая
+ * открытые мимо приложения) + комиссии + funding + прочие начисления, БЕЗ переводов.
+ * Тождественно равен «баланс конца − баланс начала − пополнения/выводы» — это и есть
+ * граунд-трус месяца. Просьба от 30.08.2026: показывать именно одно это число, без
+ * россыпи диагностических строк (комиссии/funding/сверки отдельными строками убраны —
+ * сервер их по-прежнему отдаёт, см. GET /api/trades/month).
  */
-function ExchangeRecordsDetails({ exchange }: { exchange: MonthExchangeSummary }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="border-t border-line pt-2">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="text-xs font-medium text-accent underline-offset-2 hover:underline"
-      >
-        {open ? "Скрыть записи биржи" : `Показать записи биржи (${exchange.recordCount})`}
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-1">
-          {exchange.byType.map((entry) => (
-            <div key={entry.type} className="flex items-baseline justify-between text-xs">
-              <span className="text-slate-500">
-                {entry.type} · {entry.count}
-              </span>
-              <span className="tabular-nums text-slate-600">{formatSignedUsd(entry.sumUsd)}</span>
-            </div>
-          ))}
-          {exchange.firstRecordAt && exchange.lastRecordAt && (
-            <p className="mt-1 text-xs text-slate-400">
-              История биржи с {formatShortDate(exchange.firstRecordAt)} по{" "}
-              {formatShortDate(exchange.lastRecordAt)}. Если период уже месяца — BingX отдал
-              не все записи, и суммы выше неполные.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DepositRow({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className="font-medium tabular-nums text-slate-600">{formatSignedUsd(value)}</span>
-    </div>
-  );
+function exchangeMonthPnl(exchange: MonthExchangeSummary): number {
+  return exchange.realizedPnlUsd + exchange.commissionUsd + exchange.fundingUsd + exchange.otherUsd;
 }
 
 /**
  * Детализация месяца: открывается нажатием на карточку месяца в «Статистике».
- * Сверху — диаграмма «сумма плюса против суммы минуса» с итогом (видно, чего по деньгам
- * вышло больше) и фактический депозит на начало/конец месяца, ниже — ВСЕ сделки месяца
- * (включая внешние/ручные закрытия без классификации — попадание в плюс/минус решает
- * только знак результата), разложенные на плюсовые и минусовые.
- * Суммы в USDT считаются так же, как в карточках сделок: resultR × риск сделки.
+ * Сверху — диаграмма «сумма плюса против суммы минуса» по сделкам ПРИЛОЖЕНИЯ, затем
+ * блок «Депозит»: баланс на точных границах месяца (журнал биржи; запасной путь —
+ * дневные снимки с «≈») и одно число «PnL за месяц (BingX)» — полный факт биржи.
+ * Ниже — все сделки месяца, разложенные на плюсовые и минусовые.
  */
 export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose: () => void }) {
   const { year, month } = stat;
@@ -206,64 +119,21 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
   const netColorClass =
     netSum > 0 ? "text-emerald-600" : netSum < 0 ? "text-red-600" : "text-slate-600";
 
-  /**
-   * Сверка с фактом биржи (exchange = записи BingX user/income за месяц): комиссии,
-   * funding и переводы — не наша оценка, а реальные начисления. Расхождение =
-   * баланс конца − баланс начала − (PnL + комиссии + funding + прочее + переводы).
-   *
-   * Считается ТОЛЬКО по balance из точных снимков на границах месяца (решение от
-   * 30.08.2026). Раньше в формулу шло восстановленное расчётом equity, и «не сходится
-   * на ~95 USDT» было артефактом: открутка не знает комиссий, а equity включает
-   * нереализованный PnL открытых позиций, которого нет в начислениях.
-   */
-  const canReconcile = stat.startBalance !== null && stat.endBalance !== null;
-  const mismatchUsd =
-    exchange && canReconcile
-      ? stat.endBalance! -
-        stat.startBalance! -
-        exchange.realizedPnlUsd -
-        exchange.commissionUsd -
-        exchange.fundingUsd -
-        exchange.otherUsd -
-        exchange.transfersUsd
-      : null;
-  /**
-   * Границы месяца из журнала биржи — ТОЧНЫЕ значения на те же даты, что у статистики
-   * (полночь 1-го числа МСК), в отличие от «≈» по снимкам. С ними строка «не сходится»
-   * не нужна (конец − начало = сумма записей по построению журнала); честной проверкой
-   * становится сверка против независимого источника — наших дневных снимков баланса.
-   */
+  // Границы месяца из журнала биржи — точные значения на те же даты, что у статистики
+  // (полночь 1-го числа МСК). Null — журнал недоступен/неполный, запасной путь — снимки.
   const ledgerStart = exchange?.balanceStartUsd ?? null;
   const ledgerEnd = exchange?.balanceEndUsd ?? null;
   const hasLedgerBalances = ledgerStart !== null && ledgerEnd !== null;
-  const startSnapshotGap =
-    hasLedgerBalances && stat.startBalance !== null ? ledgerStart - stat.startBalance : null;
-  const endSnapshotGap =
-    hasLedgerBalances && stat.endBalance !== null ? ledgerEnd - stat.endBalance : null;
-  // Итог сделок приложения против PnL биржи.
-  const pnlGapUsd = exchange ? exchange.realizedPnlUsd - netSum : null;
-  /**
-   * Конкретные сделки, где наша сумма разошлась с фактом биржи, — их чинит «Пересчитать»
-   * в админке. Считать расхождение по ЧИСЛУ записей нельзя (было до 30.08.2026 и врало):
-   * частичная фиксация закрывает сделку в два приёма и даёт две записи REALIZED_PNL.
-   */
-  const mismatchedTrades = (trades ?? [])
-    .map((trade) => {
-      const app = realizedPnlUsd(trade);
-      const onExchange = trade.exchangePnlUsd ?? null;
-      if (app === null || onExchange === null) return null;
-      const diff = onExchange - app;
-      return Math.abs(diff) >= 0.5 ? { trade, app, onExchange, diff } : null;
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-  const mismatchedSumUsd = mismatchedTrades.reduce((sum, entry) => sum + entry.diff, 0);
-  // Оценка на случай, когда факта с биржи нет (месяц старше глубины хранения BingX).
-  const estimatedOtherUsd =
-    !exchange && stat.startEquity !== null && stat.endEquity !== null
-      ? stat.endEquity - stat.startEquity - netSum - stat.adjustmentsUsd
-      : null;
-  const showEstimatedOther = estimatedOtherUsd !== null && Math.abs(estimatedOtherUsd) >= 0.5;
+
+  const monthPnl = exchange ? exchangeMonthPnl(exchange) : null;
+  const monthPnlColorClass =
+    monthPnl === null
+      ? ""
+      : monthPnl > 0
+        ? "text-emerald-600"
+        : monthPnl < 0
+          ? "text-red-600"
+          : "text-slate-600";
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-surface">
@@ -318,25 +188,6 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                         {formatEquity(ledgerEnd!)}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400">
-                      Баланс по журналу биржи ровно на границах месяца — те же даты, что у
-                      всей статистики (полночь 1-го числа МСК); нереализованный PnL открытых
-                      позиций не входит.
-                    </p>
-                    {startSnapshotGap !== null && Math.abs(startSnapshotGap) >= 0.5 && (
-                      <p className="text-xs text-amber-700">
-                        Журнал биржи расходится с нашим снимком баланса на начало месяца на{" "}
-                        {formatSignedUsd(startSnapshotGap)} — возможно, история начислений
-                        неполная.
-                      </p>
-                    )}
-                    {endSnapshotGap !== null && Math.abs(endSnapshotGap) >= 0.5 && (
-                      <p className="text-xs text-amber-700">
-                        Журнал биржи расходится с нашим снимком баланса на конец месяца на{" "}
-                        {formatSignedUsd(endSnapshotGap)} — возможно, история начислений
-                        неполная.
-                      </p>
-                    )}
                   </>
                 ) : (
                   <>
@@ -363,102 +214,27 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                     {(stat.startEquity !== null && !stat.startEquityExact) ||
                     (stat.endEquity !== null && !stat.endEquityExact) ? (
                       <p className="text-xs text-slate-400">
-                        «≈» — снимка баланса на эту дату нет, значение восстановлено расчётом
-                        от ближайшего снимка и не учитывает комиссии за этот промежуток.
+                        «≈» — точных данных биржи на эту дату уже нет, значение восстановлено
+                        от ближайшего дневного снимка.
                       </p>
                     ) : null}
                   </>
                 )}
-                {exchange ? (
-                  <>
-                    <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
-                      <span className="text-xs text-slate-500">PnL по данным биржи</span>
-                      <span className="font-medium tabular-nums text-slate-600">
-                        {formatSignedUsd(exchange.realizedPnlUsd)}
-                      </span>
-                    </div>
-                    <DepositRow label="Комиссии (BingX)" value={exchange.commissionUsd} />
-                    <DepositRow label="Funding (BingX)" value={exchange.fundingUsd} />
-                    {Math.abs(exchange.otherUsd) >= 0.01 && (
-                      <DepositRow label="Прочие начисления (BingX)" value={exchange.otherUsd} />
-                    )}
-                    {exchange.transfersUsd !== 0 && (
-                      <DepositRow label="Пополнения/выводы (BingX)" value={exchange.transfersUsd} />
-                    )}
-                    {pnlGapUsd !== null && Math.abs(pnlGapUsd) >= 0.5 && (
-                      <div className="flex flex-col gap-1">
-                        <p className="text-xs text-amber-700">
-                          Итог сделок в приложении ({formatSignedUsd(netSum)}) расходится с PnL
-                          биржи на {formatSignedUsd(pnlGapUsd)}.
-                          {mismatchedTrades.length > 0
-                            ? ` Расходятся ${mismatchedTrades.length} из ${trades.length} сделок на ${formatSignedUsd(mismatchedSumUsd)} — их суммы записаны неверно, лечится кнопкой «Пересчитать» в админке.`
-                            : " По отдельным сделкам расхождений нет."}
-                        </p>
-                        {exchange.unmatchedCount > 0 && (
-                          <p className="text-xs text-amber-700">
-                            Записей биржи вне сделок приложения: {exchange.unmatchedCount} на{" "}
-                            {formatSignedUsd(exchange.unmatchedPnlUsd)} — позиции, открытые
-                            мимо приложения.
-                          </p>
-                        )}
-                        {mismatchedTrades.length > 0 && (
-                          <MismatchedTradesList items={mismatchedTrades} />
-                        )}
-                      </div>
-                    )}
-                    {/* С точными границами из журнала биржи «конец − начало = сумма записей»
-                        выполняется по построению — отдельная строка сверки не нужна;
-                        честные сигналы выше: расходящиеся сделки, записи вне сделок и
-                        сверка журнала с независимыми дневными снимками. */}
-                    {!hasLedgerBalances &&
-                      (mismatchUsd !== null ? (
-                        Math.abs(mismatchUsd) >= 0.5 ? (
-                          <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
-                            <span className="text-xs text-amber-700">Не сходится на</span>
-                            <span className="font-medium tabular-nums text-amber-700">
-                              {formatSignedUsd(mismatchUsd)}
-                            </span>
-                          </div>
-                        ) : (
-                          <p className="border-t border-line pt-2 text-xs text-emerald-600">
-                            Сходится с фактом биржи: баланс начала + PnL + комиссии + funding +
-                            переводы = баланс конца месяца.
-                          </p>
-                        )
-                      ) : (
-                        <p className="border-t border-line pt-2 text-xs text-slate-400">
-                          Журнал биржи за месяц неполный, а снимков баланса ровно на границах
-                          нет — точные границы месяца восстановить не из чего, показана оценка.
-                        </p>
-                      ))}
-                    <p className="text-xs text-slate-400">
-                      Комиссии, funding и переводы — фактические записи BingX за месяц. Итог
-                      сделок — чистый результат по цене, поэтому он не включает эти списания.
-                    </p>
-                    <ExchangeRecordsDetails exchange={exchange} />
-                  </>
-                ) : (
-                  <>
-                    {stat.adjustmentsUsd !== 0 && (
-                      <DepositRow
-                        label="Пополнения/выводы за месяц (админка)"
-                        value={stat.adjustmentsUsd}
-                      />
-                    )}
-                    {showEstimatedOther && (
-                      <DepositRow
-                        label="Комиссии, funding и прочее (оценка)"
-                        value={estimatedOtherUsd}
-                      />
-                    )}
-                    {(stat.adjustmentsUsd !== 0 || showEstimatedOther) && (
-                      <p className="text-xs text-slate-400">
-                        Факт начислений BingX за этот месяц недоступен (история биржи
-                        ограничена по глубине) — показана оценка: конец − начало − итог
-                        сделок − записанные пополнения.
-                      </p>
-                    )}
-                  </>
+
+                {monthPnl !== null && (
+                  <div className="flex items-baseline justify-between border-t border-line pt-2.5">
+                    <span className="text-xs text-slate-500">PnL за месяц (BingX)</span>
+                    <span className={`text-base font-semibold tabular-nums ${monthPnlColorClass}`}>
+                      {formatSignedUsd(monthPnl)}
+                    </span>
+                  </div>
+                )}
+                {monthPnl !== null && (
+                  <p className="text-xs text-slate-400">
+                    Точный результат месяца по журналу биржи: все позиции (включая открытые
+                    мимо приложения), с комиссиями и funding; пополнения/выводы не входят.
+                    «Итог» выше — только сделки приложения, по ценам без комиссий.
+                  </p>
                 )}
               </div>
             )}
