@@ -71,7 +71,11 @@ export type MonthlyStat = {
   daysInMonth: number;
   /** Разбивка по пресетам RR_PRESETS: полные тейки + исполненные partial (см. resolveMonthlyRrPresetBucket). */
   byRRPreset: MonthlyRRPresetCount[];
-  /** Депозит на начало месяца — восстановлен от последнего снимка эквити (computeBaselineEquity). Null — снимков ещё не было. */
+  /**
+   * Депозит на начало месяца — от БЛИЖАЙШЕГО к границе реального снимка эквити
+   * (снимок ровно на 1-е число берётся как есть; иначе от соседнего снимка
+   * докручивается PnL/пополнения за зазор — computeBaselineEquity). Null — снимков ещё не было.
+   */
   startEquity: number | null;
   /**
    * Депозит на конец месяца; для текущего месяца — сам якорный снимок (сегодняшний факт).
@@ -303,7 +307,26 @@ export function computeMonthlyStats(
   anchor: EquityAnchor | null,
   adjustments: EquityAdjustmentInput[] = [],
   today: Date = new Date(),
+  snapshots: EquityAnchor[] = [],
 ): MonthlyStat[] {
+  // Якорь для границы месяца — БЛИЖАЙШИЙ к ней реальный снимок (решение от 30.08.2026;
+  // раньше всё восстанавливалось от одного последнего снимка, и «конец = начало + PnL +
+  // записанные пополнения» сходилось по построению — незанесённое в админку пополнение
+  // было невозможно увидеть, оно молча искажало все прошлые месяцы). Ближайший снимок
+  // локализует дрейф зазором в дни, а снимок ровно на границе делает цифру фактом.
+  const boundarySnapshots = snapshots.length > 0 ? snapshots : anchor ? [anchor] : [];
+  function nearestAnchor(boundaryKey: string): EquityAnchor | null {
+    let before: EquityAnchor | null = null;
+    let after: EquityAnchor | null = null;
+    for (const snapshot of boundarySnapshots) {
+      if (snapshot.date <= boundaryKey) {
+        if (!before || snapshot.date > before.date) before = snapshot;
+      } else if (!after || snapshot.date < after.date) {
+        after = snapshot;
+      }
+    }
+    return before ?? after;
+  }
   type Bucket = {
     year: number;
     month: number;
@@ -389,18 +412,23 @@ export function computeMonthlyStats(
     const monthStartKey = `${year}-${pad2(month)}-01`;
     const nextMonthStartKey =
       month === 12 ? `${year + 1}-01-01` : `${year}-${pad2(month + 1)}-01`;
-    const equityBaseline = anchor
-      ? computeBaselineEquity(monthStartKey, anchor, trades, adjustments, tzOffsetMinutes)
+    const startAnchor = nearestAnchor(monthStartKey);
+    const equityBaseline = startAnchor
+      ? computeBaselineEquity(monthStartKey, startAnchor, trades, adjustments, tzOffsetMinutes)
       : null;
     const resultPct = equityBaseline && equityBaseline > 0 ? (sumUsd / equityBaseline) * 100 : null;
 
-    // Конец месяца: якорь (последний снимок) внутри месяца — это и есть сегодняшний факт;
-    // для прошлых месяцев конец = восстановленное начало следующего месяца.
-    const endEquity = anchor
-      ? anchor.date >= monthStartKey && anchor.date < nextMonthStartKey
-        ? anchor.equity
-        : computeBaselineEquity(nextMonthStartKey, anchor, trades, adjustments, tzOffsetMinutes)
-      : null;
+    // Конец месяца: последний снимок внутри текущего месяца — это и есть сегодняшний факт;
+    // для прошлых месяцев конец = начало следующего месяца (от ближайшего к нему снимка).
+    let endEquity: number | null = null;
+    if (anchor && anchor.date >= monthStartKey && anchor.date < nextMonthStartKey) {
+      endEquity = anchor.equity;
+    } else {
+      const endAnchor = nearestAnchor(nextMonthStartKey);
+      endEquity = endAnchor
+        ? computeBaselineEquity(nextMonthStartKey, endAnchor, trades, adjustments, tzOffsetMinutes)
+        : null;
+    }
 
     let monthAdjustmentsUsd = 0;
     for (const adjustment of adjustments) {

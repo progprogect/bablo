@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { listEquityAdjustments } from "../db/repositories/equityAdjustments.js";
-import { getLatestEquitySnapshot, listEquitySnapshots } from "../db/repositories/equitySnapshots.js";
+import { listEquitySnapshots } from "../db/repositories/equitySnapshots.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
 import { listAllClosedTrades } from "../db/repositories/trades.js";
 import { computeTradeInsights, type InsightTradeInput } from "../history/insights.js";
@@ -9,10 +9,10 @@ import { requireAuth } from "./plugins/auth-guard.js";
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/stats", { preHandler: requireAuth }, async () => {
-    const [rows, riskSettings, latestSnapshot, adjustmentRows] = await Promise.all([
+    const [rows, riskSettings, snapshotRows, adjustmentRows] = await Promise.all([
       listAllClosedTrades(),
       getRiskSettings(),
-      getLatestEquitySnapshot(),
+      listEquitySnapshots(),
       listEquityAdjustments(),
     ]);
 
@@ -54,15 +54,24 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       statsOutcome: row.statsOutcome,
     }));
 
-    // Якорь — последний известный снимок эквити. От него computeMonthlyStats "откручивает"
-    // назад баланс на начало каждого прошлого месяца (см. history/monthlyStats.ts), поэтому
-    // отдельный снимок ровно на начало месяца не требуется.
-    const anchor: EquityAnchor | null = latestSnapshot
-      ? { date: latestSnapshot.date, equity: Number(latestSnapshot.equity) }
-      : null;
+    // Все дневные снимки эквити: границы месяцев считаются от БЛИЖАЙШЕГО к границе
+    // снимка (см. history/monthlyStats.ts), последний снимок — якорь «сейчас»
+    // для текущего месяца.
+    const snapshots: EquityAnchor[] = snapshotRows.map((row) => ({
+      date: row.date,
+      equity: Number(row.equity),
+    }));
+    const anchor: EquityAnchor | null = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
     const adjustments = adjustmentRows.map((row) => ({ date: row.date, amountUsd: Number(row.amountUsd) }));
 
-    const monthly = computeMonthlyStats(monthlyInputs, riskSettings.tzOffsetMinutes, anchor, adjustments);
+    const monthly = computeMonthlyStats(
+      monthlyInputs,
+      riskSettings.tzOffsetMinutes,
+      anchor,
+      adjustments,
+      new Date(),
+      snapshots,
+    );
 
     return { insights, monthly };
   });

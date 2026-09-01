@@ -713,3 +713,43 @@ test("computeMonthlyStats: депозит на начало/конец меся�
   assert.equal(july?.endEquity, 1150);
   assert.equal(july?.adjustmentsUsd, 50);
 });
+
+test("computeMonthlyStats: границы месяцев от реальных снимков — незанесённое пополнение видно", () => {
+  // Пополнение 50$ на бирже в июле НЕ занесено в админку. Раньше всё восстанавливалось
+  // от одного последнего снимка и «конец = начало + PnL» сходилось по построению —
+  // пополнение было невозможно увидеть. С реальными снимками на границах оно видно:
+  // конец июля (1150) ≠ начало (1000) + PnL (100).
+  const trades = [
+    trade({ openedAt: "2026-07-10T10:00:00Z", closedAt: "2026-07-10T12:00:00Z", resultR: 5, riskUsd: 20 }), // +100$
+    trade({ openedAt: "2026-08-02T10:00:00Z", closedAt: "2026-08-02T12:00:00Z", resultR: 2, riskUsd: 20 }), // +40$
+  ];
+  const snapshots = [
+    { date: "2026-07-01", equity: 1000 },
+    { date: "2026-08-01", equity: 1150 },
+    { date: "2026-08-10", equity: 1190 },
+  ];
+  const anchor = snapshots[snapshots.length - 1]!;
+  const stats = computeMonthlyStats(trades, TZ, anchor, [], new Date("2026-08-10T12:00:00Z"), snapshots);
+  const july = stats.find((s) => s.month === 7);
+  const august = stats.find((s) => s.month === 8);
+
+  assert.equal(july?.startEquity, 1000); // снимок ровно на границе — берётся как есть
+  assert.equal(july?.endEquity, 1150); // реальный снимок 01.08, а не «1000 + 100»
+  assert.equal(july?.adjustmentsUsd, 0); // в админке пополнение не записано
+  assert.equal(july?.resultPct, 10); // 100$ / 1000$
+
+  assert.equal(august?.startEquity, 1150);
+  assert.equal(august?.endEquity, 1190); // текущий месяц: последний снимок = сегодняшний факт
+});
+
+test("computeMonthlyStats: без снимков на границах — откат от ближайшего, как раньше", () => {
+  // Только один снимок (якорь) — поведение прежнее: начало восстанавливается формулой.
+  const trades = [
+    trade({ openedAt: "2026-07-10T10:00:00Z", closedAt: "2026-07-10T12:00:00Z", resultR: 5, riskUsd: 20 }),
+  ];
+  const anchor = { date: "2026-08-10", equity: 1100 };
+  const stats = computeMonthlyStats(trades, TZ, anchor, [], new Date("2026-08-10T12:00:00Z"), [anchor]);
+  const july = stats.find((s) => s.month === 7);
+  assert.equal(july?.startEquity, 1000);
+  assert.equal(july?.endEquity, 1100);
+});
