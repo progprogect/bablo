@@ -1,5 +1,28 @@
 import type { BingXIncomeRecord } from "../bingx/client.js";
 
+/**
+ * Баланс на ТОЧНЫЙ момент границы месяца — тот же, что у группировки статистики
+ * (localMonthUtcRange), без всяких «≈»: журнал начислений биржи — полная летопись
+ * изменений баланса, поэтому «текущий баланс минус все записи после границы» даёт
+ * точное значение на границу. Требует полного журнала от границы до «сейчас» —
+ * вызывающая сторона обязана проверить полноту (кап пагинации, глубина хранения).
+ */
+export function balanceAtBoundary(
+  currentBalance: number,
+  records: BingXIncomeRecord[],
+  boundaryMs: number,
+): number {
+  let sumAfter = 0;
+  for (const record of records) {
+    const amount = Number(record.income);
+    if (!Number.isFinite(amount)) continue;
+    if (record.time >= boundaryMs) {
+      sumAfter += amount;
+    }
+  }
+  return currentBalance - sumAfter;
+}
+
 export type TradeForIncomeMatch = {
   id: number;
   symbol: string;
