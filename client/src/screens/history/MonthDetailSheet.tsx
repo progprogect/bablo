@@ -59,6 +59,46 @@ function formatEquity(value: number): string {
   return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 }
 
+type MismatchedTrade = { trade: Trade; app: number; onExchange: number; diff: number };
+
+/** Список сделок, где сумма приложения разошлась с фактом биржи — раскрывается по кнопке. */
+function MismatchedTradesList({ items }: { items: MismatchedTrade[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+      >
+        {open ? "Скрыть расходящиеся сделки" : `Показать расходящиеся сделки (${items.length})`}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-1">
+          {items.map(({ trade, app, onExchange, diff }) => (
+            <div key={trade.id} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="text-slate-500">
+                {trade.symbol.replace(/-USDT$/, "")} ·{" "}
+                {new Date(trade.openedAt).toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span className="tabular-nums text-slate-600">
+                {app.toFixed(2)} → {onExchange.toFixed(2)}{" "}
+                <span className="text-amber-700">({formatSignedUsd(diff)})</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
     day: "2-digit",
@@ -187,15 +227,24 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
         exchange.otherUsd -
         exchange.transfersUsd
       : null;
-  // Итог сделок приложения против PnL биржи: расходятся — какие-то сделки не учтены.
+  // Итог сделок приложения против PnL биржи.
   const pnlGapUsd = exchange ? exchange.realizedPnlUsd - netSum : null;
-  // Число записей REALIZED_PNL = число закрытий на бирже. Сравнение с числом сделок в
-  // приложении отвечает на «все ли сделки учтены» фактом, а не догадкой.
-  const closeRecordCount = exchange
-    ? exchange.byType
-        .filter((entry) => entry.type.toUpperCase().includes("PNL"))
-        .reduce((sum, entry) => sum + entry.count, 0)
-    : null;
+  /**
+   * Конкретные сделки, где наша сумма разошлась с фактом биржи, — их чинит «Пересчитать»
+   * в админке. Считать расхождение по ЧИСЛУ записей нельзя (было до 30.08.2026 и врало):
+   * частичная фиксация закрывает сделку в два приёма и даёт две записи REALIZED_PNL.
+   */
+  const mismatchedTrades = (trades ?? [])
+    .map((trade) => {
+      const app = realizedPnlUsd(trade);
+      const onExchange = trade.exchangePnlUsd ?? null;
+      if (app === null || onExchange === null) return null;
+      const diff = onExchange - app;
+      return Math.abs(diff) >= 0.5 ? { trade, app, onExchange, diff } : null;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  const mismatchedSumUsd = mismatchedTrades.reduce((sum, entry) => sum + entry.diff, 0);
   // Оценка на случай, когда факта с биржи нет (месяц старше глубины хранения BingX).
   const estimatedOtherUsd =
     !exchange && stat.startEquity !== null && stat.endEquity !== null
@@ -282,17 +331,25 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                       <DepositRow label="Пополнения/выводы (BingX)" value={exchange.transfersUsd} />
                     )}
                     {pnlGapUsd !== null && Math.abs(pnlGapUsd) >= 0.5 && (
-                      <p className="text-xs text-amber-700">
-                        Итог сделок в приложении ({formatSignedUsd(netSum)}) расходится с PnL
-                        биржи на {formatSignedUsd(pnlGapUsd)}.{" "}
-                        {closeRecordCount !== null
-                          ? `Закрытий по данным биржи: ${closeRecordCount}, сделок в приложении: ${trades.length}${
-                              closeRecordCount === trades.length
-                                ? " — все сделки на месте, расходятся суммы (комиссии внутри цены закрытия, ручные правки R)."
-                                : " — часть сделок не учтена в приложении."
-                            }`
-                          : "Возможно, часть сделок не учтена в приложении."}
-                      </p>
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs text-amber-700">
+                          Итог сделок в приложении ({formatSignedUsd(netSum)}) расходится с PnL
+                          биржи на {formatSignedUsd(pnlGapUsd)}.
+                          {mismatchedTrades.length > 0
+                            ? ` Расходятся ${mismatchedTrades.length} из ${trades.length} сделок на ${formatSignedUsd(mismatchedSumUsd)} — их суммы записаны неверно, лечится кнопкой «Пересчитать» в админке.`
+                            : " По отдельным сделкам расхождений нет."}
+                        </p>
+                        {exchange.unmatchedCount > 0 && (
+                          <p className="text-xs text-amber-700">
+                            Записей биржи вне сделок приложения: {exchange.unmatchedCount} на{" "}
+                            {formatSignedUsd(exchange.unmatchedPnlUsd)} — позиции, открытые
+                            мимо приложения.
+                          </p>
+                        )}
+                        {mismatchedTrades.length > 0 && (
+                          <MismatchedTradesList items={mismatchedTrades} />
+                        )}
+                      </div>
                     )}
                     {mismatchUsd !== null ? (
                       Math.abs(mismatchUsd) >= 0.5 ? (

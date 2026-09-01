@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summarizeIncome } from "./incomeSummary.js";
+import { matchIncomeToTrades, summarizeIncome } from "./incomeSummary.js";
 
 test("summarizeIncome: раскладывает начисления по типам", () => {
   const summary = summarizeIncome([
@@ -62,4 +62,66 @@ test("summarizeIncome: сырая разбивка по типам и окно �
   assert.ok(Math.abs((summary.byType[1]?.sumUsd ?? 0) - 18.26) < 1e-9);
   assert.equal(summary.firstRecordAt, new Date(Date.UTC(2026, 7, 5)).toISOString());
   assert.equal(summary.lastRecordAt, new Date(Date.UTC(2026, 7, 20)).toISOString());
+});
+
+test("matchIncomeToTrades: частичная фиксация даёт две записи на одну сделку", () => {
+  // Кейс от 30.08.2026: 63 записи REALIZED_PNL при 54 сделках выглядели как «часть сделок
+  // не учтена», хотя это были частичные фиксации — одна сделка, два закрытия.
+  const trade = {
+    id: 1,
+    symbol: "TIA-USDT",
+    openedAt: new Date("2026-08-05T10:00:00Z"),
+    closedAt: new Date("2026-08-05T14:00:00Z"),
+  };
+  const result = matchIncomeToTrades(
+    [
+      { incomeType: "REALIZED_PNL", income: "20", symbol: "TIA-USDT", time: Date.parse("2026-08-05T12:00:00Z") },
+      { incomeType: "REALIZED_PNL", income: "5", symbol: "TIA-USDT", time: Date.parse("2026-08-05T14:00:00Z") },
+      { incomeType: "TRADING_FEE", income: "-2", symbol: "TIA-USDT", time: Date.parse("2026-08-05T14:00:00Z") },
+    ],
+    [trade],
+  );
+  assert.equal(result.pnlByTradeId.get(1), 25);
+  assert.equal(result.unmatchedCount, 0);
+});
+
+test("matchIncomeToTrades: записи вне интервалов сделок — позиции мимо приложения", () => {
+  const trades = [
+    {
+      id: 1,
+      symbol: "TIA-USDT",
+      openedAt: new Date("2026-08-05T10:00:00Z"),
+      closedAt: new Date("2026-08-05T11:00:00Z"),
+    },
+  ];
+  const result = matchIncomeToTrades(
+    [
+      { incomeType: "REALIZED_PNL", income: "10", symbol: "TIA-USDT", time: Date.parse("2026-08-05T10:30:00Z") },
+      // другой символ в то же время — приложение о такой позиции не знает
+      { incomeType: "REALIZED_PNL", income: "-7", symbol: "WLD-USDT", time: Date.parse("2026-08-05T10:30:00Z") },
+      // тот же символ, но задолго после закрытия
+      { incomeType: "REALIZED_PNL", income: "-3", symbol: "TIA-USDT", time: Date.parse("2026-08-06T10:00:00Z") },
+    ],
+    trades,
+  );
+  assert.equal(result.pnlByTradeId.get(1), 10);
+  assert.equal(result.unmatchedCount, 2);
+  assert.equal(result.unmatchedPnlUsd, -10);
+});
+
+test("matchIncomeToTrades: соседние сделки по одному символу не путаются", () => {
+  const trades = [
+    { id: 1, symbol: "TIA-USDT", openedAt: new Date("2026-08-05T10:00:00Z"), closedAt: new Date("2026-08-05T11:00:00Z") },
+    { id: 2, symbol: "TIA-USDT", openedAt: new Date("2026-08-05T12:00:00Z"), closedAt: new Date("2026-08-05T13:00:00Z") },
+  ];
+  const result = matchIncomeToTrades(
+    [
+      { incomeType: "REALIZED_PNL", income: "10", symbol: "TIA-USDT", time: Date.parse("2026-08-05T11:00:00Z") },
+      { incomeType: "REALIZED_PNL", income: "-4", symbol: "TIA-USDT", time: Date.parse("2026-08-05T13:00:00Z") },
+    ],
+    trades,
+  );
+  assert.equal(result.pnlByTradeId.get(1), 10);
+  assert.equal(result.pnlByTradeId.get(2), -4);
+  assert.equal(result.unmatchedCount, 0);
 });
