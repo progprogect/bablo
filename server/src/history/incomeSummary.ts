@@ -1,5 +1,75 @@
 import type { BingXIncomeRecord } from "../bingx/client.js";
 
+export type TradeForIncomeMatch = {
+  id: number;
+  symbol: string;
+  openedAt: Date;
+  closedAt: Date | null;
+};
+
+export type IncomeMatchResult = {
+  /** Реализованный PnL биржи по каждой сделке (id → сумма записей REALIZED_PNL). */
+  pnlByTradeId: Map<number, number>;
+  /** PnL записей, не попавших ни в одну сделку — позиции, открытые мимо приложения. */
+  unmatchedPnlUsd: number;
+  unmatchedCount: number;
+};
+
+/** Запись закрытия может прийти чуть раньше, чем приложение зафиксировало сделку, или чуть позже. */
+const MATCH_BEFORE_OPEN_MS = 60_000;
+const MATCH_AFTER_CLOSE_MS = 5 * 60_000;
+
+/**
+ * Привязывает записи REALIZED_PNL к сделкам по символу и времени. Приложение держит
+ * одновременно только ОДНУ активную сделку, поэтому интервалы сделок не пересекаются и
+ * привязка однозначна. Одна сделка может дать несколько записей — частичная фиксация
+ * закрывает позицию по частям, и каждое исполнение приходит отдельной записью
+ * (именно поэтому число записей больше числа сделок — это норма, а не потеря данных).
+ *
+ * Нужно, чтобы найти КОНКРЕТНЫЕ сделки, где сумма приложения разошлась с биржей, —
+ * их потом чинит «Пересчитать» в админке.
+ */
+export function matchIncomeToTrades(
+  records: BingXIncomeRecord[],
+  trades: TradeForIncomeMatch[],
+): IncomeMatchResult {
+  const pnlByTradeId = new Map<number, number>();
+  let unmatchedPnlUsd = 0;
+  let unmatchedCount = 0;
+
+  const closed = trades.filter((trade) => trade.closedAt !== null);
+
+  for (const record of records) {
+    if (!record.incomeType.toUpperCase().includes("PNL")) continue;
+    const amount = Number(record.income);
+    if (!Number.isFinite(amount)) continue;
+
+    const candidates = closed.filter(
+      (trade) =>
+        (!record.symbol || trade.symbol === record.symbol) &&
+        record.time >= trade.openedAt.getTime() - MATCH_BEFORE_OPEN_MS &&
+        record.time <= trade.closedAt!.getTime() + MATCH_AFTER_CLOSE_MS,
+    );
+
+    if (candidates.length === 0) {
+      unmatchedPnlUsd += amount;
+      unmatchedCount += 1;
+      continue;
+    }
+
+    // На всякий случай (пересекающиеся интервалы из-за буферов) — ближайшая по закрытию.
+    const best = candidates.reduce((closest, trade) =>
+      Math.abs(record.time - trade.closedAt!.getTime()) <
+      Math.abs(record.time - closest.closedAt!.getTime())
+        ? trade
+        : closest,
+    );
+    pnlByTradeId.set(best.id, (pnlByTradeId.get(best.id) ?? 0) + amount);
+  }
+
+  return { pnlByTradeId, unmatchedPnlUsd, unmatchedCount };
+}
+
 /**
  * Суммы начислений фьючерсного счёта за период — ФАКТ с биржи для сверки месячной
  * статистики (блок «Депозит» в детализации месяца): не наша оценка «что осталось

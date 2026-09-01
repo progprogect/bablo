@@ -63,6 +63,11 @@ export type Trade = {
    * из админки). Считает сервер, см. api/trades.ts. Есть только у закрытых сделок.
    */
   statsResultR?: number | null;
+  /**
+   * Реализованный PnL этой сделки ПО ДАННЫМ БИРЖИ (сумма записей REALIZED_PNL за её
+   * интервал). Приходит только в детализации месяца; null — записей биржи нет.
+   */
+  exchangePnlUsd?: number | null;
   closePrice: string | null;
   resultR: string | null;
   resultPct: string | null;
@@ -228,4 +233,7 @@ export type MonthExchangeSummary = {
   /** Границы полученных записей: уже месяца — история биржи неполная. */
   firstRecordAt: string | null;
   lastRecordAt: string | null;
+  /** PnL записей, не привязавшихся ни к одной сделке — позиции, открытые мимо приложения. */
+  unmatchedPnlUsd: number;
+  unmatchedCount: number;
 };

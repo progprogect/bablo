@@ -5,7 +5,11 @@ import type { TradeSide } from "../trades/math.js";
 import { listClosedTrades, listClosedTradesBetween, type Trade } from "../db/repositories/trades.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
 import { getIncomeHistory, type BingXCredentials, type BingXIncomeRecord } from "../bingx/client.js";
-import { summarizeIncome, type IncomeSummary } from "../history/incomeSummary.js";
+import {
+  matchIncomeToTrades,
+  summarizeIncome,
+  type IncomeSummary,
+} from "../history/incomeSummary.js";
 import { localMonthUtcRange } from "../history/monthlyStats.js";
 import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
@@ -96,7 +100,9 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       const { from, to } = localMonthUtcRange(year, month, tzOffsetMinutes);
       const rows = await listClosedTradesBetween(from, to);
 
-      let exchange: IncomeSummary | null = null;
+      let exchange: (IncomeSummary & { unmatchedPnlUsd: number; unmatchedCount: number }) | null =
+        null;
+      let pnlByTradeId = new Map<number, number>();
       try {
         const credentials = await getBingxCredentials();
         if (credentials) {
@@ -104,13 +110,28 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
           const summary = summarizeIncome(records);
           // Пустой ответ при наличии сделок — глубина хранения BingX закончилась,
           // а не «месяц без комиссий»: сверку не показываем, чтобы не врать нулями.
-          exchange = summary.recordCount > 0 ? summary : null;
+          if (summary.recordCount > 0) {
+            const matched = matchIncomeToTrades(records, rows);
+            pnlByTradeId = matched.pnlByTradeId;
+            exchange = {
+              ...summary,
+              unmatchedPnlUsd: matched.unmatchedPnlUsd,
+              unmatchedCount: matched.unmatchedCount,
+            };
+          }
         }
       } catch (error) {
         request.log.warn({ err: error }, "не удалось получить начисления BingX за месяц");
       }
 
-      return { trades: rows.map(withOutcome), exchange };
+      // exchangePnlUsd на каждой сделке — факт биржи против нашей суммы: видно, какие
+      // именно сделки записаны неверно (их чинит «Пересчитать» в админке).
+      const trades = rows.map((row) => ({
+        ...withOutcome(row),
+        exchangePnlUsd: pnlByTradeId.get(row.id) ?? null,
+      }));
+
+      return { trades, exchange };
     },
   );
 
