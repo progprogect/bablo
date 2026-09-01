@@ -227,6 +227,19 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
         exchange.otherUsd -
         exchange.transfersUsd
       : null;
+  /**
+   * Границы месяца из журнала биржи — ТОЧНЫЕ значения на те же даты, что у статистики
+   * (полночь 1-го числа МСК), в отличие от «≈» по снимкам. С ними строка «не сходится»
+   * не нужна (конец − начало = сумма записей по построению журнала); честной проверкой
+   * становится сверка против независимого источника — наших дневных снимков баланса.
+   */
+  const ledgerStart = exchange?.balanceStartUsd ?? null;
+  const ledgerEnd = exchange?.balanceEndUsd ?? null;
+  const hasLedgerBalances = ledgerStart !== null && ledgerEnd !== null;
+  const startSnapshotGap =
+    hasLedgerBalances && stat.startBalance !== null ? ledgerStart - stat.startBalance : null;
+  const endSnapshotGap =
+    hasLedgerBalances && stat.endBalance !== null ? ledgerEnd - stat.endBalance : null;
   // Итог сделок приложения против PnL биржи.
   const pnlGapUsd = exchange ? exchange.realizedPnlUsd - netSum : null;
   /**
@@ -286,34 +299,76 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
               </div>
             </div>
 
-            {(stat.startEquity !== null || stat.endEquity !== null) && (
+            {(stat.startEquity !== null || stat.endEquity !== null || hasLedgerBalances) && (
               <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
                 <h3 className="text-sm font-medium text-ink">Депозит</h3>
-                {stat.startEquity !== null && (
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-xs text-slate-500">На начало месяца</span>
-                    <span className="font-medium tabular-nums text-ink">
-                      {stat.startEquityExact ? "" : "≈ "}
-                      {formatEquity(stat.startEquity)}
-                    </span>
-                  </div>
+                {hasLedgerBalances ? (
+                  <>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-xs text-slate-500">На начало месяца</span>
+                      <span className="font-medium tabular-nums text-ink">
+                        {formatEquity(ledgerStart!)}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-xs text-slate-500">
+                        {isCurrentMonth ? "Сейчас" : "На конец месяца"}
+                      </span>
+                      <span className="font-medium tabular-nums text-ink">
+                        {formatEquity(ledgerEnd!)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Баланс по журналу биржи ровно на границах месяца — те же даты, что у
+                      всей статистики (полночь 1-го числа МСК); нереализованный PnL открытых
+                      позиций не входит.
+                    </p>
+                    {startSnapshotGap !== null && Math.abs(startSnapshotGap) >= 0.5 && (
+                      <p className="text-xs text-amber-700">
+                        Журнал биржи расходится с нашим снимком баланса на начало месяца на{" "}
+                        {formatSignedUsd(startSnapshotGap)} — возможно, история начислений
+                        неполная.
+                      </p>
+                    )}
+                    {endSnapshotGap !== null && Math.abs(endSnapshotGap) >= 0.5 && (
+                      <p className="text-xs text-amber-700">
+                        Журнал биржи расходится с нашим снимком баланса на конец месяца на{" "}
+                        {formatSignedUsd(endSnapshotGap)} — возможно, история начислений
+                        неполная.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {stat.startEquity !== null && (
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="text-xs text-slate-500">На начало месяца</span>
+                        <span className="font-medium tabular-nums text-ink">
+                          {stat.startEquityExact ? "" : "≈ "}
+                          {formatEquity(stat.startEquity)}
+                        </span>
+                      </div>
+                    )}
+                    {stat.endEquity !== null && (
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="text-xs text-slate-500">
+                          {isCurrentMonth ? "Сейчас" : "На конец месяца"}
+                        </span>
+                        <span className="font-medium tabular-nums text-ink">
+                          {stat.endEquityExact ? "" : "≈ "}
+                          {formatEquity(stat.endEquity)}
+                        </span>
+                      </div>
+                    )}
+                    {(stat.startEquity !== null && !stat.startEquityExact) ||
+                    (stat.endEquity !== null && !stat.endEquityExact) ? (
+                      <p className="text-xs text-slate-400">
+                        «≈» — снимка баланса на эту дату нет, значение восстановлено расчётом
+                        от ближайшего снимка и не учитывает комиссии за этот промежуток.
+                      </p>
+                    ) : null}
+                  </>
                 )}
-                {stat.endEquity !== null && (
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-xs text-slate-500">{isCurrentMonth ? "Сейчас" : "На конец месяца"}</span>
-                    <span className="font-medium tabular-nums text-ink">
-                      {stat.endEquityExact ? "" : "≈ "}
-                      {formatEquity(stat.endEquity)}
-                    </span>
-                  </div>
-                )}
-                {(stat.startEquity !== null && !stat.startEquityExact) ||
-                (stat.endEquity !== null && !stat.endEquityExact) ? (
-                  <p className="text-xs text-slate-400">
-                    «≈» — снимка баланса на эту дату нет, значение восстановлено расчётом от
-                    ближайшего снимка и не учитывает комиссии за этот промежуток.
-                  </p>
-                ) : null}
                 {exchange ? (
                   <>
                     <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
@@ -351,28 +406,31 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                         )}
                       </div>
                     )}
-                    {mismatchUsd !== null ? (
-                      Math.abs(mismatchUsd) >= 0.5 ? (
-                        <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
-                          <span className="text-xs text-amber-700">Не сходится на</span>
-                          <span className="font-medium tabular-nums text-amber-700">
-                            {formatSignedUsd(mismatchUsd)}
-                          </span>
-                        </div>
+                    {/* С точными границами из журнала биржи «конец − начало = сумма записей»
+                        выполняется по построению — отдельная строка сверки не нужна;
+                        честные сигналы выше: расходящиеся сделки, записи вне сделок и
+                        сверка журнала с независимыми дневными снимками. */}
+                    {!hasLedgerBalances &&
+                      (mismatchUsd !== null ? (
+                        Math.abs(mismatchUsd) >= 0.5 ? (
+                          <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
+                            <span className="text-xs text-amber-700">Не сходится на</span>
+                            <span className="font-medium tabular-nums text-amber-700">
+                              {formatSignedUsd(mismatchUsd)}
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="border-t border-line pt-2 text-xs text-emerald-600">
+                            Сходится с фактом биржи: баланс начала + PnL + комиссии + funding +
+                            переводы = баланс конца месяца.
+                          </p>
+                        )
                       ) : (
-                        <p className="border-t border-line pt-2 text-xs text-emerald-600">
-                          Сходится с фактом биржи: баланс начала + PnL + комиссии + funding +
-                          переводы = баланс конца месяца.
+                        <p className="border-t border-line pt-2 text-xs text-slate-400">
+                          Журнал биржи за месяц неполный, а снимков баланса ровно на границах
+                          нет — точные границы месяца восстановить не из чего, показана оценка.
                         </p>
-                      )
-                    ) : (
-                      <p className="border-t border-line pt-2 text-xs text-slate-400">
-                        Точная сверка появится, когда будут снимки баланса ровно на границах
-                        месяца: депозит выше включает нереализованный PnL открытых позиций и
-                        частично восстановлен расчётом, поэтому сводить его с начислениями
-                        биржи некорректно.
-                      </p>
-                    )}
+                      ))}
                     <p className="text-xs text-slate-400">
                       Комиссии, funding и переводы — фактические записи BingX за месяц. Итог
                       сделок — чистый результат по цене, поэтому он не включает эти списания.

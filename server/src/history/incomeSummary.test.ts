@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchIncomeToTrades, summarizeIncome } from "./incomeSummary.js";
+import { balanceAtBoundary, matchIncomeToTrades, summarizeIncome } from "./incomeSummary.js";
 
 test("summarizeIncome: раскладывает начисления по типам", () => {
   const summary = summarizeIncome([
@@ -124,4 +124,25 @@ test("matchIncomeToTrades: соседние сделки по одному си�
   assert.equal(result.pnlByTradeId.get(1), 10);
   assert.equal(result.pnlByTradeId.get(2), -4);
   assert.equal(result.unmatchedCount, 0);
+});
+
+test("balanceAtBoundary: баланс на границу = текущий минус записи после неё", () => {
+  const boundary = Date.parse("2026-09-01T00:00:00Z");
+  const records = [
+    // до границы — не влияют
+    { incomeType: "REALIZED_PNL", income: "18.26", time: Date.parse("2026-08-20T10:00:00Z") },
+    { incomeType: "TRADING_FEE", income: "-152.51", time: Date.parse("2026-08-20T10:00:00Z") },
+    // после границы — откручиваются от текущего баланса
+    { incomeType: "REALIZED_PNL", income: "10", time: Date.parse("2026-09-02T10:00:00Z") },
+    { incomeType: "TRADING_FEE", income: "-3", time: Date.parse("2026-09-02T10:00:00Z") },
+    { incomeType: "TRANSFER", income: "50", time: Date.parse("2026-09-03T10:00:00Z") },
+  ];
+  // Сейчас 254: границу восстановит как 254 − (10 − 3 + 50) = 197.
+  assert.ok(Math.abs(balanceAtBoundary(254, records, boundary) - 197) < 1e-9);
+  // Запись ровно на границе относится к новому месяцу ([from, to) — как у сделок).
+  assert.ok(
+    Math.abs(
+      balanceAtBoundary(254, [...records, { incomeType: "TRANSFER", income: "5", time: boundary }], boundary) - 192,
+    ) < 1e-9,
+  );
 });
