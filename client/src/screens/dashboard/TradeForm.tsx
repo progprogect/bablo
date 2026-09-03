@@ -173,12 +173,6 @@ export function TradeForm({
   const [minQuantity, setMinQuantity] = useState<number | null>(null);
   const [minNotionalUsdt, setMinNotionalUsdt] = useState<number | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
-  /**
-   * Пауза-вопрос перед отправкой сделки: «Ты сейчас в ресурсном состоянии?» —
-   * напоминание себе, не блокировка (решение от 21.08.2026). «Нет» просто возвращает
-   * к форме, спрашивается при каждом нажатии «Открыть».
-   */
-  const [askingResource, setAskingResource] = useState(false);
   const [side, setSide] = useState<TradeSide | null>(null);
   const [quantity, setQuantity] = useState("");
   const [slPrice, setSlPrice] = useState("");
@@ -247,7 +241,6 @@ export function TradeForm({
     setQuantity("");
     setSlPrice("");
     setError(null);
-    setAskingResource(false);
   }
 
   function pickSide(nextSide: TradeSide) {
@@ -258,7 +251,6 @@ export function TradeForm({
 
   async function handleConfirm() {
     if (!side || validation.status !== "ok") return;
-    setAskingResource(false);
     setError(null);
     setIsSubmitting(true);
     try {
@@ -413,44 +405,16 @@ export function TradeForm({
 
       {error && <p className="text-center text-sm text-red-600">{error}</p>}
 
-      {askingResource ? (
-        <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-3.5">
-          <p className="text-center text-sm font-medium text-ink">
-            Ты сейчас в ресурсном состоянии?
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleConfirm}
-              className={`flex-1 rounded-xl py-3 font-medium text-white disabled:opacity-40 ${
-                isLong ? "bg-emerald-600" : "bg-red-600"
-              }`}
-            >
-              {isSubmitting ? "Открываю…" : "Да"}
-            </button>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => setAskingResource(false)}
-              className="flex-1 rounded-xl border border-line py-3 font-medium text-ink disabled:opacity-40"
-            >
-              Нет
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={isSubmitting || validation.status !== "ok"}
-          onClick={() => setAskingResource(true)}
-          className={`rounded-xl py-3.5 font-medium text-white disabled:opacity-40 ${
-            isLong ? "bg-emerald-600" : "bg-red-600"
-          }`}
-        >
-          {isLong ? "Открыть лонг" : "Открыть шорт"}
-        </button>
-      )}
+      <button
+        type="button"
+        disabled={isSubmitting || validation.status !== "ok"}
+        onClick={handleConfirm}
+        className={`rounded-xl py-3.5 font-medium text-white disabled:opacity-40 ${
+          isLong ? "bg-emerald-600" : "bg-red-600"
+        }`}
+      >
+        {isSubmitting ? "Открываю…" : isLong ? "Открыть лонг" : "Открыть шорт"}
+      </button>
     </div>
   );
 }
