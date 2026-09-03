@@ -736,7 +736,10 @@ test("computeMonthlyStats: границы месяцев от реальных �
   assert.equal(july?.startEquity, 1000); // снимок ровно на границе — берётся как есть
   assert.equal(july?.endEquity, 1150); // реальный снимок 01.08, а не «1000 + 100»
   assert.equal(july?.adjustmentsUsd, 0); // в админке пополнение не записано
-  assert.equal(july?.resultPct, 10); // 100$ / 1000$
+  // % — по фактическому изменению депозита (1000 → 1150). Незанесённое пополнение в него
+  // попадает и завышает результат: 15% вместо 10% по одной торговле. Это цена того, что
+  // пополнение не записано в админку (записанные вычитаются, см. adjustmentsUsd).
+  assert.equal(july?.resultPct, 15);
 
   assert.equal(august?.startEquity, 1150);
   assert.equal(august?.endEquity, 1190); // текущий месяц: последний снимок = сегодняшний факт
@@ -796,4 +799,60 @@ test("computeMonthlyStats: снимок без balance не даёт базу д
   const august = stats[0]!;
   assert.equal(august.startEquityExact, true);
   assert.equal(august.startBalance, null);
+});
+
+test("computeMonthlyStats: % месяца — по факту депозита, а не по сумме PnL сделок", () => {
+  // Реальный кейс августа 2026: по сделкам приложения +48 USDT, а депозит просел
+  // (комиссии, funding, торговля мимо приложения). Процент должен показывать факт счёта.
+  const trades = [
+    trade({ openedAt: "2026-08-05T10:00:00Z", closedAt: "2026-08-05T12:00:00Z", resultR: 2.4, riskUsd: 20 }), // +48$
+  ];
+  const snapshots = [
+    { date: "2026-08-01", equity: 237.54, balance: 237.54 },
+    { date: "2026-09-01", equity: 197.03, balance: 197.03 },
+  ];
+  const anchor = snapshots[snapshots.length - 1]!;
+  const [august] = computeMonthlyStats(trades, TZ, anchor, [], new Date("2026-09-01T12:00:00Z"), snapshots);
+  assert.ok(august);
+  // 197.03 − 237.54 = −40.51 от 237.54 ≈ −17.05%, а не +48/237.54 ≈ +20.2%
+  assert.ok(Math.abs((august.resultPct ?? 0) - (-40.51 / 237.54) * 100) < 1e-9);
+  assert.ok((august.resultPct ?? 0) < 0);
+});
+
+test("computeMonthlyStats: записанное пополнение не считается прибылью месяца", () => {
+  // Депозит вырос с 1000 до 1150, но 100$ из этого — пополнение: прибыль месяца 50$ = 5%.
+  const trades = [
+    trade({ openedAt: "2026-08-05T10:00:00Z", closedAt: "2026-08-05T12:00:00Z", resultR: 2.5, riskUsd: 20 }),
+  ];
+  const snapshots = [
+    { date: "2026-08-01", equity: 1000, balance: 1000 },
+    { date: "2026-09-01", equity: 1150, balance: 1150 },
+  ];
+  const anchor = snapshots[snapshots.length - 1]!;
+  const [august] = computeMonthlyStats(
+    trades,
+    TZ,
+    anchor,
+    [{ date: "2026-08-15", amountUsd: 100 }],
+    new Date("2026-09-01T12:00:00Z"),
+    snapshots,
+  );
+  assert.ok(august);
+  assert.equal(august.adjustmentsUsd, 100);
+  assert.ok(Math.abs((august.resultPct ?? 0) - 5) < 1e-9);
+});
+
+test("computeMonthlyStats: незакрытый месяц считается до «сейчас»", () => {
+  const trades = [
+    trade({ openedAt: "2026-08-05T10:00:00Z", closedAt: "2026-08-05T12:00:00Z", resultR: 1, riskUsd: 20 }),
+  ];
+  const snapshots = [
+    { date: "2026-08-01", equity: 500, balance: 500 },
+    { date: "2026-08-20", equity: 550, balance: 550 }, // последний снимок = сегодня
+  ];
+  const anchor = snapshots[snapshots.length - 1]!;
+  const [august] = computeMonthlyStats(trades, TZ, anchor, [], new Date("2026-08-20T12:00:00Z"), snapshots);
+  assert.ok(august);
+  assert.equal(august.endEquity, 550);
+  assert.ok(Math.abs((august.resultPct ?? 0) - 10) < 1e-9); // (550−500)/500
 });

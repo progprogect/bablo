@@ -64,7 +64,13 @@ export type MonthlyStat = {
   sumPositiveR: number;
   /** Сумма resultR только по убыточным сделкам (resultR < 0, само число отрицательное) — "сколько R потеряно". */
   sumNegativeR: number;
-  /** % к депозиту за месяц (см. computeBaselineEquity ниже). Null, только если ни одного снимка эквити ещё не было вообще. */
+  /**
+   * % за месяц по фактическому изменению депозита:
+   * (конец − начало − записанные пополнения/выводы) / начало. Незакрытый месяц — до
+   * «сейчас». Включает комиссии, funding и торговлю мимо приложения, поэтому НЕ равен
+   * сумме PnL сделок / депозит (так считалось до 31.08.2026 и расходилось с реальностью).
+   * Null — снимков эквити ещё не было, границы восстановить не из чего.
+   */
   resultPct: number | null;
   tradingDays: number;
   daysWithoutTrading: number;
@@ -441,18 +447,19 @@ export function computeMonthlyStats(
     const equityBaseline = startAnchor
       ? computeBaselineEquity(monthStartKey, startAnchor, trades, adjustments, tzOffsetMinutes)
       : null;
-    const resultPct = equityBaseline && equityBaseline > 0 ? (sumUsd / equityBaseline) * 100 : null;
 
     // Конец месяца: последний снимок внутри текущего месяца — это и есть сегодняшний факт;
     // для прошлых месяцев конец = начало следующего месяца (от ближайшего к нему снимка).
     let endEquity: number | null = null;
     let endEquityExact = false;
     let endAnchor: EquityAnchor | null = null;
-    if (anchor && anchor.date >= monthStartKey && anchor.date < nextMonthStartKey) {
+    if (isCurrentMonth && anchor && anchor.date >= monthStartKey && anchor.date < nextMonthStartKey) {
       endEquity = anchor.equity;
       endEquityExact = true; // сегодняшний снимок — факт, откручивать нечего
       endAnchor = anchor;
     } else {
+      // Прошлый месяц считаем до его конца, даже если последний снимок лежит внутри него
+      // (приложение долго не открывали): иначе «конец месяца» замер бы на дате снимка.
       endAnchor = nearestAnchor(nextMonthStartKey);
       endEquityExact = endAnchor?.date === nextMonthStartKey;
       endEquity = endAnchor
@@ -473,6 +480,22 @@ export function computeMonthlyStats(
         monthAdjustmentsUsd += adjustment.amountUsd;
       }
     }
+
+    /**
+     * % за месяц — по ФАКТИЧЕСКОМУ изменению депозита (решение от 31.08.2026; раньше
+     * считалось «сумма PnL сделок / депозит на начало», из-за чего процент не сходился
+     * с реальным движением счёта: в нём не было комиссий, funding и торговли мимо
+     * приложения — за август они превращали +48 USDT «по сделкам» в −40 на депозите).
+     *
+     * Записанные в админке пополнения/выводы вычитаются: они меняют депозит, но не
+     * являются результатом торговли — иначе пополнение выглядело бы прибылью месяца.
+     * Незакрытый месяц считается до «сейчас» (последний снимок), закрытый — до начала
+     * следующего.
+     */
+    const resultPct =
+      equityBaseline !== null && equityBaseline > 0 && endEquity !== null
+        ? ((endEquity - equityBaseline - monthAdjustmentsUsd) / equityBaseline) * 100
+        : null;
 
     result.push({
       year,
