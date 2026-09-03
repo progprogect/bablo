@@ -78,6 +78,13 @@
       "when": 1788220800000,
       "tag": "0010_snapshot_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788307200000,
+      "tag": "0011_trail_sl",
+      "breakpoints": true
     }
   ]
 }

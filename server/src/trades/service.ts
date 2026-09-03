@@ -24,6 +24,8 @@ import {
 } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
 import { sendTradeClosedPush } from "../push/service.js";
+import { bingxMessage, replaceConditionalOrder } from "./orders.js";
+import { startTrailingSlWatch, stopTrailingSlWatch } from "./trailingSlWatcher.js";
 import {
   checkCanOpenTrade,
   checkVolumeRisk,
@@ -90,9 +92,6 @@ export class TradeError extends Error {
   }
 }
 
-function bingxMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
 
 async function getActiveAssetOrThrow(symbol: string): Promise<Asset> {
   const assets = await listActiveAssets();
@@ -484,6 +483,9 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     if (!updated) {
       throw new Error("update returned null");
     }
+    // Полный тейк 1/3 или 1/4 без частичной фиксации — включаем трейлинг-лестницу SL
+    // (иначе вызов сам её выключит: пресет вне лестницы или появилась частичная).
+    startTrailingSlWatch(updated);
     return { trade: updated, partialTpWarning, slAdjustWarning };
   } catch {
     throw new TradeError(
@@ -569,6 +571,7 @@ export async function finalizeTradeClose(
     // не удалось обновить risk_state/лимиты — стоит проверить вручную через админку
   });
   stopTracking();
+  stopTrailingSlWatch();
   eventBus.emitTyped("refresh", { reason: "trade.closed" });
   // Пуш на устройства — fire-and-forget: закрытие сделки не должно ждать push-сервисы.
   sendTradeClosedPush({ ...toOutcomeInput(updated), symbol: updated.symbol }, resultR);
@@ -1082,78 +1085,8 @@ export async function repairActiveTradeSlAfterPartial(): Promise<{
   return { attempted: true, ...result };
 }
 
-export type ReplaceConditionalOrderResult =
-  | { ok: true; orderId: string | number }
-  | { ok: false; message: string; restoredOrderId: string | number | null };
-
-/**
- * Заменяет условный ордер (SL или TP) на бирже: отменяет старый, ставит новый и, если
- * новый выставить не удалось, ВОЗВРАЩАЕТ СТАРЫЙ на место.
- *
- * Без отката позиция оставалась бы вообще без стопа или без тейка: старый ордер уже
- * отменён, новый не встал, а в БД по-прежнему лежит id мёртвого ордера — по нему потом
- * не определится и причина закрытия. Восстановленный ордер получает новый id, поэтому
- * вызывающая сторона обязана сохранить `restoredOrderId` в bingxOrderIds.
- */
-async function replaceConditionalOrder(
-  credentials: BingXCredentials,
-  input: {
-    symbol: string;
-    exitSide: OrderSide;
-    type: "STOP_MARKET" | "TAKE_PROFIT_MARKET";
-    oldOrderId: string | number | undefined;
-    /** Цена старого ордера — нужна, чтобы вернуть его при сбое. null — восстанавливать нечего. */
-    oldStopPrice: number | null;
-    newStopPrice: number;
-    quantity: number;
-    failureMessage: string;
-  },
-): Promise<ReplaceConditionalOrderResult> {
-  if (input.oldOrderId !== undefined) {
-    try {
-      await cancelOrder(credentials, input.symbol, input.oldOrderId);
-    } catch (error) {
-      // Ордер мог уже исполниться/исчезнуть — пробуем выставить новый в любом случае.
-      console.warn(
-        `[trades] не удалось отменить старый ${input.type}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-
-  const place = (stopPrice: number) =>
-    placeOrder(credentials, {
-      symbol: input.symbol,
-      side: input.exitSide,
-      type: input.type,
-      stopPrice,
-      quantity: input.quantity,
-      reduceOnly: true,
-    });
-
-  try {
-    const order = await place(input.newStopPrice);
-    return { ok: true, orderId: order.orderId };
-  } catch (error) {
-    const message = bingxMessage(error, input.failureMessage);
-    console.error(`[trades] ${input.type} не выставлен:`, message);
-
-    if (input.oldStopPrice === null || !(input.oldStopPrice > 0)) {
-      return { ok: false, message, restoredOrderId: null };
-    }
-    try {
-      const restored = await place(input.oldStopPrice);
-      console.warn(`[trades] вернул прежний ${input.type} на ${input.oldStopPrice}`);
-      return { ok: false, message, restoredOrderId: restored.orderId };
-    } catch (restoreError) {
-      console.error(
-        `[trades] прежний ${input.type} восстановить не удалось:`,
-        restoreError instanceof Error ? restoreError.message : restoreError,
-      );
-      return { ok: false, message, restoredOrderId: null };
-    }
-  }
-}
+// replaceConditionalOrder и ReplaceConditionalOrderResult живут в trades/orders.ts:
+// их использует и этот модуль, и trailingSlWatcher — импорт оттуда не создаёт цикла.
 
 /**
  * Ночное правило для дневной сделки, активной после 01:00 МСК (docs/PROJECT.md).
