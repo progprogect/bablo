@@ -62,6 +62,8 @@ export type UpdateTradeInput = Partial<{
   partialTpFilledAt: Date | null;
   partialTpFillPrice: number | null;
   nightTpAppliedAt: Date;
+  /** Прогресс трейлинг-лестницы SL (trades/trailingSl.ts): triggerR применённого уровня. */
+  trailSlAppliedR: number;
   /** null — сбросить на авто; "none" — не в сетке; иначе RR_PRESETS. */
   statsRrPreset: string | null;
   /** Ручной исход для статистики: null — авто; иначе "tp" | "sl" | "be". */
@@ -98,6 +100,7 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
       input.partialTpFillPrice === null ? null : String(input.partialTpFillPrice);
   }
   if (input.nightTpAppliedAt !== undefined) patch.nightTpAppliedAt = input.nightTpAppliedAt;
+  if (input.trailSlAppliedR !== undefined) patch.trailSlAppliedR = String(input.trailSlAppliedR);
   if (input.statsRrPreset !== undefined) patch.statsRrPreset = input.statsRrPreset;
   if (input.statsOutcome !== undefined) patch.statsOutcome = input.statsOutcome;
   if (input.bingxOrderIds !== undefined) patch.bingxOrderIds = input.bingxOrderIds;

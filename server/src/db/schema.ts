@@ -79,6 +79,13 @@ export const trades = pgTable("trades", {
    */
   nightTpAppliedAt: timestamp("night_tp_applied_at", { withTimezone: true }),
   /**
+   * Последний применённый уровень трейлинг-лестницы SL для полных тейков 1/3 и 1/4
+   * (trades/trailingSl.ts): triggerR достигнутого уровня (2, 2.5, 3, 3.5). Null — лестница
+   * ещё не срабатывала. Нужен для идемпотентности: каждый уровень двигает стоп один раз,
+   * в том числе после рестарта сервера.
+   */
+  trailSlAppliedR: numeric("trail_sl_applied_r", { precision: 10, scale: 4 }),
+  /**
    * Ручная корректировка столбца R в месячной статистике (админка).
    * null — авто (partial / тейк, в т.ч. ночной 1/1); "none" — не учитывать в сетке;
    * иначе пресет из RR_PRESETS ("1/2"…). На список сделок в Истории не влияет.

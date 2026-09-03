@@ -6,6 +6,7 @@ import { eventBus } from "../events/bus.js";
 import { repairActiveTradeSlAfterPartial } from "../trades/service.js";
 import { startNightTakeProfitScheduler } from "../trades/nightTpScheduler.js";
 import { startTracking } from "../tracker/activeTradeTracker.js";
+import { startTrailingSlWatch } from "../trades/trailingSlWatcher.js";
 import { startAccountStream, stopAccountStream } from "./accountStream.js";
 import { setMarketStreamSymbols, startMarketStream } from "./marketStream.js";
 import { reconcileOrderUpdate, reconcilePositionFlat } from "./reconcile.js";
@@ -39,6 +40,9 @@ export async function startRealtime(): Promise<void> {
     const closedWhileDown = await reconcileIfPositionAlreadyFlat(activeTrade.symbol, "старт сервера");
     if (!closedWhileDown) {
       startTracking(activeTrade);
+      // Трейлинг-лестница SL для полных тейков 1/3 и 1/4 переживает рестарт:
+      // прогресс в trades.trail_sl_applied_r, вотчер просто перевзводится.
+      startTrailingSlWatch(activeTrade);
     }
   }
 
