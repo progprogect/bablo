@@ -1,31 +1,49 @@
 import type { RiskLevelDef } from "./ladder.js";
 
+/**
+ * Размер риска 1R по ступеням лестницы, в USDT (docs/RISK_ENGINE.md). Номер уровня —
+ * позиция в этом списке (1-based), поэтому порядок обязан быть строго возрастающим.
+ *
+ * Расширено 31.08.2026: выше 100 USDT шаг стал мельче (по 20 USDT до 500, по 25–50 выше),
+ * чтобы рост риска не удваивался за одну ступень. Прежние ступени сохранены — новые
+ * добавлены между ними, поэтому 150/250/350/450 остались как промежуточные.
+ */
+const RISK_USD_LADDER = [
+  // Старт: шаг 10 USDT
+  10, 20, 30, 40, 50, 60, 70, 80, 90,
+  // 100–500: шаг 20 USDT (плюс прежние ступени на «половинках»)
+  100, 120, 140, 150, 160, 180,
+  200, 220, 240, 250, 260, 280,
+  300, 320, 340, 350, 360, 380,
+  400, 420, 440, 450, 460, 480,
+  // 500–800: шаг 20–30 USDT
+  500, 520, 550, 570,
+  600, 620, 650, 670,
+  700, 720, 750, 770,
+  // 800+: шаг 50 USDT
+  800, 850, 900, 950,
+  1000,
+] as const;
+
+/**
+ * Сколько R нужно накопить на ступени, чтобы перейти на следующую. Единые +5R на всей
+ * лестнице (решение от 31.08.2026; выше 100 USDT раньше было +10R — с мелким шагом это
+ * стало неоправданно долго).
+ */
+const REQUIRED_R_PER_LEVEL = 5;
+
+/**
+ * Последняя ступень роста не имеет — недостижимый requiredR оставлен как маркер потолка
+ * (applyTradeResult всё равно не читает его: на максимальном уровне прогресс просто копится).
+ */
+const TERMINAL_REQUIRED_R = 100;
+
 /** Лестница уровней риска по умолчанию (docs/RISK_ENGINE.md). Редактируется в админке. */
-export const DEFAULT_RISK_LEVELS: RiskLevelDef[] = [
-  { level: 1, riskUsd: 10, requiredR: 5 },
-  { level: 2, riskUsd: 20, requiredR: 5 },
-  { level: 3, riskUsd: 30, requiredR: 5 },
-  { level: 4, riskUsd: 40, requiredR: 5 },
-  { level: 5, riskUsd: 50, requiredR: 5 },
-  { level: 6, riskUsd: 60, requiredR: 5 },
-  { level: 7, riskUsd: 70, requiredR: 5 },
-  { level: 8, riskUsd: 80, requiredR: 5 },
-  { level: 9, riskUsd: 90, requiredR: 5 },
-  { level: 10, riskUsd: 100, requiredR: 10 },
-  { level: 11, riskUsd: 150, requiredR: 10 },
-  { level: 12, riskUsd: 200, requiredR: 10 },
-  { level: 13, riskUsd: 250, requiredR: 10 },
-  { level: 14, riskUsd: 300, requiredR: 10 },
-  { level: 15, riskUsd: 350, requiredR: 10 },
-  { level: 16, riskUsd: 400, requiredR: 10 },
-  { level: 17, riskUsd: 450, requiredR: 10 },
-  { level: 18, riskUsd: 500, requiredR: 10 },
-  { level: 19, riskUsd: 550, requiredR: 10 },
-  { level: 20, riskUsd: 600, requiredR: 10 },
-  { level: 21, riskUsd: 650, requiredR: 10 },
-  { level: 22, riskUsd: 700, requiredR: 10 },
-  { level: 23, riskUsd: 750, requiredR: 10 },
-  { level: 24, riskUsd: 800, requiredR: 10 },
-  { level: 25, riskUsd: 900, requiredR: 10 },
-  { level: 26, riskUsd: 1000, requiredR: 100 },
-];
+export const DEFAULT_RISK_LEVELS: RiskLevelDef[] = RISK_USD_LADDER.map((riskUsd, index) => ({
+  level: index + 1,
+  riskUsd,
+  requiredR: index === RISK_USD_LADDER.length - 1 ? TERMINAL_REQUIRED_R : REQUIRED_R_PER_LEVEL,
+}));
+
+/** Номер последней ступени лестницы — потолок роста. */
+export const MAX_RISK_LEVEL = DEFAULT_RISK_LEVELS.length;
