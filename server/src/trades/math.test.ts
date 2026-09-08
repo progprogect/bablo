@@ -46,14 +46,16 @@ test("computeResultFromPrices: riskUsd = 0 не делит на ноль", () =>
 test("parseRRRatio распознаёт стандартные пресеты", () => {
   assert.equal(parseRRRatio("1/2"), 2);
   assert.equal(parseRRRatio("1/1.5"), 1.5);
-  assert.equal(parseRRRatio("1/6"), 6);
+  assert.equal(parseRRRatio("1/4"), 4);
   assert.equal(parseRRRatio("2/1"), null);
 });
 
 test("parseRRRatio отклоняет пресеты вне согласованного списка (RR_PRESETS)", () => {
   assert.equal(parseRRRatio("1/2.5"), null);
-  // 1/7–1/10 убраны из выбора при открытии сделки (решение от 30.08.2026);
-  // старые строки в БД просто перестают парситься.
+  // Список сокращался дважды: 1/7–1/10 убраны 30.08.2026, 1/5–1/6 — 31.08.2026.
+  // Старые строки в БД просто перестают парситься.
+  assert.equal(parseRRRatio("1/5"), null);
+  assert.equal(parseRRRatio("1/6"), null);
   assert.equal(parseRRRatio("1/10"), null);
   assert.equal(parseRRRatio("1/11"), null);
   assert.equal(parseRRRatio("1/100"), null);
