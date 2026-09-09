@@ -18,6 +18,7 @@ import {
   isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
+  isSelectableTpPreset,
   parseRRRatio,
   requiresPartialTakeProfit,
 } from "./math.js";
@@ -310,4 +311,16 @@ test("parseAdjustingTpRatio: только выравнивающие пресе�
   assert.equal(parseAdjustingTpRatio("1/1.9"), 1.9);
   assert.equal(parseAdjustingTpRatio("1/1"), null);
   assert.equal(parseAdjustingTpRatio("1/2"), null);
+});
+
+test("isSelectableTpPreset: выбор тейка заканчивается на 1/3, словарь шире", () => {
+  // Выбрать при постановке тейка можно 1/1…1/3 (правка 09.09.2026 — 1/4 убран).
+  assert.equal(isSelectableTpPreset("1/1"), true);
+  assert.equal(isSelectableTpPreset("1/3"), true);
+  assert.equal(isSelectableTpPreset("1/4"), false);
+  assert.equal(isSelectableTpPreset("1/5"), false);
+
+  // Но 1/4 остаётся ЗНАКОМЫМ пресетом: по нему считается столбец 4R в сетке статистики
+  // и работает ручной оверрайд R в админке — иначе достигнутые 4R было бы некуда положить.
+  assert.equal(parseRRRatio("1/4"), 4);
 });
