@@ -47,6 +47,7 @@ import {
   isValidStopLoss,
   isValidTakeProfit,
   parseRRRatio,
+  isSelectableTpPreset,
   PARTIAL_TP_PERCENT,
   RR_PRESETS,
   requiresPartialTakeProfit,
@@ -316,7 +317,9 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
       rrPreset = input.rrPreset;
     } else {
       const ratio = parseRRRatio(input.rrPreset);
-      if (ratio === null) {
+      // isSelectableTpPreset, а не только parseRRRatio: словарь RR_PRESETS шире выбора
+      // (в нём остаются пресеты для столбцов статистики), см. trades/math.ts.
+      if (ratio === null || !isSelectableTpPreset(input.rrPreset)) {
         throw new TradeError("Некорректный пресет соотношения риск/прибыль");
       }
       tpPrice = computeTakeProfitPrice(entryPrice, slPrice, side, ratio);
