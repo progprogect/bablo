@@ -1,57 +1,5 @@
 import { useState } from "react";
-import type { PresetOutcome, TradeInsights } from "../../api/types";
-
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-/** "R/R 1/2 — по тейку 1/2 (50%)." — без разбора причины промаха, чтобы не повторять её в каждой строке. */
-function formatPresetOutcome(entry: PresetOutcome): string {
-  const hitPct = Math.round(entry.hitRate * 100);
-  return `R/R ${entry.preset} — по тейку ${entry.tpCount}/${entry.totalTrades} (${hitPct}%).`;
-}
-
-/** «2ч - 7ч» или одно значение, если все тейки 1/3 шли одинаково по длительности. */
-function formatRrHoldDuration(entry: NonNullable<TradeInsights["rrHoldDuration"]>): string {
-  const range =
-    entry.minHours === entry.maxHours ? `${entry.minHours}ч` : `${entry.minHours}ч - ${entry.maxHours}ч`;
-  return `Среднее время отработки сделки R/R ${entry.preset}: ${range}`;
-}
-
-/** Список пресетов R/R с раскрытием по кнопке, если он не влезает в отведённый лимит. */
-function PresetOutcomesList({ items, limit }: { items: PresetOutcome[]; limit: number }) {
-  const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? items : items.slice(0, limit);
-  const hiddenCount = items.length - shown.length;
-
-  return (
-    <div className="flex flex-col gap-1">
-      {shown.map((entry) => (
-        <p key={entry.preset}>{formatPresetOutcome(entry)}</p>
-      ))}
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="self-start font-medium text-accent underline-offset-2 hover:underline"
-        >
-          и ещё {hiddenCount}
-        </button>
-      )}
-      {expanded && items.length > limit && (
-        <button
-          type="button"
-          onClick={() => setExpanded(false)}
-          className="self-start font-medium text-accent underline-offset-2 hover:underline"
-        >
-          свернуть
-        </button>
-      )}
-    </div>
-  );
-}
-
-const VISIBLE_PRESETS_LIMIT = 2;
+import type { TradeInsights } from "../../api/types";
 
 /** Торговый день начинается в 7ч МСК (час сброса дня, см. risk-settings) — список часов идёт 7ч…6ч. */
 const DAY_START_HOUR = 7;
@@ -64,7 +12,7 @@ const VISIBLE_LAST_HOUR = 21;
 const VISIBLE_HOURS_COUNT = VISIBLE_LAST_HOUR - DAY_START_HOUR + 1;
 
 /**
- * Милая галочка у сильных часов: мягкий изумрудный кружок с округлым чеком — вместо
+ * Милая галочка у сильных часов: мягкий мятный кружок с округлым чеком — вместо
  * тяжёлого эмодзи ✅ (просьба от 30.08.2026). Цвет тот же, что у прибыли в истории.
  */
 function StrongHourMark() {
@@ -134,38 +82,20 @@ function HoursList({ items }: { items: TradeInsights["hourlyOutcomes"] }) {
   );
 }
 
+/**
+ * Карточка-подсказка над списком сделок. С 11.09.2026 в ней остались ТОЛЬКО часы:
+ * статистика по пресетам R/R, типичный час дневной цели и «время отработки 1/3»
+ * убраны по просьбе пользователя (серверные расчёты удалены вместе с ними).
+ */
 export function InsightPanel({ insights }: { insights: TradeInsights }) {
   const hourlyOutcomes = insights.hourlyOutcomes ?? [];
-  const rrHoldDuration = insights.rrHoldDuration ?? null;
-
-  const hasAnyData =
-    hourlyOutcomes.length > 0 ||
-    insights.dailyTargetHour !== null ||
-    rrHoldDuration !== null ||
-    insights.presetOutcomes.length > 0;
-
-  if (!hasAnyData) return null;
+  if (hourlyOutcomes.length === 0) return null;
 
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <h3 className="text-sm font-medium text-ink">Подсказка</h3>
       <ul className="flex flex-col gap-1.5 text-xs text-slate-600">
-        {hourlyOutcomes.length > 0 && <HoursList items={hourlyOutcomes} />}
-
-        {insights.presetOutcomes.length > 0 && (
-          <li>
-            <PresetOutcomesList items={insights.presetOutcomes} limit={VISIBLE_PRESETS_LIMIT} />
-          </li>
-        )}
-
-        {insights.dailyTargetHour && (
-          <li>
-            Обычно закрываю дневную цель +{insights.dailyTargetHour.targetR}R к{" "}
-            {pad2(insights.dailyTargetHour.hour)}:00
-          </li>
-        )}
-
-        {rrHoldDuration && <li>{formatRrHoldDuration(rrHoldDuration)}</li>}
+        <HoursList items={hourlyOutcomes} />
       </ul>
     </div>
   );
