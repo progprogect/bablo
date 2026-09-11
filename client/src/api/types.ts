@@ -200,6 +200,8 @@ export type MonthlyStat = {
 export type StatsResponse = {
   insights: TradeInsights;
   monthly: MonthlyStat[];
+  /** Таймзона риск-плана: в ней сгруппированы часы insights и в ней же считается «сейчас». */
+  tzOffsetMinutes: number;
 };
 
 /** Точка графика роста депозита — один снимок эквити за календарный день. */
