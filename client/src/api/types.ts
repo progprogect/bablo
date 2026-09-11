@@ -159,21 +159,9 @@ export type PagedTrades = {
   total: number;
 };
 
-export type PresetOutcome = {
-  preset: string;
-  totalTrades: number;
-  tpCount: number;
-  hitRate: number;
-  slCount: number;
-  avgSlResultR: number;
-};
-
 export type TradeInsights = {
   /** Все часы открытия с хотя бы одной закрытой сделкой: доля тейков, по номеру часа ↑. */
   hourlyOutcomes: { hour: number; tpCount: number; total: number }[];
-  dailyTargetHour: { targetR: number; hour: number } | null;
-  rrHoldDuration: { preset: string; minHours: number; maxHours: number; sampleCount: number } | null;
-  presetOutcomes: PresetOutcome[];
 };
 
 export type MonthlyRRPresetCount = { preset: string; count: number };

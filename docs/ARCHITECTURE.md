@@ -181,8 +181,8 @@ GET  /api/trades/month          — ?year&month: все сделки локал�
                                    (комиссии/funding/переводы/PnL, history/incomeSummary.ts;
                                    best-effort, null при ошибке или пустой истории);
                                    детализация карточки месяца в «Статистике»
-GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия/пресетам/
-                                   дневной цели (history/insights.ts) и месячная статистика
+GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия
+                                   (history/insights.ts) и месячная статистика
                                    (history/monthlyStats.ts), см. docs/PROJECT.md
 GET  /api/stats/equity-history  — [{ date, equity }] по всем снимкам equity_snapshots,
                                    по возрастанию даты — данные для графика роста депозита

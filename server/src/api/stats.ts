@@ -17,24 +17,15 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
     ]);
 
     const insightInputs: InsightTradeInput[] = rows.map((row) => ({
-      symbol: row.symbol,
       openedAt: row.openedAt,
-      closedAt: row.closedAt,
       closeReason: row.closeReason,
       resultR: row.resultR !== null ? Number(row.resultR) : null,
-      riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
-      rrPreset: row.rrPreset,
       entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
       slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
       side: row.side,
       statsOutcome: row.statsOutcome,
-      statsRrPreset: row.statsRrPreset,
     }));
-    const insights = computeTradeInsights(
-      insightInputs,
-      riskSettings.tzOffsetMinutes,
-      riskSettings.dailyProfitLimitR,
-    );
+    const insights = computeTradeInsights(insightInputs, riskSettings.tzOffsetMinutes);
 
     const monthlyInputs: MonthlyStatTradeInput[] = rows.map((row) => ({
       openedAt: row.openedAt,
