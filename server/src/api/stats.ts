@@ -65,7 +65,9 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       snapshots,
     );
 
-    return { insights, monthly };
+    // Смещение таймзоны риск-плана — по нему сгруппированы часы в insights, по нему же
+    // UI (InsightPanel) подсвечивает текущий час: время устройства может не совпадать.
+    return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes };
   });
 
   /**

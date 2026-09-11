@@ -181,9 +181,11 @@ GET  /api/trades/month          — ?year&month: все сделки локал�
                                    (комиссии/funding/переводы/PnL, history/incomeSummary.ts;
                                    best-effort, null при ошибке или пустой истории);
                                    детализация карточки месяца в «Статистике»
-GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия
-                                   (history/insights.ts) и месячная статистика
-                                   (history/monthlyStats.ts), см. docs/PROJECT.md
+GET  /api/stats                 — { insights, monthly, tzOffsetMinutes }: инсайты по часам
+                                   открытия (history/insights.ts), месячная статистика
+                                   (history/monthlyStats.ts) и таймзона риск-плана — в ней
+                                   сгруппированы часы и в ней же UI считает «сейчас» для
+                                   подсветки текущего часа, см. docs/PROJECT.md
 GET  /api/stats/equity-history  — [{ date, equity }] по всем снимкам equity_snapshots,
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)

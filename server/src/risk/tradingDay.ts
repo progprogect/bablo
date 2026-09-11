@@ -42,12 +42,6 @@ export function getLocalDateKey(date: Date, tzOffsetMinutes: number): string {
   return getTradingDayKey(date, 0, tzOffsetMinutes);
 }
 
-/** Минута дня (0–1439) в локальной таймзоне — точнее часа, для медианы времени достижения дневной цели (см. history/insights.ts). */
-export function getLocalMinuteOfDay(date: Date, tzOffsetMinutes: number): number {
-  const shifted = toShifted(date, tzOffsetMinutes);
-  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-}
-
 /** Следующий момент сброса дня (в реальном UTC) строго после `date`. */
 export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: number): Date {
   const shifted = toShifted(date, tzOffsetMinutes);
