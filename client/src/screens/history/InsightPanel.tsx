@@ -88,8 +88,9 @@ type HourEntry = TradeInsights["hourlyOutcomes"][number];
 
 /**
  * Строка гистограммы: час, полоса доли тейков относительно 100%, счёт и процент.
- * Прибыльные часы (≥ STRONG_SHARE) — мятная полоса и галочка, остальные — приглушённая
- * красная. Засечка посередине дорожки — те самые 50%. Текущий час подсвечен акцентом.
+ * Прибыльные часы (≥ STRONG_SHARE) — мятная полоса и галочка, остальные — нейтрально-серая
+ * (не красная: слабые часы не должны тянуть на себя внимание — просьба от 11.09.2026).
+ * Засечка посередине дорожки — те самые 50%. Текущий час подсвечен акцентом.
  */
 function HourBar({
   hour,
@@ -142,7 +143,7 @@ function HourBar({
             className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out ${
               isStrong
                 ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
-                : "bg-gradient-to-r from-red-300 to-red-400"
+                : "bg-gradient-to-r from-slate-300 to-slate-400"
             }`}
             style={{ width: `${grown ? Math.max(pct, MIN_BAR_PCT) : 0}%` }}
           />
