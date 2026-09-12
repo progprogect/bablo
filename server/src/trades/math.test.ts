@@ -18,6 +18,7 @@ import {
   isValidPartialTakeProfit,
   isValidStopLoss,
   isValidTakeProfit,
+  isSelectableTpPreset,
   parseRRRatio,
   requiresPartialTakeProfit,
 } from "./math.js";
@@ -46,14 +47,16 @@ test("computeResultFromPrices: riskUsd = 0 не делит на ноль", () =>
 test("parseRRRatio распознаёт стандартные пресеты", () => {
   assert.equal(parseRRRatio("1/2"), 2);
   assert.equal(parseRRRatio("1/1.5"), 1.5);
-  assert.equal(parseRRRatio("1/6"), 6);
+  assert.equal(parseRRRatio("1/4"), 4);
   assert.equal(parseRRRatio("2/1"), null);
 });
 
 test("parseRRRatio отклоняет пресеты вне согласованного списка (RR_PRESETS)", () => {
   assert.equal(parseRRRatio("1/2.5"), null);
-  // 1/7–1/10 убраны из выбора при открытии сделки (решение от 30.08.2026);
-  // старые строки в БД просто перестают парситься.
+  // Список сокращался дважды: 1/7–1/10 убраны 30.08.2026, 1/5–1/6 — 31.08.2026.
+  // Старые строки в БД просто перестают парситься.
+  assert.equal(parseRRRatio("1/5"), null);
+  assert.equal(parseRRRatio("1/6"), null);
   assert.equal(parseRRRatio("1/10"), null);
   assert.equal(parseRRRatio("1/11"), null);
   assert.equal(parseRRRatio("1/100"), null);
@@ -308,4 +311,16 @@ test("parseAdjustingTpRatio: только выравнивающие пресе�
   assert.equal(parseAdjustingTpRatio("1/1.9"), 1.9);
   assert.equal(parseAdjustingTpRatio("1/1"), null);
   assert.equal(parseAdjustingTpRatio("1/2"), null);
+});
+
+test("isSelectableTpPreset: выбор тейка заканчивается на 1/3, словарь шире", () => {
+  // Выбрать при постановке тейка можно 1/1…1/3 (правка 09.09.2026 — 1/4 убран).
+  assert.equal(isSelectableTpPreset("1/1"), true);
+  assert.equal(isSelectableTpPreset("1/3"), true);
+  assert.equal(isSelectableTpPreset("1/4"), false);
+  assert.equal(isSelectableTpPreset("1/5"), false);
+
+  // Но 1/4 остаётся ЗНАКОМЫМ пресетом: по нему считается столбец 4R в сетке статистики
+  // и работает ручной оверрайд R в админке — иначе достигнутые 4R было бы некуда положить.
+  assert.equal(parseRRRatio("1/4"), 4);
 });

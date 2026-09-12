@@ -152,6 +152,8 @@ export type RiskSettings = {
   dailyProfitLimitR: number;
   resetHour: number;
   tzOffsetMinutes: number;
+  /** Блокировать открытие сделок в убыточные часы (см. docs/RISK_ENGINE.md). */
+  blockLosingHours: boolean;
 };
 
 export type PagedTrades = {
@@ -159,21 +161,9 @@ export type PagedTrades = {
   total: number;
 };
 
-export type PresetOutcome = {
-  preset: string;
-  totalTrades: number;
-  tpCount: number;
-  hitRate: number;
-  slCount: number;
-  avgSlResultR: number;
-};
-
 export type TradeInsights = {
   /** Все часы открытия с хотя бы одной закрытой сделкой: доля тейков, по номеру часа ↑. */
   hourlyOutcomes: { hour: number; tpCount: number; total: number }[];
-  dailyTargetHour: { targetR: number; hour: number } | null;
-  rrHoldDuration: { preset: string; minHours: number; maxHours: number; sampleCount: number } | null;
-  presetOutcomes: PresetOutcome[];
 };
 
 export type MonthlyRRPresetCount = { preset: string; count: number };
@@ -212,6 +202,10 @@ export type MonthlyStat = {
 export type StatsResponse = {
   insights: TradeInsights;
   monthly: MonthlyStat[];
+  /** Таймзона риск-плана: в ней сгруппированы часы insights и в ней же считается «сейчас». */
+  tzOffsetMinutes: number;
+  /** Часы, закрытые правилом убыточных часов; пусто, если правило выключено в админке. */
+  blockedHours: number[];
 };
 
 /** Точка графика роста депозита — один снимок эквити за календарный день. */

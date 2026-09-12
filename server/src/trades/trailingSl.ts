@@ -8,17 +8,23 @@ import type { TradeSide } from "./math.js";
  * triggerR — сколько R цена должна пройти от входа; slR — куда переносится стоп
  * (0 = точка входа, 1 = +1R и т.д.). Уровни считаются от ИСХОДНОГО риска
  * (riskUsd / quantity), как и ночное правило, — уже подтянутый стоп расчёт не искажает.
+ *
+ * Пороги сдвинуты «пораньше» 08.09.2026 (было 2 / 2.5 / 3 / 3.5): цена часто разворачивалась,
+ * немного не дотянув до круглого уровня, и ступень не срабатывала. Теперь срабатывание
+ * идёт чуть раньше цели (1.9 вместо 2, 2.25 вместо 2.5, 2.8 вместо 3), а в лестнице 1/4
+ * добавлена промежуточная ступень 2.8R → +1.5R.
  */
 export type TrailingLevel = { triggerR: number; slR: number };
 
 const TRAILING_LADDERS: Record<string, TrailingLevel[]> = {
   "1/3": [
-    { triggerR: 2, slR: 0 },
-    { triggerR: 2.5, slR: 1 },
+    { triggerR: 1.9, slR: 0 },
+    { triggerR: 2.25, slR: 1 },
   ],
   "1/4": [
-    { triggerR: 2, slR: 0 },
-    { triggerR: 2.5, slR: 1 },
+    { triggerR: 1.9, slR: 0 },
+    { triggerR: 2.25, slR: 1 },
+    { triggerR: 2.8, slR: 1.5 },
     { triggerR: 3, slR: 2 },
     { triggerR: 3.5, slR: 2.5 },
   ],

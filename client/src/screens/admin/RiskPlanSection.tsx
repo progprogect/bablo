@@ -73,6 +73,13 @@ export function RiskPlanSection() {
             value={settings.tzOffsetMinutes}
             onChange={(value) => handleSettingsChange({ tzOffsetMinutes: value })}
           />
+          {/* Выключатель правила убыточных часов (docs/RISK_ENGINE.md): набор закрытых часов
+              продолжает считаться, но блокировка открытия и метки в подсказке пропадают. */}
+          <ToggleRow
+            label="Блокировать убыточные часы"
+            value={settings.blockLosingHours}
+            onChange={(value) => handleSettingsChange({ blockLosingHours: value })}
+          />
         </div>
       )}
 
@@ -98,6 +105,33 @@ export function RiskPlanSection() {
         ))}
       </div>
     </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-slate-500">{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={
+          value
+            ? "rounded-md bg-accent/15 px-2 py-1 text-xs text-accent"
+            : "rounded-md bg-slate-200 px-2 py-1 text-xs text-slate-500"
+        }
+      >
+        {value ? "включено" : "выключено"}
+      </button>
+    </div>
   );
 }
 

@@ -200,7 +200,7 @@ test("computeMonthlyStats: исполненная partial 2R → столбец 
   assert.ok(stat);
   assert.equal(stat.beCount, 1);
   assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
-  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/4")?.count, 0);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/3")?.count, 0);
 });
 
 test("computeMonthlyStats: partial 3R не сработала, выбило по стопу — в сетке R нет, это SL", () => {
@@ -290,7 +290,7 @@ test("computeMonthlyStats: partial 2R исполнена, затем остат�
   assert.ok(stat);
   assert.equal(stat.tpCount, 1);
   assert.equal(stat.byRRPreset.find((e) => e.preset === "1/2")?.count, 1);
-  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/4")?.count, 0);
+  assert.equal(stat.byRRPreset.find((e) => e.preset === "1/3")?.count, 0);
 });
 
 test("computeMonthlyStats: statsRrPreset оверрайд побеждает авто и ночной тейк", () => {
@@ -855,4 +855,33 @@ test("computeMonthlyStats: незакрытый месяц считается д
   assert.ok(august);
   assert.equal(august.endEquity, 550);
   assert.ok(Math.abs((august.resultPct ?? 0) - 10) < 1e-9); // (550−500)/500
+});
+
+test("computeMonthlyStats: сетка до 3R — сделка на 4R не попадает в столбец 3R", () => {
+  // 10.09.2026 столбец 4R убран из карточки. Важно, что 4R-сделка именно ВЫПАДАЕТ из
+  // сетки, а не показывается как 3R: бакет считается по достигнутому R (RR_PRESETS шире
+  // сетки), поэтому отката на плановый пресет 1/3 не происходит.
+  const [stat] = computeMonthlyStats(
+    [
+      trade({
+        openedAt: "2026-09-01T10:00:00Z",
+        closedAt: "2026-09-01T12:00:00Z",
+        resultR: 4,
+        riskUsd: 10,
+        closeReason: "tp",
+        rrPreset: "1/3",
+        entryPrice: 100,
+        slPrice: 90,
+        side: "long",
+        quantity: 1,
+      }),
+    ],
+    TZ,
+    null,
+  );
+  assert.ok(stat);
+  assert.equal(stat.tpCount, 1); // в тейках месяца сделка есть
+  assert.equal(stat.sumR, 4); // и в сумме R тоже
+  assert.deepEqual(stat.byRRPreset.map((entry) => entry.preset), ["1/1", "1/1.5", "1/2", "1/3"]);
+  assert.deepEqual(stat.byRRPreset.filter((entry) => entry.count > 0), []); // но не в сетке
 });

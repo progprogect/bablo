@@ -2,6 +2,12 @@ import { getNextResetAt } from "./tradingDay.js";
 
 export type BlockType =
   | "cooldown"
+  /**
+   * Убыточный час (risk/hourBlocks.ts). Единственный тип, который НЕ хранится в
+   * risk_locks: он повторяется каждый день и выводится из состояния hour_blocks +
+   * текущего времени, поэтому считается на лету в risk/hourBlocksService.ts.
+   */
+  | "losing_hour"
   | "daily_loss"
   | "daily_profit"
   | "daily_stop_losses"

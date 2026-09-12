@@ -49,7 +49,9 @@ bablo/
 │       ├── api/           # HTTP-роуты (Fastify)
 │       ├── bingx/         # REST-клиент + WS-коннектор BingX
 │       ├── trades/        # оркестрация сделок (open/TP) + чистая математика (R/R, риск)
-│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты (чистая логика, без I/O)
+│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты, убыточные часы
+│       │                 # (чистая логика без I/O: ladder.ts, limits.ts, hourBlocks.ts;
+│       │                 #  I/O-обвязка: service.ts, hourBlocksService.ts)
 │       ├── tracker/       # трекинг активной сделки (MFE, безубыток)
 │       ├── security/      # шифрование, PIN, сессии
 │       ├── db/            # схема Drizzle, миграции, репозитории
@@ -162,6 +164,11 @@ equity_adjustments — ручные пополнения/выводы (date, amo
                    note) — заполняются в админке; учитываются при восстановлении баланса
                    прошлых месяцев "в обратную сторону" от последнего снимка эквити
                    (history/monthlyStats.ts), см. docs/PROJECT.md
+hour_blocks     — история блокировок убыточных часов (hour, blocked_at, unblocked_at,
+                   снимки статистики на момент блокировки/разблокировки). Активная
+                   блокировка — строка с unblocked_at IS NULL, на час не больше одной
+                   (частичный уникальный индекс). Состояние, а не кэш: правило с
+                   гистерезисом (см. docs/RISK_ENGINE.md, правило #10)
 ```
 
 ## API (набросок контракта)
@@ -181,9 +188,12 @@ GET  /api/trades/month          — ?year&month: все сделки локал�
                                    (комиссии/funding/переводы/PnL, history/incomeSummary.ts;
                                    best-effort, null при ошибке или пустой истории);
                                    детализация карточки месяца в «Статистике»
-GET  /api/stats                 — { insights, monthly }: инсайты по часам открытия/пресетам/
-                                   дневной цели (history/insights.ts) и месячная статистика
-                                   (history/monthlyStats.ts), см. docs/PROJECT.md
+GET  /api/stats                 — { insights, monthly, tzOffsetMinutes, blockedHours }:
+                                   инсайты по часам открытия (history/insights.ts), месячная
+                                   статистика (history/monthlyStats.ts), таймзона риск-плана
+                                   (в ней сгруппированы часы и в ней же UI считает «сейчас»)
+                                   и часы, закрытые правилом убыточных часов — пусто, если
+                                   правило выключено, см. docs/PROJECT.md
 GET  /api/stats/equity-history  — [{ date, equity }] по всем снимкам equity_snapshots,
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)

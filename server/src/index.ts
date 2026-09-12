@@ -39,7 +39,7 @@ async function bootstrap() {
   // деплоя, без ожидания новой сделки.
   try {
     const result = await resyncTradingDayRisk();
-    if (result.lockTypes.length > 0 || result.tradesFixed > 0) {
+    if (result.lockTypes.length > 0 || result.tradesFixed > 0 || result.blockedHours.length > 0) {
       app.log.info({ resync: result }, "Дневные лимиты пересчитаны при старте");
     }
   } catch (error) {
