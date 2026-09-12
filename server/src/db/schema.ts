@@ -161,3 +161,25 @@ export const equityAdjustments = pgTable("equity_adjustments", {
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * История блокировок убыточных часов (правило от 12.09.2026, см. risk/hourBlocks.ts).
+ * Активная блокировка — строка с unblockedAt = null (частичный уникальный индекс не даёт
+ * завести две активные на один час). Состояние хранится, а не вычисляется каждый раз,
+ * из-за гистерезиса: час закрывается, когда сделок в нём стало больше, чем у эталона, а
+ * открывается только когда эталон обгонит его в 1.5 раза — между этими точками решение
+ * зависит от предыстории. Снимки статистики на момент блокировки/разблокировки нужны,
+ * чтобы задним числом было видно, почему час закрыли.
+ */
+export const hourBlocks = pgTable("hour_blocks", {
+  id: serial("id").primaryKey(),
+  /** Локальный час риск-плана (0–23), в котором запрещено открывать сделки. */
+  hour: integer("hour").notNull(),
+  blockedAt: timestamp("blocked_at", { withTimezone: true }).notNull().defaultNow(),
+  /** null — блокировка активна. */
+  unblockedAt: timestamp("unblocked_at", { withTimezone: true }),
+  tradesAtBlock: integer("trades_at_block").notNull(),
+  tpAtBlock: integer("tp_at_block").notNull(),
+  referenceAtBlock: integer("reference_at_block").notNull(),
+  referenceAtUnblock: integer("reference_at_unblock"),
+});

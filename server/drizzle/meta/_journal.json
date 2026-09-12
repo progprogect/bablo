@@ -92,6 +92,13 @@
       "when": 1788393600000,
       "tag": "0012_risk_ladder_expand",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788480000000,
+      "tag": "0013_hour_blocks",
+      "breakpoints": true
     }
   ]
 }

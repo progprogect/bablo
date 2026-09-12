@@ -152,6 +152,8 @@ export type RiskSettings = {
   dailyProfitLimitR: number;
   resetHour: number;
   tzOffsetMinutes: number;
+  /** Блокировать открытие сделок в убыточные часы (см. docs/RISK_ENGINE.md). */
+  blockLosingHours: boolean;
 };
 
 export type PagedTrades = {
@@ -202,6 +204,8 @@ export type StatsResponse = {
   monthly: MonthlyStat[];
   /** Таймзона риск-плана: в ней сгруппированы часы insights и в ней же считается «сейчас». */
   tzOffsetMinutes: number;
+  /** Часы, закрытые правилом убыточных часов; пусто, если правило выключено в админке. */
+  blockedHours: number[];
 };
 
 /** Точка графика роста депозита — один снимок эквити за календарный день. */

@@ -67,6 +67,12 @@ export type RiskSettings = {
   resetHour: number;
   /** Смещение локальной таймзоны от UTC в минутах, например 180 для UTC+3. */
   tzOffsetMinutes: number;
+  /**
+   * Блокировать открытие сделок в убыточные часы (правило от 12.09.2026,
+   * см. risk/hourBlocks.ts). Выключатель на случай, если блокировка окажется не к месту:
+   * состояние часов продолжает считаться, но гейт и UI его игнорируют.
+   */
+  blockLosingHours: boolean;
 };
 
 export const DEFAULT_RISK_SETTINGS: RiskSettings = {
@@ -75,11 +81,14 @@ export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   dailyProfitLimitR: 3,
   resetHour: 7,
   tzOffsetMinutes: 180,
+  blockLosingHours: true,
 };
 
 export async function getRiskSettings(): Promise<RiskSettings> {
-  const stored = await getValue<RiskSettings>(RISK_SETTINGS_KEY);
-  return stored ?? DEFAULT_RISK_SETTINGS;
+  const stored = await getValue<Partial<RiskSettings>>(RISK_SETTINGS_KEY);
+  // Настройки лежат одним JSON: у записи, сохранённой до появления поля, его просто нет —
+  // добираем значениями по умолчанию, иначе новые параметры приходили бы как undefined.
+  return { ...DEFAULT_RISK_SETTINGS, ...(stored ?? {}) };
 }
 
 export async function setRiskSettings(settingsPatch: Partial<RiskSettings>): Promise<RiskSettings> {

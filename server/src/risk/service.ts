@@ -12,6 +12,7 @@ import { getActiveTrade, listAllClosedTrades, updateTrade } from "../db/reposito
 import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
 import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef, riskSizeToleranceRatio } from "./ladder.js";
+import { evaluateLosingHourBlock, syncHourBlocks } from "./hourBlocksService.js";
 import {
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
@@ -97,12 +98,13 @@ function toLockView(lock: {
 
 export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   const now = new Date();
-  const [stateRow, levels, settings, activeTrade, locks] = await Promise.all([
+  const [stateRow, levels, settings, activeTrade, locks, hourBlock] = await Promise.all([
     getOrCreateRiskState(),
     listRiskLevelDefs(),
     getRiskSettings(),
     getActiveTrade(),
     listActiveLocks(now),
+    evaluateLosingHourBlock(now),
   ]);
 
   const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
@@ -111,6 +113,9 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
 
   const globalLocks = locks.filter((l) => isGlobalBlock(l));
   const assetSlLocks = locks.filter((l) => l.type === "asset_sl_today");
+  // Убыточный час не лежит в risk_locks (он повторяется каждый день) — досчитываем его
+  // здесь и кладём в общий список, чтобы UI не знал про разницу в источнике.
+  const hourLocks = hourBlock ? [{ ...hourBlock, symbol: null }] : [];
 
   return {
     currentLevel: stateRow.currentLevel,
@@ -119,7 +124,7 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     requiredR: levelDef?.requiredR ?? null,
     dailySumR,
     hasActiveTrade: activeTrade !== null,
-    activeLocks: globalLocks.map(toLockView),
+    activeLocks: [...globalLocks, ...hourLocks].map(toLockView),
     assetSlLocks: assetSlLocks.map(toLockView),
   };
 }
@@ -144,15 +149,17 @@ export async function checkCanOpenTrade(
     throw new RiskBlockedError("Уже есть активная сделка");
   }
 
-  const locks = await listActiveLocks();
-  const effective = pickEffectiveBlock(
-    locks.map((l) => ({
-      type: l.type as BlockType,
-      reason: l.reason,
-      until: l.until,
-      symbol: l.symbol ?? undefined,
-    })),
-  );
+  const [locks, hourBlock] = await Promise.all([listActiveLocks(), evaluateLosingHourBlock()]);
+  const globalCandidates: Block[] = locks.map((l) => ({
+    type: l.type as BlockType,
+    reason: l.reason,
+    until: l.until,
+    symbol: l.symbol ?? undefined,
+  }));
+  if (hourBlock) {
+    globalCandidates.push(hourBlock);
+  }
+  const effective = pickEffectiveBlock(globalCandidates);
   if (effective) {
     throw new RiskBlockedError(effective.reason, effective.until);
   }
@@ -276,6 +283,11 @@ export async function recordTradeClose(input: {
     settings,
   });
   await replaceManagedLocks(blocks);
+
+  // Статистика по часам изменилась — пересобрать набор убыточных часов (risk/hourBlocks.ts).
+  await syncHourBlocks(input.closedAt).catch(() => {
+    // Не критично: состояние идемпотентно пересчитается при следующем закрытии или старте.
+  });
 }
 
 /**
@@ -354,6 +366,8 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   sumR: number;
   tradesFixed: number;
   lockTypes: string[];
+  /** Часы, закрытые правилом убыточных часов после пересчёта (risk/hourBlocks.ts). */
+  blockedHours: number[];
 }> {
   const settings = await getRiskSettings();
   const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
@@ -431,11 +445,16 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   });
   await replaceManagedLocks(blocks);
 
+  // Сюда приходят все пути, где могла измениться разметка исходов (старт сервера, ручная
+  // переразметка, кнопка «Пересчитать» в админке) — значит, и часы надо пересчитать.
+  const hourDecision = await syncHourBlocks(now).catch(() => null);
+
   return {
     dayKey,
     tradesCount: dayTrades.length,
     sumR,
     tradesFixed,
     lockTypes: blocks.map((b) => b.type),
+    blockedHours: hourDecision?.blockedHours ?? [],
   };
 }

@@ -70,6 +70,36 @@ function hourlyOutcomes(buckets: HourBucketStat[]): TradeInsights["hourlyOutcome
 }
 
 /**
+ * Строка закрытой сделки из БД (numeric-колонки drizzle отдаёт строками) — ровно те поля,
+ * из которых считаются часы.
+ */
+export type ClosedTradeRowForInsights = {
+  openedAt: Date;
+  closeReason: string | null;
+  resultR: string | null;
+  entryPrice: string | null;
+  slPrice: string | null;
+  side: string;
+  statsOutcome: string | null;
+};
+
+/**
+ * Приведение строки БД ко входу инсайтов. Общее для подсказки (api/stats.ts) и правила
+ * убыточных часов (risk/hourBlocksService.ts) — один разбор numeric, одна трактовка.
+ */
+export function toInsightInput(row: ClosedTradeRowForInsights): InsightTradeInput {
+  return {
+    openedAt: row.openedAt,
+    closeReason: row.closeReason,
+    resultR: row.resultR !== null ? Number(row.resultR) : null,
+    entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
+    slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
+    side: row.side,
+    statsOutcome: row.statsOutcome,
+  };
+}
+
+/**
  * Инсайты по истории сделок для карточки-подсказки на экране "Сделки" (docs/PROJECT.md).
  * Считаются по времени ОТКРЫТИЯ — решение войти принимается именно в этот момент.
  */

@@ -84,6 +84,26 @@ function StrongHourMark() {
   );
 }
 
+/**
+ * Час закрыт правилом убыточных часов (docs/RISK_ENGINE.md): замок вместо галочки —
+ * галочка и замок взаимоисключающи, блокируются только часы с винрейтом ≤ 30%.
+ */
+function BlockedHourMark() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-label="час закрыт для торговли">
+      <circle cx="8" cy="8" r="8" className="fill-slate-200" />
+      <path
+        d="M6 7.2V5.9a2 2 0 0 1 4 0V7.2"
+        className="stroke-slate-500"
+        strokeWidth="1.4"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <rect x="4.9" y="7.2" width="6.2" height="4.6" rx="1.3" className="fill-slate-500" />
+    </svg>
+  );
+}
+
 type HourEntry = TradeInsights["hourlyOutcomes"][number];
 
 /**
@@ -96,11 +116,13 @@ function HourBar({
   hour,
   entry,
   isNow,
+  isBlocked,
   grown,
 }: {
   hour: number;
   entry: HourEntry | undefined;
   isNow: boolean;
+  isBlocked: boolean;
   grown: boolean;
 }) {
   const total = entry?.total ?? 0;
@@ -159,7 +181,9 @@ function HourBar({
       >
         {pct !== null ? `${pct}%` : ""}
       </span>
-      <span className="w-3.5 shrink-0">{isStrong && <StrongHourMark />}</span>
+      <span className="w-3.5 shrink-0">
+        {isBlocked ? <BlockedHourMark /> : isStrong ? <StrongHourMark /> : null}
+      </span>
     </li>
   );
 }
@@ -169,11 +193,20 @@ function HourBar({
  * текст, а горизонтальная гистограмма: длина полосы — доля тейков от 100%, так сильные и
  * слабые часы видно, не читая цифр.
  */
-function HoursChart({ items, tzOffsetMinutes }: { items: HourEntry[]; tzOffsetMinutes: number }) {
+function HoursChart({
+  items,
+  tzOffsetMinutes,
+  blockedHours,
+}: {
+  items: HourEntry[];
+  tzOffsetMinutes: number;
+  blockedHours: number[];
+}) {
   const [expanded, setExpanded] = useState(false);
   const currentHour = useCurrentHour(tzOffsetMinutes);
   const grown = useGrown();
 
+  const blocked = new Set(blockedHours);
   const byHour = new Map(items.map((entry) => [entry.hour, entry]));
   const allHours = Array.from({ length: HOURS_IN_DAY }, (_, i) => (DAY_START_HOUR + i) % HOURS_IN_DAY);
   const hours = expanded ? allHours : allHours.slice(0, VISIBLE_HOURS_COUNT);
@@ -188,10 +221,14 @@ function HoursChart({ items, tzOffsetMinutes }: { items: HourEntry[]; tzOffsetMi
             hour={hour}
             entry={byHour.get(hour)}
             isNow={hour === currentHour}
+            isBlocked={blocked.has(hour)}
             grown={grown}
           />
         ))}
       </ul>
+      {blocked.size > 0 && (
+        <p className="text-[11px] text-slate-400">Замок — час закрыт, сделки в нём не открыть</p>
+      )}
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
@@ -211,9 +248,11 @@ function HoursChart({ items, tzOffsetMinutes }: { items: HourEntry[]; tzOffsetMi
 export function InsightPanel({
   insights,
   tzOffsetMinutes,
+  blockedHours,
 }: {
   insights: TradeInsights;
   tzOffsetMinutes: number;
+  blockedHours: number[];
 }) {
   const hourlyOutcomes = insights.hourlyOutcomes ?? [];
   if (hourlyOutcomes.length === 0) return null;
@@ -221,7 +260,11 @@ export function InsightPanel({
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <h3 className="text-sm font-medium text-ink">Подсказка</h3>
-      <HoursChart items={hourlyOutcomes} tzOffsetMinutes={tzOffsetMinutes} />
+      <HoursChart
+        items={hourlyOutcomes}
+        tzOffsetMinutes={tzOffsetMinutes}
+        blockedHours={blockedHours}
+      />
     </div>
   );
 }

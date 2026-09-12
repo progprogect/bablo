@@ -83,7 +83,11 @@ export function History() {
 
       {tab === "trades" && (
         <>
-          <InsightPanel insights={stats.insights} tzOffsetMinutes={stats.tzOffsetMinutes} />
+          <InsightPanel
+            insights={stats.insights}
+            tzOffsetMinutes={stats.tzOffsetMinutes}
+            blockedHours={stats.blockedHours ?? []}
+          />
 
           {trades.length === 0 ? (
             <p className="px-6 text-center text-sm text-slate-500">Закрытых сделок пока нет.</p>

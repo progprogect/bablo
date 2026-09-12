@@ -3,29 +3,22 @@ import { listEquityAdjustments } from "../db/repositories/equityAdjustments.js";
 import { listEquitySnapshots } from "../db/repositories/equitySnapshots.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
 import { listAllClosedTrades } from "../db/repositories/trades.js";
-import { computeTradeInsights, type InsightTradeInput } from "../history/insights.js";
+import { computeTradeInsights, toInsightInput } from "../history/insights.js";
 import { computeMonthlyStats, type EquityAnchor, type MonthlyStatTradeInput } from "../history/monthlyStats.js";
+import { listBlockedHours } from "../risk/hourBlocksService.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/stats", { preHandler: requireAuth }, async () => {
-    const [rows, riskSettings, snapshotRows, adjustmentRows] = await Promise.all([
+    const [rows, riskSettings, snapshotRows, adjustmentRows, blockedHours] = await Promise.all([
       listAllClosedTrades(),
       getRiskSettings(),
       listEquitySnapshots(),
       listEquityAdjustments(),
+      listBlockedHours(),
     ]);
 
-    const insightInputs: InsightTradeInput[] = rows.map((row) => ({
-      openedAt: row.openedAt,
-      closeReason: row.closeReason,
-      resultR: row.resultR !== null ? Number(row.resultR) : null,
-      entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
-      slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
-      side: row.side,
-      statsOutcome: row.statsOutcome,
-    }));
-    const insights = computeTradeInsights(insightInputs, riskSettings.tzOffsetMinutes);
+    const insights = computeTradeInsights(rows.map(toInsightInput), riskSettings.tzOffsetMinutes);
 
     const monthlyInputs: MonthlyStatTradeInput[] = rows.map((row) => ({
       openedAt: row.openedAt,
@@ -67,7 +60,8 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
 
     // Смещение таймзоны риск-плана — по нему сгруппированы часы в insights, по нему же
     // UI (InsightPanel) подсвечивает текущий час: время устройства может не совпадать.
-    return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes };
+    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено).
+    return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes, blockedHours };
   });
 
   /**

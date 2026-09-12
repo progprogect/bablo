@@ -417,6 +417,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       dailyProfitLimitR: number;
       resetHour: number;
       tzOffsetMinutes: number;
+      blockLosingHours: boolean;
     }>;
   }>("/admin/risk-settings", async (request, reply) => {
     const body = request.body ?? {};
@@ -426,6 +427,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       dailyProfitLimitR: number;
       resetHour: number;
       tzOffsetMinutes: number;
+      blockLosingHours: boolean;
     }> = {};
 
     if (body.cooldownMinutes !== undefined) {
@@ -462,6 +464,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
       patch.tzOffsetMinutes = body.tzOffsetMinutes;
+    }
+    if (body.blockLosingHours !== undefined) {
+      if (typeof body.blockLosingHours !== "boolean") {
+        reply.code(400).send({ error: "blockLosingHours должен быть true или false" });
+        return;
+      }
+      patch.blockLosingHours = body.blockLosingHours;
     }
 
     return setRiskSettings(patch);
