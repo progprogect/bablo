@@ -45,7 +45,8 @@ function ensureListener(): void {
 /**
  * Включает (или выключает) лестницу для сделки — вызывается после установки TP,
  * при старте сервера с активной сделкой и после закрытия. Сама решает, подпадает ли
- * сделка под правило: пресет 1/3 или 1/4, полный тейк (без частичной фиксации).
+ * сделка под правило: пресет из TRAILING_LADDERS (1/2, 1/3, 1/4), полный тейк
+ * (без частичной фиксации).
  */
 export function startTrailingSlWatch(trade: Trade): void {
   context = null;
@@ -109,6 +110,14 @@ async function handlePrice({ symbol, price }: PriceUpdatedEvent): Promise<void> 
   }
 }
 
+/** Куда переносим стоп — человеческим языком для логов и предупреждения в карточке. */
+function slTargetLabel(slR: number): string {
+  if (slR > 0) return `+${slR}R`;
+  if (slR === 0) return "вход (безубыток)";
+  // Лестница тейка 2R: стоп остаётся в убытке, но вдвое ближе к входу.
+  return `${slR}R (стоп ближе к входу)`;
+}
+
 async function applyTrailingMove(ctx: WatchContext, price: number): Promise<void> {
   // Свежая сделка из БД — контекст мог отстать (partial добавлена, сделка закрыта).
   const trade = await getTradeById(ctx.tradeId);
@@ -146,7 +155,7 @@ async function applyTrailingMove(ctx: WatchContext, price: number): Promise<void
 
   const orderIds = (trade.bingxOrderIds as Record<string, string | number> | null) ?? {};
   const exitSide: OrderSide = trade.side === "long" ? "SELL" : "BUY";
-  const targetLabel = decision.slR <= 0 ? "вход (безубыток)" : `+${decision.slR}R`;
+  const targetLabel = slTargetLabel(decision.slR);
 
   const moved = await replaceConditionalOrder(credentials, {
     symbol: trade.symbol,
