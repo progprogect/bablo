@@ -32,6 +32,32 @@ export async function captureEquitySnapshotIfMissing(
     .onConflictDoNothing();
 }
 
+/**
+ * Перезаписывает снимок эквити на дату (в отличие от captureEquitySnapshotIfMissing).
+ * Нужен для кнопки «Обновить баланс» в админке: снимок дня создаётся при первой за день
+ * загрузке дашборда, а после сделок/пополнения он устаревает — статистика месяца считает
+ * «депозит на конец месяца» именно по снимкам (history/monthlyStats.ts).
+ */
+export async function upsertEquitySnapshot(
+  dateKey: string,
+  equity: number,
+  balance: number | null = null,
+): Promise<void> {
+  const db = getDb();
+  const values = {
+    date: dateKey,
+    equity: String(equity),
+    balance: balance === null ? null : String(balance),
+  };
+  await db
+    .insert(equitySnapshots)
+    .values(values)
+    .onConflictDoUpdate({
+      target: equitySnapshots.date,
+      set: { equity: values.equity, balance: values.balance, capturedAt: new Date() },
+    });
+}
+
 /** Все снимки эквити по возрастанию даты — для графика роста депозита (docs/PROJECT.md, исключение из принципа "без графиков"). */
 export async function listEquitySnapshots(): Promise<EquitySnapshotRow[]> {
   const db = getDb();

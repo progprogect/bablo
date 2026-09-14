@@ -29,6 +29,9 @@ import {
   deleteEquityAdjustment,
   listEquityAdjustments,
 } from "../db/repositories/equityAdjustments.js";
+import { upsertEquitySnapshot } from "../db/repositories/equitySnapshots.js";
+import { eventBus } from "../events/bus.js";
+import { getLocalDateKey } from "../risk/tradingDay.js";
 import { resyncMarketSymbols, restartAccountStream } from "../realtime/manager.js";
 import { stopTracking } from "../tracker/activeTradeTracker.js";
 import { requireAuth } from "./plugins/auth-guard.js";
@@ -90,6 +93,48 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  /**
+   * Разовая актуализация баланса по кнопке в админке. Дашборд и так запрашивает баланс
+   * при каждой загрузке, поэтому ценность кнопки в другом: она ПЕРЕЗАПИСЫВАЕТ снимок
+   * эквити на сегодня. Обычный снимок создаётся лениво один раз за день (первая загрузка
+   * дашборда) и дальше не обновляется, а от него считаются «депозит на конец месяца» и %
+   * за месяц (history/monthlyStats.ts) — после сделок или пополнения его полезно освежить.
+   * Разовый событийный запрос к BingX, не поллинг (docs/ARCHITECTURE.md).
+   */
+  app.post("/admin/refresh-balance", async (_request, reply) => {
+    const credentials = await getBingxCredentials();
+    if (!credentials) {
+      reply.code(400).send({ error: "Ключи BingX не настроены — сначала сохраните их" });
+      return;
+    }
+
+    try {
+      const balance = await getBalance(credentials);
+      const equityValue = Number(balance.equity);
+      // balance без нереализованного PnL — именно он сходится с начислениями BingX.
+      const balanceValue = Number(balance.balance);
+      const settings = await getRiskSettings();
+      const date = getLocalDateKey(new Date(), settings.tzOffsetMinutes);
+
+      const snapshotUpdated = Number.isFinite(equityValue);
+      if (snapshotUpdated) {
+        await upsertEquitySnapshot(
+          date,
+          equityValue,
+          Number.isFinite(balanceValue) ? balanceValue : null,
+        );
+      }
+
+      // Дашборд перезапросит снимок по SSE — баланс обновится и на других открытых вкладках.
+      eventBus.emitTyped("refresh", { reason: "balance.refreshed" });
+      return { date, equity: balance.equity, balance: balance.balance, snapshotUpdated };
+    } catch (error) {
+      const message =
+        error instanceof BingXApiError ? error.message : "Не удалось получить баланс BingX";
+      reply.code(502).send({ error: message });
+    }
+  });
 
   // --- Сброс данных перед подключением другого BingX-аккаунта ---
 

@@ -120,6 +120,18 @@ export const resyncDailyLimits = () =>
     lockTypes: string[];
   }>("/admin/resync-daily-limits", { method: "POST", body: JSON.stringify({}) });
 
+/**
+ * Разовый запрос баланса у BingX по кнопке в админке: показывает актуальные цифры и
+ * перезаписывает снимок эквити на сегодня (от него считается статистика месяца).
+ */
+export const refreshBalanceRequest = () =>
+  request<{
+    date: string;
+    equity: string;
+    balance: string;
+    snapshotUpdated: boolean;
+  }>("/admin/refresh-balance", { method: "POST", body: JSON.stringify({}) });
+
 /** Сделки без SL/TP (external/manual) — для ручной атрибуции в админке. */
 export const getUnclassifiedTrades = () => request<Trade[]>("/admin/trades/unclassified");
 

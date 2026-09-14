@@ -3,6 +3,7 @@ import {
   ApiError,
   getBingxKeyStatus,
   reclassifyTrades,
+  refreshBalanceRequest,
   resyncDailyLimits,
   resetAccountData,
   saveBingxKey,
@@ -14,6 +15,13 @@ type SaveBingxKeyResponse = {
   balance?: { equity?: string; balance?: string };
   equity?: string | null;
 };
+
+/** Денежная сумма BingX как в остальном приложении: до 2 знаков, без «хвостов» float. */
+function formatUsd(value: string): string {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return value;
+  return parsed.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function pickEquity(result: SaveBingxKeyResponse | null | undefined): string | null {
   if (!result) return null;
@@ -38,6 +46,9 @@ export function BingxKeysSection() {
   const [isResyncing, setIsResyncing] = useState(false);
   const [resyncError, setResyncError] = useState<string | null>(null);
   const [resyncSuccess, setResyncSuccess] = useState<string | null>(null);
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [balanceSuccess, setBalanceSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getBingxKeyStatus()
@@ -76,6 +87,25 @@ export function BingxKeysSection() {
       }
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRefreshBalance() {
+    setBalanceError(null);
+    setBalanceSuccess(null);
+    setIsRefreshingBalance(true);
+    try {
+      const result = await refreshBalanceRequest();
+      const equity = formatUsd(result.equity);
+      const balance = formatUsd(result.balance);
+      setBalanceSuccess(
+        `Эквити ${equity} USDT, баланс ${balance} USDT` +
+          (result.snapshotUpdated ? ` · снимок на ${result.date} обновлён` : ""),
+      );
+    } catch (err) {
+      setBalanceError(err instanceof ApiError ? err.message : "Не удалось обновить баланс");
+    } finally {
+      setIsRefreshingBalance(false);
     }
   }
 
@@ -179,6 +209,23 @@ export function BingxKeysSection() {
           Проверить и сохранить
         </button>
       </form>
+
+      <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
+        <p className="text-xs text-slate-500">
+          Спросить у BingX актуальный баланс и обновить снимок депозита за сегодня —
+          от него считаются «депозит на конец месяца» и % за месяц в статистике.
+        </p>
+        <button
+          type="button"
+          disabled={isRefreshingBalance}
+          onClick={handleRefreshBalance}
+          className="self-start rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
+        >
+          {isRefreshingBalance ? "Обновляю…" : "Обновить баланс"}
+        </button>
+        {balanceError && <p className="text-xs text-red-600">{balanceError}</p>}
+        {balanceSuccess && <p className="text-xs text-emerald-600">{balanceSuccess}</p>}
+      </div>
 
       <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
         <p className="text-xs text-slate-500">
