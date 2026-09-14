@@ -156,7 +156,8 @@ daily_stats     — агрегат по дню: sum_r, trades_count, sl_count, t
                   strong_recovery_after_sl (для быстрых проверок дневных лимитов:
                   2 стопа / 2 тейка / сильный откуп ≥2R после стопа)
 equity_snapshots — снимок депозита на календарный день (date, equity, balance), один в день,
-                   лениво создаётся при загрузке дашборда — якорь для "% к депозиту" и границ
+                   лениво создаётся при загрузке дашборда (и перезаписывается кнопкой
+                   «Обновить баланс» в админке) — якорь для "% к депозиту" и границ
                    месяца в /api/stats. equity включает нереализованный PnL открытых позиций,
                    balance — нет; с начислениями BingX сходится только balance, поэтому сверка
                    месяца идёт по нему (nullable: у снимков до 30.08.2026 его нет)
@@ -198,6 +199,11 @@ GET  /api/stats/equity-history  — [{ date, equity }] по всем снимк�
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)
 GET/POST/PATCH/DELETE /api/admin/* — ключи, активы, параметры риск-плана
+POST /api/admin/refresh-balance — разовый запрос баланса у BingX по кнопке в админке:
+                                   возвращает { date, equity, balance, snapshotUpdated } и
+                                   ПЕРЕЗАПИСЫВАЕТ снимок эквити за сегодня (обычный снимок
+                                   создаётся один раз за день и устаревает), затем эмитит
+                                   refresh { reason: "balance.refreshed" }
 GET/POST/DELETE /api/admin/equity-adjustments — пополнения/выводы (date, amountUsd, note)
 POST /api/admin/reclassify-trades — пересверка "external"-сделок с BingX (см. выше)
 POST /api/admin/trades/:id/stats-outcome — ручной исход сделки для статистики
