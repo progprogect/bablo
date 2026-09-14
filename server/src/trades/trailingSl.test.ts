@@ -15,12 +15,62 @@ const base = {
   appliedTriggerR: null as number | null,
 };
 
-test("trailingLadderFor: лестница только у 1/3 и 1/4", () => {
+test("trailingLadderFor: лестница у 1/2, 1/3 и 1/4", () => {
+  assert.ok(trailingLadderFor("1/2"));
   assert.ok(trailingLadderFor("1/3"));
   assert.ok(trailingLadderFor("1/4"));
-  assert.equal(trailingLadderFor("1/2"), null);
+  assert.equal(trailingLadderFor("1/1"), null);
+  assert.equal(trailingLadderFor("1/1.5"), null);
   assert.equal(trailingLadderFor("1/5"), null);
   assert.equal(trailingLadderFor(null), null);
+});
+
+// Правило от 14.09.2026: тейк 2R, на 1.4R стоп ужимается вдвое (−1R → −0.5R), то есть
+// разворот к стопу стоит половину денег. В безубыток стоп на этой лестнице не уходит.
+test("1/2: до 1.4R — ничего, на 1.4R — стоп на −0.5R (вдвое ближе к входу)", () => {
+  const twoR = { ...base, rrPreset: "1/2" };
+  // 1R = 5 → 1.4R = 107, цель стопа = 100 − 0.5×5 = 97.5 (исходный был 95).
+  assert.equal(decideTrailingSlMove({ ...twoR, price: 106.9 }).action, "skip");
+
+  const atLevel = decideTrailingSlMove({ ...twoR, price: 107 });
+  assert.deepEqual(atLevel, { action: "move", triggerR: 1.4, slR: -0.5, newSlPrice: 97.5 });
+
+  // Ступень одна и срабатывает один раз — дальше до тейка 2R ничего не двигаем.
+  assert.equal(
+    decideTrailingSlMove({ ...twoR, appliedTriggerR: 1.4, currentSlPrice: 97.5, price: 109 }).action,
+    "skip",
+  );
+});
+
+test("1/2 в шорт: стоп ужимается вверх, к входу", () => {
+  const short = { ...base, rrPreset: "1/2", side: "short" as const, currentSlPrice: 105 };
+  assert.deepEqual(decideTrailingSlMove({ ...short, price: 93 }), {
+    action: "move",
+    triggerR: 1.4,
+    slR: -0.5,
+    newSlPrice: 102.5,
+  });
+});
+
+test("1/2: стоп уже подтянут дальше (ночное правило) — уровень фиксируется без движения", () => {
+  // Ночное правило увело стоп на +1R (105) — ужимать до 97.5 нельзя, это расширение риска.
+  const decision = decideTrailingSlMove({
+    ...base,
+    rrPreset: "1/2",
+    currentSlPrice: 105,
+    price: 107,
+  });
+  assert.deepEqual(decision, { action: "settle", triggerR: 1.4 });
+});
+
+test("1/2 с частичной фиксацией — лестница не применяется", () => {
+  const decision = decideTrailingSlMove({
+    ...base,
+    rrPreset: "1/2",
+    partialTpPrice: 105,
+    price: 107,
+  });
+  assert.equal(decision.action, "skip");
 });
 
 test("1/3: до 1.9R — ничего, на 1.9R — стоп на вход, на 2.25R — стоп на +1R", () => {

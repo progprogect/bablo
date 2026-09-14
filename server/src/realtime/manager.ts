@@ -40,7 +40,7 @@ export async function startRealtime(): Promise<void> {
     const closedWhileDown = await reconcileIfPositionAlreadyFlat(activeTrade.symbol, "старт сервера");
     if (!closedWhileDown) {
       startTracking(activeTrade);
-      // Трейлинг-лестница SL для полных тейков 1/3 и 1/4 переживает рестарт:
+      // Трейлинг-лестница SL для полных тейков 1/2, 1/3 и 1/4 переживает рестарт:
       // прогресс в trades.trail_sl_applied_r, вотчер просто перевзводится.
       startTrailingSlWatch(activeTrade);
     }
