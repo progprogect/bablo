@@ -112,6 +112,8 @@ export type RiskSnapshot = {
   activeLocks: RiskLock[];
   /** Per-asset стопы дня — форма остаётся, вход в эти активы запрещён. */
   assetSlLocks: RiskLock[];
+  /** Максимальный R/R тейка: 2 после стопа (правило #11), null — без ограничения. */
+  maxTpRatio: number | null;
 };
 
 export type DashboardResponse = {

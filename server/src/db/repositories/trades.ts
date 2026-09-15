@@ -192,6 +192,21 @@ export async function listClosedTradesBetween(from: Date, to: Date): Promise<Tra
 }
 
 /**
+ * Последняя закрытая сделка (по времени закрытия) — «предыдущая сделка» для правила
+ * «после стопа цель не дальше 1/2» (docs/RISK_ENGINE.md, правило #11).
+ */
+export async function getLastClosedTrade(): Promise<Trade | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(trades)
+    .where(eq(trades.status, "closed"))
+    .orderBy(desc(trades.closedAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
  * Все закрытые сделки без пагинации — для инсайтов и месячной статистики
  * (history/insights.ts, history/monthlyStats.ts). Небольшой объём данных у одного
  * пользователя, разовый запрос по событию (загрузка вкладки статистики) — не поллинг.

@@ -14,6 +14,8 @@ const ADJUSTED_SL_RATIO = 0.9;
 /** Пресеты частичной фиксации — синхрон с server PARTIAL_TP_PRESETS (не дальше 1/3). */
 const PARTIAL_TP_PRESETS = ["1/1", "1/2", "1/3"];
 const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
+/** Допуск сравнения R/R с порогом — синхрон с server RR_LIMIT_TOLERANCE (правило #11). */
+const RR_LIMIT_TOLERANCE = 0.05;
 const PARTIAL_TP_MAX_RATIO = 3;
 
 /** "1/2" → 2, "1/1.5" → 1.5. Держим в синхроне с server/src/trades/math.ts. */
@@ -89,11 +91,14 @@ function computePartialPotentialPnl(trade: ActiveTradeView, targetPrice: number)
 export function ActiveTradeCard({
   trade,
   livePrice,
+  maxTpRatio,
   onUpdated,
   onClosed,
 }: {
   trade: ActiveTradeView;
   livePrice?: number;
+  /** Ограничение цели после стопа (правило #11): 2 или null, приходит из риск-снимка. */
+  maxTpRatio: number | null;
   onUpdated: (trade: ActiveTradeView) => void;
   onClosed: () => void;
 }) {
@@ -219,7 +224,12 @@ export function ActiveTradeCard({
       )}
 
       {!trade.tpPrice && (
-        <TakeProfitForm trade={trade} onUpdated={onUpdated} onWarning={setPartialTpWarning} />
+        <TakeProfitForm
+          trade={trade}
+          maxTpRatio={maxTpRatio}
+          onUpdated={onUpdated}
+          onWarning={setPartialTpWarning}
+        />
       )}
 
       {showCloseButton && (
@@ -251,10 +261,12 @@ const inputClass =
 
 function TakeProfitForm({
   trade,
+  maxTpRatio,
   onUpdated,
   onWarning,
 }: {
   trade: ActiveTradeView;
+  maxTpRatio: number | null;
   onUpdated: (trade: ActiveTradeView) => void;
   onWarning: (message: string | null) => void;
 }) {
@@ -277,6 +289,18 @@ function TakeProfitForm({
     if (!(risk > 0)) return null;
     return Math.abs(tp - entry) / risk;
   })();
+
+  /**
+   * Правило #11: после стопа дальние цели недоступны — пресеты дальше 1/2 не показываем,
+   * а введённую вручную цену проверяем тем же порогом, что и сервер (risk/limits.ts).
+   */
+  const availableRrPresets = RR_PRESETS.filter((preset) => {
+    if (maxTpRatio === null) return true;
+    const ratio = parseRRRatio(preset);
+    return ratio === null || ratio <= maxTpRatio + RR_LIMIT_TOLERANCE;
+  });
+  const exceedsMaxTpRatio =
+    maxTpRatio !== null && effectiveRatio !== null && effectiveRatio > maxTpRatio + RR_LIMIT_TOLERANCE;
 
   const partialTpRequired = effectiveRatio !== null && effectiveRatio >= PARTIAL_TP_REQUIRED_MIN_RATIO;
   const partialTpFilled = partialTpPrice.trim() !== "" && Number.isFinite(Number(partialTpPrice));
@@ -304,6 +328,7 @@ function TakeProfitForm({
     Boolean(selectedPreset || tpPrice) &&
     (!partialTpRequired || partialTpFilled) &&
     !partialExceedsMax &&
+    !exceedsMaxTpRatio &&
     !isSubmitting;
 
   function pickPreset(preset: string) {
@@ -379,8 +404,14 @@ function TakeProfitForm({
     <div className="flex flex-col gap-2.5 border-t border-line pt-3">
       <p className="text-sm font-medium text-ink">Шаг 2 — тейк-профит</p>
 
+      {maxTpRatio !== null && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Предыдущая сделка закрылась по стопу — цель не дальше R/R 1/{maxTpRatio}
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-1.5">
-        {RR_PRESETS.map((preset) => (
+        {availableRrPresets.map((preset) => (
           <button
             key={preset}
             type="button"
@@ -403,8 +434,13 @@ function TakeProfitForm({
         placeholder="Цена TP (или выберите R/R выше)"
         value={tpPrice}
         onChange={(event) => editTpPrice(event.target.value)}
-        className={inputClass}
+        className={`${inputClass}${exceedsMaxTpRatio ? " border-red-400 focus:border-red-500" : ""}`}
       />
+      {exceedsMaxTpRatio && (
+        <p className="text-xs text-red-600">
+          Эта цена дальше R/R 1/{maxTpRatio} — после стопа такая цель недоступна
+        </p>
+      )}
 
       {/* Выравнивание после проскальзывания: сервер вместе с TP перенесёт стоп на −0.9R₀.
           Показываем новую цену стопа заранее — перенос ордера не должен быть сюрпризом. */}
