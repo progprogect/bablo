@@ -116,6 +116,7 @@ export function Dashboard() {
         <ActiveTradeCard
           trade={data.activeTrade}
           livePrice={livePrices[data.activeTrade.symbol]}
+          maxTpRatio={data.risk.maxTpRatio ?? null}
           onUpdated={handleTradeUpdated}
           onClosed={loadDashboard}
         />

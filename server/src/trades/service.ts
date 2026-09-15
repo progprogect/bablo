@@ -29,10 +29,12 @@ import { startTrailingSlWatch, stopTrailingSlWatch } from "./trailingSlWatcher.j
 import {
   checkCanOpenTrade,
   checkVolumeRisk,
+  previousTradeWasStop,
   recordTradeClose,
   resyncTradingDayRisk,
   RiskBlockedError,
 } from "../risk/service.js";
+import { isTpRatioAllowed, MAX_RR_AFTER_STOP } from "../risk/limits.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
   computeAdjustedOrders,
@@ -338,6 +340,19 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   const effectiveRatio =
     (rrPreset !== undefined ? parseRRRatio(rrPreset) : null) ??
     computeRiskRewardRatio(entryPrice, slPrice, tpPrice);
+
+  /**
+   * Правило #11 (docs/RISK_ENGINE.md): после стопа цель не дальше 1/2. Проверяем ДО
+   * требования частичной фиксации — иначе на цели 1/5 пользователь увидел бы «укажите
+   * частичную фиксацию» вместо настоящей причины отказа. Запрос к БД только когда цель
+   * действительно дальше порога: на обычных целях лишних чтений нет.
+   */
+  if (effectiveRatio !== null && !isTpRatioAllowed(effectiveRatio, true) && (await previousTradeWasStop())) {
+    throw new TradeError(
+      `Предыдущая сделка закрылась по стопу — сейчас цель не дальше R/R 1/${MAX_RR_AFTER_STOP}`,
+    );
+  }
+
   if (
     effectiveRatio !== null &&
     requiresPartialTakeProfit(effectiveRatio) &&

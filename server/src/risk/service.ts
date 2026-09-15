@@ -8,7 +8,12 @@ import {
 } from "../db/repositories/dailyStats.js";
 import { listActiveLocks, replaceManagedLocks } from "../db/repositories/riskLocks.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
-import { getActiveTrade, listAllClosedTrades, updateTrade } from "../db/repositories/trades.js";
+import {
+  getActiveTrade,
+  getLastClosedTrade,
+  listAllClosedTrades,
+  updateTrade,
+} from "../db/repositories/trades.js";
 import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
 import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef, riskSizeToleranceRatio } from "./ladder.js";
@@ -19,6 +24,7 @@ import {
   evaluateDailyLimitBlocks,
   isGlobalBlock,
   isStrongTakeProfit,
+  MAX_RR_AFTER_STOP,
   pickEffectiveBlock,
   type Block,
   type BlockType,
@@ -80,6 +86,11 @@ export type RiskSnapshot = {
   activeLocks: RiskLockView[];
   /** Per-asset: символы со стопом сегодня — форма остаётся, вход в эти активы запрещён. */
   assetSlLocks: RiskLockView[];
+  /**
+   * Максимальный R/R тейка для новой сделки: 2 после стопа (правило #11), иначе null —
+   * без ограничения. UI прячет дальние пресеты, сервер проверяет то же при постановке TP.
+   */
+  maxTpRatio: number | null;
 };
 
 function toLockView(lock: {
@@ -96,15 +107,27 @@ function toLockView(lock: {
   };
 }
 
+/**
+ * Закрылась ли ПОСЛЕДНЯЯ сделка реальным стопом (правило #11). Исход берётся общей
+ * функцией (history/outcome.ts): стоп, уведённый в прибыль, — это тейк, ограничение
+ * после него не нужно. Считается через границы дня намеренно НЕ ограничено: правило про
+ * «следующий вход после убытка», а не про календарный день.
+ */
+export async function previousTradeWasStop(): Promise<boolean> {
+  const last = await getLastClosedTrade();
+  return last !== null && outcomeOfTrade(last) === "sl";
+}
+
 export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   const now = new Date();
-  const [stateRow, levels, settings, activeTrade, locks, hourBlock] = await Promise.all([
+  const [stateRow, levels, settings, activeTrade, locks, hourBlock, lastWasStop] = await Promise.all([
     getOrCreateRiskState(),
     listRiskLevelDefs(),
     getRiskSettings(),
     getActiveTrade(),
     listActiveLocks(now),
     evaluateLosingHourBlock(now),
+    previousTradeWasStop(),
   ]);
 
   const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
@@ -126,6 +149,7 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     hasActiveTrade: activeTrade !== null,
     activeLocks: [...globalLocks, ...hourLocks].map(toLockView),
     assetSlLocks: assetSlLocks.map(toLockView),
+    maxTpRatio: lastWasStop ? MAX_RR_AFTER_STOP : null,
   };
 }
 

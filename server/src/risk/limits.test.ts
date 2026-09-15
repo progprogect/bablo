@@ -6,6 +6,7 @@ import {
   evaluateDailyLimitBlocks,
   isGlobalBlock,
   isStrongTakeProfit,
+  isTpRatioAllowed,
   pickEffectiveBlock,
   type DailyLimitCounters,
 } from "./limits.js";
@@ -186,4 +187,29 @@ test("isGlobalBlock: asset_sl_today — false, остальные — true", () 
   assert.equal(isGlobalBlock({ type: "asset_sl_today" }), false);
   assert.equal(isGlobalBlock({ type: "cooldown" }), true);
   assert.equal(isGlobalBlock({ type: "daily_stop_losses" }), true);
+});
+
+// Правило #11 (15.09.2026): после стопа цель не дальше 1/2.
+test("isTpRatioAllowed: после стопа цель дальше 1/2 запрещена", () => {
+  assert.equal(isTpRatioAllowed(3, true), false);
+  assert.equal(isTpRatioAllowed(2.5, true), false);
+  assert.equal(isTpRatioAllowed(2, true), true);
+  assert.equal(isTpRatioAllowed(1.5, true), true);
+  // Выравнивающий пресет 1/1.9 (TP на 1.9×R₀) под ограничение не попадает.
+  assert.equal(isTpRatioAllowed(1.9, true), true);
+});
+
+test("isTpRatioAllowed: допуск на округление цены — 2.01R это всё ещё 1/2", () => {
+  assert.equal(isTpRatioAllowed(2.01, true), true);
+  assert.equal(isTpRatioAllowed(2.05, true), true);
+  assert.equal(isTpRatioAllowed(2.06, true), false);
+});
+
+test("isTpRatioAllowed: предыдущая сделка не стоп — ограничений нет", () => {
+  assert.equal(isTpRatioAllowed(3, false), true);
+  assert.equal(isTpRatioAllowed(10, false), true);
+});
+
+test("isTpRatioAllowed: R/R посчитать не удалось — не блокируем", () => {
+  assert.equal(isTpRatioAllowed(null, true), true);
 });
