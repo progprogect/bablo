@@ -9,6 +9,7 @@ import { ExternalPositionsPanel } from "./dashboard/ExternalPositionsPanel";
 import { BlockedPanel } from "./dashboard/BlockedPanel";
 import { AssetSlBlockedPanel } from "./dashboard/AssetSlBlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
+import { NotResourcefulNotice, ResourceStatePrompt } from "./dashboard/ResourceStatePrompt";
 import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
 
 const LEVEL_UP_GLOW_MS = 2500;
@@ -92,6 +93,14 @@ export function Dashboard() {
 
   return (
     <section className="flex flex-1 flex-col gap-6 pt-10">
+      {data.resourceState && !data.resourceState.answered && (
+        <ResourceStatePrompt
+          onAnswered={(resourceState) =>
+            setData((current) => (current ? { ...current, resourceState } : current))
+          }
+        />
+      )}
+
       <BalanceCard balance={data.balance} balanceError={data.balanceError} />
 
       <LevelIndicator
@@ -130,6 +139,7 @@ export function Dashboard() {
           <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
         ) : (
           <>
+            {data.resourceState?.isResourceful === false && <NotResourcefulNotice />}
             {assetSlLocks.length > 0 && (
               <AssetSlBlockedPanel locks={assetSlLocks} onExpired={loadDashboard} />
             )}

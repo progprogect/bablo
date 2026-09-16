@@ -142,7 +142,8 @@ bablo/
 
 ```
 settings        — ключ/значение: API-ключи (зашифрованы AES-256-GCM, ключ в ENV),
-                  таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств
+                  таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств,
+                  отметка «в ресурсе» на торговый день (resource_state)
 assets          — symbol, leverage, sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
@@ -199,6 +200,12 @@ GET  /api/stats/equity-history  — [{ date, equity }] по всем снимк�
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)
 GET/POST/PATCH/DELETE /api/admin/* — ключи, активы, параметры риск-плана
+GET  /api/resource-state        — { dayKey, answered, isResourceful }: отметка «в ресурсе»
+POST /api/resource-state        — { isResourceful } — ответ на поп-ап, один раз за торговый
+                                   день (risk/resourceState.ts; хранится в settings-kv,
+                                   ключ resource_state, миграция не нужна). Тот же объект
+                                   едет в ответе /api/dashboard, чтобы поп-ап не стоил
+                                   лишнего запроса
 POST /api/admin/refresh-balance — разовый запрос баланса у BingX по кнопке в админке:
                                    возвращает { date, equity, balance, snapshotUpdated } и
                                    ПЕРЕЗАПИСЫВАЕТ снимок эквити за сегодня (обычный снимок

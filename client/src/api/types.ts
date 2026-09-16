@@ -116,6 +116,17 @@ export type RiskSnapshot = {
   maxTpRatio: number | null;
 };
 
+/**
+ * Отметка «в ресурсе» на сегодняшний ТОРГОВЫЙ день (сброс в 07:00, а не в полночь).
+ * answered === false — показываем поп-ап с вопросом; isResourceful === false —
+ * весь день висит напоминание у формы открытия сделки.
+ */
+export type ResourceState = {
+  dayKey: string;
+  answered: boolean;
+  isResourceful: boolean | null;
+};
+
 export type DashboardResponse = {
   balance: BingXBalance | null;
   balanceError: string | null;
@@ -123,6 +134,7 @@ export type DashboardResponse = {
   activeTrade: ActiveTradeView | null;
   externalPositions: ExternalPosition[];
   risk: RiskSnapshot;
+  resourceState: ResourceState;
 };
 
 export type BingxKeyStatus = {

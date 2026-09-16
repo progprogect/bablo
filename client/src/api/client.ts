@@ -9,6 +9,7 @@ import type {
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
+  ResourceState,
   RiskLevel,
   RiskSettings,
   SetTakeProfitResult,
@@ -131,6 +132,13 @@ export const refreshBalanceRequest = () =>
     balance: string;
     snapshotUpdated: boolean;
   }>("/admin/refresh-balance", { method: "POST", body: JSON.stringify({}) });
+
+/** Ответ на вопрос «сегодня в ресурсе?» — один раз за торговый день (см. ResourceState). */
+export const setResourceStateRequest = (isResourceful: boolean) =>
+  request<ResourceState>("/resource-state", {
+    method: "POST",
+    body: JSON.stringify({ isResourceful }),
+  });
 
 /** Сделки без SL/TP (external/manual) — для ручной атрибуции в админке. */
 export const getUnclassifiedTrades = () => request<Trade[]>("/admin/trades/unclassified");
