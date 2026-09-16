@@ -7,6 +7,7 @@ import { getRiskSnapshot } from "../risk/service.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
 import { reconcileActiveTradeIfExchangeFlat } from "../realtime/manager.js";
 import { getActiveTradeView, getExternalPositions } from "../trades/service.js";
+import { getResourceStateView } from "./resourceState.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 /**
@@ -39,11 +40,14 @@ async function captureTodaysEquity(
 
 export async function registerDashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get("/dashboard", { preHandler: requireAuth }, async () => {
-    const [credentials, assets, activeTrade, risk] = await Promise.all([
+    // resourceState едет вместе с дашбордом: поп-ап «в ресурсе?» показывается на первом
+    // же экране приложения, отдельный запрос ради одного флага не нужен.
+    const [credentials, assets, activeTrade, risk, resourceState] = await Promise.all([
       getBingxCredentials(),
       listActiveAssets(),
       getActiveTradeView(),
       getRiskSnapshot(),
+      getResourceStateView(),
     ]);
     const externalPositions = await getExternalPositions(activeTrade?.symbol);
 
@@ -64,17 +68,18 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         activeTrade,
         externalPositions,
         risk,
+        resourceState,
       };
     }
 
     try {
       const balance = await getBalance(credentials);
       void captureTodaysEquity(balance.equity, balance.balance);
-      return { balance, balanceError: null, assets, activeTrade, externalPositions, risk };
+      return { balance, balanceError: null, assets, activeTrade, externalPositions, risk, resourceState };
     } catch (error) {
       const message =
         error instanceof BingXApiError ? error.message : "Не удалось получить баланс BingX";
-      return { balance: null, balanceError: message, assets, activeTrade, externalPositions, risk };
+      return { balance: null, balanceError: message, assets, activeTrade, externalPositions, risk, resourceState };
     }
   });
 }

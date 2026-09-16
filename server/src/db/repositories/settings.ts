@@ -3,12 +3,14 @@ import { getDb } from "../client.js";
 import { settings } from "../schema.js";
 import { decrypt, encrypt } from "../../security/encryption.js";
 import type { BingXCredentials } from "../../bingx/client.js";
+import type { StoredResourceState } from "../../risk/resourceState.js";
 
 const PIN_HASH_KEY = "pin_hash";
 const BINGX_CREDENTIALS_KEY = "bingx_credentials";
 const RISK_SETTINGS_KEY = "risk_settings";
 const PUSH_VAPID_KEYS_KEY = "push_vapid_keys";
 const PUSH_SUBSCRIPTIONS_KEY = "push_subscriptions";
+const RESOURCE_STATE_KEY = "resource_state";
 
 async function getValue<T>(key: string): Promise<T | null> {
   const db = getDb();
@@ -129,4 +131,16 @@ export async function getPushSubscriptions(): Promise<StoredPushSubscription[]> 
 
 export async function setPushSubscriptions(subscriptions: StoredPushSubscription[]): Promise<void> {
   await setValue(PUSH_SUBSCRIPTIONS_KEY, subscriptions);
+}
+
+// --- Отметка «в ресурсе» на торговый день (risk/resourceState.ts) ---
+// Живёт в том же kv, что и push-подписки: одна запись, перезаписывается раз в день,
+// отдельная таблица и миграция ради неё не нужны.
+
+export async function getStoredResourceState(): Promise<StoredResourceState | null> {
+  return getValue<StoredResourceState>(RESOURCE_STATE_KEY);
+}
+
+export async function setStoredResourceState(state: StoredResourceState): Promise<void> {
+  await setValue(RESOURCE_STATE_KEY, state);
 }

@@ -15,6 +15,7 @@ import { registerEventsRoutes } from "./api/events.js";
 import { registerStatsRoutes } from "./api/stats.js";
 import { registerRiskRoutes } from "./api/risk.js";
 import { registerPushRoutes } from "./api/push.js";
+import { registerResourceStateRoutes } from "./api/resourceState.js";
 import { env } from "./config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,7 @@ export function buildApp() {
   app.register(registerStatsRoutes, { prefix: "/api" });
   app.register(registerRiskRoutes, { prefix: "/api" });
   app.register(registerPushRoutes, { prefix: "/api" });
+  app.register(registerResourceStateRoutes, { prefix: "/api" });
 
   const clientBuildExists = existsSync(path.join(clientDistPath, "index.html"));
 
