@@ -64,6 +64,13 @@ export const trades = pgTable("trades", {
   entryPrice: numeric("entry_price", { precision: 20, scale: 8 }),
   slPrice: numeric("sl_price", { precision: 20, scale: 8 }),
   tpPrice: numeric("tp_price", { precision: 20, scale: 8 }),
+  /**
+   * Цена тейка, заданная ПРИ ВХОДЕ — пишется один раз вместе с tpPrice и больше не
+   * меняется (ночное правило 1/1 переписывает tpPrice, но не её). Нужна, чтобы карточка
+   * активной сделки показывала риск/прибыль по исходному плану, а не по подвинутым
+   * ордерам (просьба пользователя от 18.09.2026).
+   */
+  tpPriceInitial: numeric("tp_price_initial", { precision: 20, scale: 8 }),
   rrPreset: text("rr_preset"),
   riskUsd: numeric("risk_usd", { precision: 10, scale: 2 }),
   // Частичная фиксация: опциональный доп. TP на часть объёма (см. docs/PROJECT.md).

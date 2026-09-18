@@ -148,6 +148,8 @@ assets          — symbol, leverage, sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
 trades          — вся сделка: symbol, side, qty, leverage, entry_price, sl, tp, rr_preset,
+                  tp_price_initial (цена тейка при входе; пишется один раз — карточка
+                  показывает R/R по плану, даже если ночное правило подвинуло tp),
                   stats_outcome (ручной исход для статистики: tp/sl/be, null — авто),
                   trail_sl_applied_r (прогресс трейлинг-лестницы SL для тейков 1/2, 1/3, 1/4),
                   risk_usd, opened_at, closed_at, close_reason, close_price,
