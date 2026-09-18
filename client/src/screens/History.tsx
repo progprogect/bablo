@@ -7,6 +7,7 @@ import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
+import { WithdrawalsCard } from "./history/WithdrawalsCard";
 
 const PAGE_SIZE = 20;
 
@@ -114,6 +115,8 @@ export function History() {
 
       {tab === "stats" && (
         <div className="mx-4 flex flex-col gap-3">
+          <WithdrawalsCard />
+
           <button
             type="button"
             onClick={() => setShowEquityChart(true)}

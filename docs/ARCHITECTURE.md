@@ -168,6 +168,11 @@ equity_adjustments — ручные пополнения/выводы (date, amo
                    note) — заполняются в админке; учитываются при восстановлении баланса
                    прошлых месяцев "в обратную сторону" от последнего снимка эквити
                    (history/monthlyStats.ts), см. docs/PROJECT.md
+level_withdrawals — выводы прибыли по уровням (docs/RISK_ENGINE.md, правило #12): level,
+                   required_usd, created_at (требование появилось при переходе уровня) и
+                   факт — withdrawn_usd, withdrawn_at, source (manual/bingx), external_id
+                   (id вывода на бирже, уникален — один вывод не закрывает два требования),
+                   equity_adjustment_id. Незакрытое требование = withdrawn_at IS NULL
 hour_blocks     — история блокировок убыточных часов (hour, blocked_at, unblocked_at,
                    снимки статистики на момент блокировки/разблокировки). Активная
                    блокировка — строка с unblocked_at IS NULL, на час не больше одной
@@ -202,6 +207,13 @@ GET  /api/stats/equity-history  — [{ date, equity }] по всем снимк�
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)
 GET/POST/PATCH/DELETE /api/admin/* — ключи, активы, параметры риск-плана
+GET  /api/withdrawals           — { pending, blockReason, totalWithdrawnUsd, history }:
+                                   выводы прибыли по уровням
+POST /api/withdrawals/confirm   — { id, amountUsd } — ручное подтверждение вывода (сумма
+                                   сверяется до цента)
+POST /api/withdrawals/check-bingx — разовая сверка с историей выводов BingX (эндпоинт
+                                   КОШЕЛЬКА: у торгового ключа может не быть прав, тогда
+                                   ошибка возвращается текстом и остаётся ручной путь)
 GET  /api/resource-state        — { dayKey, answered, isResourceful, askReason }: отметка
                                    «в ресурсе». Спрашиваем на двух точках — новый торговый
                                    день ("day") и конец перерыва после сделки ("cooldown")

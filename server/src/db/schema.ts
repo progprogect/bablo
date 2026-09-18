@@ -190,3 +190,29 @@ export const hourBlocks = pgTable("hour_blocks", {
   referenceAtBlock: integer("reference_at_block").notNull(),
   referenceAtUnblock: integer("reference_at_unblock"),
 });
+
+/**
+ * Выводы прибыли по уровням (правило пользователя от 18.09.2026, см. docs/RISK_ENGINE.md).
+ * Одна строка — одно ТРЕБОВАНИЕ вывода, появившееся при прохождении уровня, и оно же —
+ * факт вывода, когда он сделан: так история «сколько реальных денег снято с биржи» и
+ * список «что ещё нужно вывести» не расходятся между собой.
+ *
+ * Требование считается закрытым, когда заполнен withdrawnAt. Пока есть незакрытые —
+ * открытие сделок заблокировано.
+ */
+export const levelWithdrawals = pgTable("level_withdrawals", {
+  id: serial("id").primaryKey(),
+  /** Уровень, который был ПРОЙДЕН (его 1R и есть сумма вывода). */
+  level: integer("level").notNull(),
+  requiredUsd: numeric("required_usd", { precision: 20, scale: 8 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Факт: сколько реально выведено. null — вывод ещё не сделан. */
+  withdrawnUsd: numeric("withdrawn_usd", { precision: 20, scale: 8 }),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  /** "manual" — отметила в приложении, "bingx" — найдено в истории выводов биржи. */
+  source: text("source"),
+  /** Идентификатор вывода на BingX — чтобы один вывод не закрыл два требования. */
+  externalId: text("external_id"),
+  /** Ссылка на корректировку баланса: вывод уменьшает депозит, и месячные % это учитывают. */
+  equityAdjustmentId: integer("equity_adjustment_id"),
+});
