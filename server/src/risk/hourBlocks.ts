@@ -18,6 +18,12 @@ import { getLocalHour } from "./tradingDay.js";
  *    вперёд, и часу дают второй шанс. Именно из-за гистерезиса набор заблокированных
  *    часов — состояние в БД (таблица hour_blocks), а не чистая функция от статистики:
  *    между «уже не блокируется» и «ещё не разблокирован» час остаётся закрытым.
+ * 4. ПРОВЕРКА ГИПОТЕЗЫ (дополнение от 18.09.2026) — даже когда время второго шанса
+ *    пришло, час остаётся закрытым, если ОБЩИЙ винрейт (по всем сделкам, всем активам и
+ *    часам) стал выше, чем был на момент блокировки. Логика пользователя: раз общий
+ *    результат улучшился после того, как этот час убрали из торговли, — возможно, именно
+ *    он и мешал; высокий винрейт важнее возврата часа. Если винрейт не вырос, гипотеза не
+ *    подтвердилась — час открывается по правилу 3.
  */
 
 /** Час прибыльный, если тейков не меньше половины (ровно 50% — тоже, как у галочки в подсказке). */
@@ -29,6 +35,9 @@ export const LOSING_HOUR_SHARE = 0.3;
 /** Во сколько раз эталон должен превзойти час, чтобы снять блокировку (+50%). */
 export const UNBLOCK_REFERENCE_RATIO = 1.5;
 
+/** Порог сравнения винрейтов — чтобы «выше» не срабатывало на шуме float. */
+const WINRATE_EPSILON = 1e-9;
+
 /** Статистика часа открытия — ровно то, что отдаёт history/insights.ts. */
 export type HourOutcome = { hour: number; tpCount: number; total: number };
 
@@ -38,6 +47,23 @@ export type HourBlockReason = {
   total: number;
   /** Эталон на момент блокировки — сколько сделок было у самого нагруженного прибыльного часа. */
   reference: number;
+};
+
+/** Активная блокировка на входе решения: час и общий винрейт на момент его закрытия. */
+export type BlockedHourState = {
+  hour: number;
+  /**
+   * Общий винрейт (доля тейков по ВСЕМ сделкам) на момент блокировки. null — посчитать не
+   * от чего (сделок до блокировки не было), тогда проверка гипотезы не применяется.
+   */
+  overallWinrateAtBlock: number | null;
+};
+
+export type HourBlockDecisionInput = {
+  hours: HourOutcome[];
+  blocked: BlockedHourState[];
+  /** Общий винрейт сейчас — сравнивается с зафиксированным на момент блокировки. */
+  overallWinrate: number | null;
 };
 
 export type HourBlockDecision = {
@@ -70,13 +96,20 @@ export function referenceTradeCount(hours: HourOutcome[]): number | null {
   return reference;
 }
 
+/** Стал ли общий винрейт строго выше, чем на момент блокировки часа. */
+function overallWinrateImproved(atBlock: number | null, now: number | null): boolean {
+  if (atBlock === null || now === null) return false;
+  return now > atBlock + WINRATE_EPSILON;
+}
+
 /**
  * Решение по всем часам: кого закрыть, кого открыть, и итоговый набор. Чистая функция —
  * текущее состояние приходит параметром, применение (запись в БД) снаружи.
  */
-export function decideHourBlocks(hours: HourOutcome[], currentlyBlocked: number[]): HourBlockDecision {
+export function decideHourBlocks(input: HourBlockDecisionInput): HourBlockDecision {
+  const { hours, blocked: currentlyBlocked, overallWinrate } = input;
   const reference = referenceTradeCount(hours);
-  const blocked = new Set(currentlyBlocked);
+  const blocked = new Set(currentlyBlocked.map((entry) => entry.hour));
   const byHour = new Map(hours.map((entry) => [entry.hour, entry]));
 
   const toBlock: HourBlockReason[] = [];
@@ -92,17 +125,20 @@ export function decideHourBlocks(hours: HourOutcome[], currentlyBlocked: number[
     }
   }
 
-  for (const hour of currentlyBlocked) {
-    const stat = byHour.get(hour);
+  for (const entry of currentlyBlocked) {
+    const stat = byHour.get(entry.hour);
     // Часа не стало в статистике (сделки удалены/переразмечены) — держать блокировку не на чем.
     if (!stat || stat.total === 0) {
-      toUnblock.push({ hour, reference: reference ?? 0 });
-      blocked.delete(hour);
+      toUnblock.push({ hour: entry.hour, reference: reference ?? 0 });
+      blocked.delete(entry.hour);
       continue;
     }
     if (reference !== null && reference >= stat.total * UNBLOCK_REFERENCE_RATIO) {
-      toUnblock.push({ hour, reference });
-      blocked.delete(hour);
+      // Время второго шанса пришло, но общий винрейт с момента блокировки вырос —
+      // оставляем час закрытым: похоже, именно без него результат стал лучше.
+      if (overallWinrateImproved(entry.overallWinrateAtBlock, overallWinrate)) continue;
+      toUnblock.push({ hour: entry.hour, reference });
+      blocked.delete(entry.hour);
     }
   }
 
@@ -112,6 +148,28 @@ export function decideHourBlocks(hours: HourOutcome[], currentlyBlocked: number[
     blockedHours: [...blocked].sort((a, b) => a - b),
     reference,
   };
+}
+
+/** Закрытая сделка для общего винрейта: когда закрылась и был ли это тейк. */
+export type ClosedOutcome = { closedAt: Date | null; isTp: boolean };
+
+/**
+ * Общий винрейт — доля тейков по ВСЕМ закрытым сделкам (любой актив, любой час).
+ * `before` задан — считаем только сделки, закрытые строго раньше этого момента: так
+ * восстанавливается винрейт на момент блокировки часа, без отдельного поля в БД.
+ * null — сделок в выборке нет.
+ */
+export function overallWinrate(trades: ClosedOutcome[], before: Date | null = null): number | null {
+  let total = 0;
+  let tpCount = 0;
+  for (const trade of trades) {
+    if (before !== null) {
+      if (!trade.closedAt || trade.closedAt.getTime() >= before.getTime()) continue;
+    }
+    total += 1;
+    if (trade.isTp) tpCount += 1;
+  }
+  return total > 0 ? tpCount / total : null;
 }
 
 const HOURS_IN_DAY = 24;
