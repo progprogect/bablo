@@ -1,7 +1,6 @@
 import { BingXApiError, getWithdrawHistory } from "../bingx/client.js";
 import { createEquityAdjustment } from "../db/repositories/equityAdjustments.js";
 import {
-  countLevelWithdrawals,
   createWithdrawalRequirement,
   listLevelWithdrawals,
   listPendingWithdrawals,
@@ -9,7 +8,6 @@ import {
   type LevelWithdrawalRow,
 } from "../db/repositories/levelWithdrawals.js";
 import { listRiskLevelDefs } from "../db/repositories/riskLevels.js";
-import { getOrCreateRiskState } from "../db/repositories/riskState.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
 import { getLevelDef } from "../risk/ladder.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
@@ -59,20 +57,13 @@ export async function createRequirementsForLevelUp(
   }
 }
 
-/**
- * Первое требование после появления правила: по решению пользователя оно относится к уже
- * пройденному уровню (текущий минус один), а не ждёт нового повышения. Создаётся ровно
- * один раз — дальше таблица уже не пуста.
+/*
+ * Стартового требования «за уже пройденный уровень» намеренно НЕТ (решение пользователя
+ * от 18.09.2026, изменено в тот же день): правило действует только со СЛЕДУЮЩЕГО
+ * повышения уровня. Иначе сразу после выката торговля оказывалась закрытой за уровень,
+ * который был пройден до появления правила. Требования создаёт только
+ * createRequirementsForLevelUp — на фактическом переходе уровня.
  */
-async function ensureInitialRequirement(): Promise<void> {
-  if ((await countLevelWithdrawals()) > 0) return;
-  const [state, defs] = await Promise.all([getOrCreateRiskState(), listRiskLevelDefs()]);
-  const completedLevel = state.currentLevel - 1;
-  if (completedLevel < 1) return; // на первом уровне выводить ещё нечего
-  const def = getLevelDef(defs, completedLevel);
-  if (!def || !(def.riskUsd > 0)) return;
-  await createWithdrawalRequirement({ level: completedLevel, requiredUsd: def.riskUsd });
-}
 
 export type WithdrawalView = {
   id: number;
@@ -105,7 +96,6 @@ function toView(row: LevelWithdrawalRow): WithdrawalView {
 }
 
 export async function getWithdrawalsState(): Promise<WithdrawalsState> {
-  await ensureInitialRequirement();
   const rows = await listLevelWithdrawals();
   const pending = rows
     .filter((row) => row.withdrawnAt === null)
@@ -124,7 +114,6 @@ export async function getWithdrawalsState(): Promise<WithdrawalsState> {
 
 /** Незакрытые требования для риск-гейта — без истории и лишних полей. */
 export async function listPendingWithdrawalRequirements(): Promise<PendingWithdrawal[]> {
-  await ensureInitialRequirement();
   const rows = await listPendingWithdrawals();
   return rows.map((row) => ({ id: row.id, level: row.level, requiredUsd: Number(row.requiredUsd) }));
 }
