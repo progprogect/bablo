@@ -19,6 +19,11 @@ import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef, riskSizeToleranceRatio } from "./ladder.js";
 import { evaluateLosingHourBlock, syncHourBlocks } from "./hourBlocksService.js";
 import {
+  createRequirementsForLevelUp,
+  listPendingWithdrawalRequirements,
+} from "../withdrawals/service.js";
+import { withdrawalBlockReason } from "./withdrawals.js";
+import {
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
@@ -91,6 +96,11 @@ export type RiskSnapshot = {
    * без ограничения. UI прячет дальние пресеты, сервер проверяет то же при постановке TP.
    */
   maxTpRatio: number | null;
+  /**
+   * Незакрытые выводы прибыли по уровням (правило #12). Пока список не пуст, открытие
+   * сделок запрещено — UI показывает отдельную панель с суммой и подтверждением вывода.
+   */
+  pendingWithdrawals: { id: number; level: number; requiredUsd: number }[];
 };
 
 function toLockView(lock: {
@@ -120,15 +130,17 @@ export async function previousTradeWasStop(): Promise<boolean> {
 
 export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   const now = new Date();
-  const [stateRow, levels, settings, activeTrade, locks, hourBlock, lastWasStop] = await Promise.all([
-    getOrCreateRiskState(),
-    listRiskLevelDefs(),
-    getRiskSettings(),
-    getActiveTrade(),
-    listActiveLocks(now),
-    evaluateLosingHourBlock(now),
-    previousTradeWasStop(),
-  ]);
+  const [stateRow, levels, settings, activeTrade, locks, hourBlock, lastWasStop, pendingWithdrawals] =
+    await Promise.all([
+      getOrCreateRiskState(),
+      listRiskLevelDefs(),
+      getRiskSettings(),
+      getActiveTrade(),
+      listActiveLocks(now),
+      evaluateLosingHourBlock(now),
+      previousTradeWasStop(),
+      listPendingWithdrawalRequirements(),
+    ]);
 
   const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
   const dailySumR = await getDailySumR(dayKey);
@@ -150,6 +162,7 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     activeLocks: [...globalLocks, ...hourLocks].map(toLockView),
     assetSlLocks: assetSlLocks.map(toLockView),
     maxTpRatio: lastWasStop ? MAX_RR_AFTER_STOP : null,
+    pendingWithdrawals,
   };
 }
 
@@ -171,6 +184,14 @@ export async function checkCanOpenTrade(
   const activeTrade = await getActiveTrade();
   if (activeTrade) {
     throw new RiskBlockedError("Уже есть активная сделка");
+  }
+
+  // Вывод прибыли по уровням (правило #12) проверяем раньше локов: это не «подожди
+  // столько-то», а действие, без которого торговля не продолжается.
+  const pendingWithdrawals = await listPendingWithdrawalRequirements();
+  const withdrawalReason = withdrawalBlockReason(pendingWithdrawals);
+  if (withdrawalReason) {
+    throw new RiskBlockedError(withdrawalReason);
   }
 
   const [locks, hourBlock] = await Promise.all([listActiveLocks(), evaluateLosingHourBlock()]);
@@ -270,6 +291,16 @@ export async function recordTradeClose(input: {
     levels,
   );
   await updateRiskState(stateRow.id, nextState);
+
+  // Уровень пройден — появляется обязательный вывод прибыли (правило #12). Best-effort:
+  // сбой записи не должен мешать зафиксировать результат уже закрытой сделки.
+  if (nextState.currentLevel > stateRow.currentLevel) {
+    await createRequirementsForLevelUp(
+      stateRow.currentLevel,
+      nextState.currentLevel,
+      input.closedAt,
+    ).catch(() => {});
+  }
 
   const resultRForDaily = resultRForDailyStats(
     input.closeReason,

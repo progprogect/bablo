@@ -435,6 +435,67 @@ export async function getIncomeHistory(
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * Запись вывода средств с биржи (wallet API). Формат полей у BingX между версиями
+ * отличается, поэтому парсим лениво: берём то, что есть, и не падаем на незнакомых полях.
+ */
+export type BingXWithdrawRecord = {
+  /** Идентификатор вывода на бирже — по нему не засчитываем один вывод дважды. */
+  id: string;
+  /** Запрошенная сумма вывода (без комиссии сети). */
+  amount: number;
+  coin: string;
+  /** Время применения/подтверждения вывода, мс. */
+  applyTimeMs: number | null;
+  status: string | null;
+};
+
+function parseWithdrawRecord(raw: Record<string, unknown>): BingXWithdrawRecord | null {
+  const amount = Number(raw.amount ?? raw.quantity ?? raw.value);
+  if (!Number.isFinite(amount)) return null;
+  const rawTime = raw.applyTime ?? raw.applyTimeStamp ?? raw.insertTime ?? raw.timestamp ?? raw.time;
+  const timeMs =
+    typeof rawTime === "number"
+      ? rawTime
+      : typeof rawTime === "string" && rawTime.trim() !== ""
+        ? Number.isFinite(Number(rawTime))
+          ? Number(rawTime)
+          : Date.parse(rawTime)
+        : NaN;
+  return {
+    id: String(raw.id ?? raw.withdrawOrderId ?? raw.txId ?? raw.transactionId ?? ""),
+    amount,
+    coin: String(raw.coin ?? raw.asset ?? raw.currency ?? "USDT"),
+    applyTimeMs: Number.isFinite(timeMs) ? Number(timeMs) : null,
+    status: raw.status !== undefined && raw.status !== null ? String(raw.status) : null,
+  };
+}
+
+/**
+ * История выводов средств с биржи (на карту/кошелёк) — нужна правилу вывода прибыли по
+ * уровням (docs/RISK_ENGINE.md). Эндпоинт относится к КОШЕЛЬКУ, а не к фьючерсам: ключу
+ * нужны права на чтение кошелька. Если их нет, BingX ответит ошибкой прав — вызывающая
+ * сторона обязана это пережить и оставить ручное подтверждение вывода.
+ */
+export async function getWithdrawHistory(
+  credentials: BingXCredentials,
+  params: { startTime?: number; limit?: number } = {},
+): Promise<BingXWithdrawRecord[]> {
+  const data = await bingxRequest<unknown>(credentials, "GET", "/openApi/api/v3/capital/withdraw/history", {
+    ...(params.startTime !== undefined ? { startTime: params.startTime } : {}),
+    limit: params.limit ?? 100,
+  });
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { data?: unknown[] } | null)?.data)
+      ? ((data as { data: unknown[] }).data)
+      : [];
+  return rows
+    .filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null)
+    .map(parseWithdrawRecord)
+    .filter((row): row is BingXWithdrawRecord => row !== null);
+}
+
 // --- Listen Key (для приватного WS account stream) ---
 
 /**

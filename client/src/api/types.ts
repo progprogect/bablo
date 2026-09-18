@@ -119,6 +119,41 @@ export type RiskSnapshot = {
   assetSlLocks: RiskLock[];
   /** Максимальный R/R тейка: 2 после стопа (правило #11), null — без ограничения. */
   maxTpRatio: number | null;
+  /** Незакрытые выводы прибыли по уровням (правило #12) — пока не пусто, торговля закрыта. */
+  pendingWithdrawals?: PendingWithdrawal[];
+};
+
+/** Требование вывода прибыли за пройденный уровень. */
+export type PendingWithdrawal = {
+  id: number;
+  level: number;
+  requiredUsd: number;
+};
+
+/** Один вывод прибыли: требование + факт, когда он сделан. */
+export type WithdrawalView = {
+  id: number;
+  level: number;
+  requiredUsd: number;
+  withdrawnUsd: number | null;
+  withdrawnAt: string | null;
+  /** "manual" — отметила в приложении, "bingx" — найдено в истории выводов биржи. */
+  source: string | null;
+};
+
+export type WithdrawalsState = {
+  pending: PendingWithdrawal[];
+  blockReason: string | null;
+  /** Сколько реальных денег уже снято с биржи. */
+  totalWithdrawnUsd: number;
+  history: WithdrawalView[];
+};
+
+export type BingxWithdrawalCheck = {
+  found: number;
+  matched: number;
+  error: string | null;
+  state: WithdrawalsState;
 };
 
 /**

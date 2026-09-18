@@ -9,6 +9,7 @@ import type {
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
+  BingxWithdrawalCheck,
   ResourceState,
   RiskLevel,
   RiskSettings,
@@ -16,6 +17,7 @@ import type {
   StatsResponse,
   Trade,
   TradeSide,
+  WithdrawalsState,
 } from "./types";
 
 export class ApiError extends Error {}
@@ -132,6 +134,24 @@ export const refreshBalanceRequest = () =>
     balance: string;
     snapshotUpdated: boolean;
   }>("/admin/refresh-balance", { method: "POST", body: JSON.stringify({}) });
+
+// --- Выводы прибыли по уровням (docs/RISK_ENGINE.md, правило #12) ---
+
+export const getWithdrawals = () => request<WithdrawalsState>("/withdrawals");
+
+/** Ручное подтверждение вывода: сумма должна совпасть с требуемой до цента. */
+export const confirmWithdrawalRequest = (id: number, amountUsd: number) =>
+  request<WithdrawalsState>("/withdrawals/confirm", {
+    method: "POST",
+    body: JSON.stringify({ id, amountUsd }),
+  });
+
+/** Разовая сверка с историей выводов BingX — закрывает требования автоматически. */
+export const checkBingxWithdrawalsRequest = () =>
+  request<BingxWithdrawalCheck>("/withdrawals/check-bingx", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 
 /** Ответ на вопрос «сегодня в ресурсе?» — один раз за торговый день (см. ResourceState). */
 export const setResourceStateRequest = (isResourceful: boolean) =>

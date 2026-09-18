@@ -10,6 +10,7 @@ import { BlockedPanel } from "./dashboard/BlockedPanel";
 import { AssetSlBlockedPanel } from "./dashboard/AssetSlBlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
 import { NotResourcefulNotice, ResourceStatePrompt } from "./dashboard/ResourceStatePrompt";
+import { WithdrawalRequiredPanel } from "./dashboard/WithdrawalRequiredPanel";
 import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
 
 const LEVEL_UP_GLOW_MS = 2500;
@@ -87,6 +88,7 @@ export function Dashboard() {
   // Только глобальные локи скрывают форму. assetSlLocks — отдельная плашка, форма остаётся.
   const isBlocked = !data.activeTrade && !hasExternalPositions && data.risk.activeLocks.length > 0;
   const assetSlLocks = data.risk.assetSlLocks ?? [];
+  const pendingWithdrawals = data.risk.pendingWithdrawals ?? [];
   const selectedAssetSlLock = selectedSymbol
     ? assetSlLocks.find((lock) => lock.symbol === selectedSymbol)
     : undefined;
@@ -134,8 +136,15 @@ export function Dashboard() {
 
       {hasExternalPositions && <ExternalPositionsPanel positions={data.externalPositions} />}
 
+      {/* Вывод прибыли за пройденный уровень — блокировка не по таймеру, а по действию:
+          показываем вместо формы отдельную панель с суммой и подтверждением. */}
+      {!data.activeTrade && !hasExternalPositions && pendingWithdrawals.length > 0 && (
+        <WithdrawalRequiredPanel pending={pendingWithdrawals} onResolved={loadDashboard} />
+      )}
+
       {!data.activeTrade &&
         !hasExternalPositions &&
+        pendingWithdrawals.length === 0 &&
         (isBlocked ? (
           <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
         ) : (
