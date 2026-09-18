@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import { createLock } from "../db/repositories/riskLocks.js";
 import { getLastClosedTrade } from "../db/repositories/trades.js";
 import { getRiskSettings, getStoredResourceState, setStoredResourceState } from "../db/repositories/settings.js";
+import { buildNotResourcefulBlock } from "../risk/limits.js";
 import { resolveResourceState, type ResourceStateView } from "../risk/resourceState.js";
 import { getTradingDayKey } from "../risk/tradingDay.js";
 import { requireAuth } from "./plugins/auth-guard.js";
@@ -43,6 +45,11 @@ export async function registerResourceStateRoutes(app: FastifyInstance): Promise
       const now = new Date();
       const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
       await setStoredResourceState({ dayKey, isResourceful, answeredAt: now.toISOString() });
+
+      // «Нет» — это не только напоминание: входы закрываются на два часа (правило #13).
+      if (!isResourceful) {
+        await createLock(buildNotResourcefulBlock(now));
+      }
       // Ответ только что сохранён — состояние заведомо «отвечено», лишний раз не считаем.
       return { dayKey, answered: true, isResourceful, askReason: null } satisfies ResourceStateView;
     },

@@ -98,9 +98,14 @@ export function Dashboard() {
       {data.resourceState && !data.resourceState.answered && (
         <ResourceStatePrompt
           askReason={data.resourceState.askReason}
-          onAnswered={(resourceState) =>
-            setData((current) => (current ? { ...current, resourceState } : current))
-          }
+          onAnswered={(resourceState) => {
+            setData((current) => (current ? { ...current, resourceState } : current));
+            // Ответ «нет» ставит паузу на 2 часа (docs/RISK_ENGINE.md, правило #13) —
+            // перезапрашиваем дашборд, чтобы блокировка с таймером появилась сразу.
+            if (!resourceState.isResourceful) {
+              loadDashboard();
+            }
+          }}
         />
       )}
 
