@@ -21,6 +21,21 @@ export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockR
 }
 
 /**
+ * Добавляет ОДИН лок, не трогая остальные — для блокировок, которые не пересобираются
+ * расчётом (пауза «не в ресурсе»: её ставит ответ пользователя, а не состояние дня).
+ * Такие типы намеренно не входят в MANAGED_TYPES, иначе replaceManagedLocks их сотрёт.
+ */
+export async function createLock(block: Block): Promise<void> {
+  const db = getDb();
+  await db.insert(riskLocks).values({
+    type: block.type,
+    reason: block.reason,
+    until: block.until,
+    symbol: block.symbol ?? null,
+  });
+}
+
+/**
  * Полностью пересобирает управляемые типы блокировок из свежего расчёта чистой
  * risk-логики. Вызывается один раз после закрытия сделки — гарантирует отсутствие
  * рассинхронизации со старыми записями.

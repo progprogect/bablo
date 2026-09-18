@@ -8,6 +8,12 @@ export type BlockType =
    * текущего времени, поэтому считается на лету в risk/hourBlocksService.ts.
    */
   | "losing_hour"
+  /**
+   * Пауза после ответа «не в ресурсе» (risk/resourceState.ts). Единственный лок, который
+   * ставит сам пользователь ответом на поп-ап; хранится в risk_locks и НЕ входит в
+   * MANAGED_TYPES, чтобы пересборка дневных локов его не стирала.
+   */
+  | "not_resourceful"
   | "daily_loss"
   | "daily_profit"
   | "daily_stop_losses"
@@ -152,6 +158,22 @@ export function evaluateDailyLimitBlocks(
     });
   }
   return blocks;
+}
+
+/**
+ * Пауза после ответа «не в ресурсе» на поп-апе (правило пользователя от 18.09.2026):
+ * два часа без входов. Ответ «нет» перестал быть просто напоминанием — торговля из
+ * нересурсного состояния и есть главный источник импульсивных сделок.
+ */
+export const NOT_RESOURCEFUL_PAUSE_MINUTES = 120;
+
+export function buildNotResourcefulBlock(now: Date): Block {
+  const hours = NOT_RESOURCEFUL_PAUSE_MINUTES / 60;
+  return {
+    type: "not_resourceful",
+    reason: `Ты отметила, что не в ресурсе — пауза ${hours} часа. Торговля подождёт, ресурс важнее`,
+    until: new Date(now.getTime() + NOT_RESOURCEFUL_PAUSE_MINUTES * 60_000),
+  };
 }
 
 /** Кулдаун после ЛЮБОЙ закрытой сделки — антиовертрейдинг, независимо от результата. */
