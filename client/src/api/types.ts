@@ -122,14 +122,16 @@ export type RiskSnapshot = {
 };
 
 /**
- * Отметка «в ресурсе» на сегодняшний ТОРГОВЫЙ день (сброс в 07:00, а не в полночь).
- * answered === false — показываем поп-ап с вопросом; isResourceful === false —
- * весь день висит напоминание у формы открытия сделки.
+ * Отметка «в ресурсе». Спрашиваем на двух точках: новый торговый день (сброс в 07:00,
+ * а не в полночь) и конец перерыва после закрытой сделки. answered === false — показываем
+ * поп-ап (askReason говорит, какой текст); isResourceful === false — у формы открытия
+ * сделки висит напоминание.
  */
 export type ResourceState = {
   dayKey: string;
   answered: boolean;
   isResourceful: boolean | null;
+  askReason?: "day" | "cooldown" | null;
 };
 
 export type DashboardResponse = {

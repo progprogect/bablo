@@ -202,9 +202,11 @@ GET  /api/stats/equity-history  — [{ date, equity }] по всем снимк�
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)
 GET/POST/PATCH/DELETE /api/admin/* — ключи, активы, параметры риск-плана
-GET  /api/resource-state        — { dayKey, answered, isResourceful }: отметка «в ресурсе»
-POST /api/resource-state        — { isResourceful } — ответ на поп-ап, один раз за торговый
-                                   день (risk/resourceState.ts; хранится в settings-kv,
+GET  /api/resource-state        — { dayKey, answered, isResourceful, askReason }: отметка
+                                   «в ресурсе». Спрашиваем на двух точках — новый торговый
+                                   день ("day") и конец перерыва после сделки ("cooldown")
+POST /api/resource-state        — { isResourceful } — ответ на поп-ап, по одному на точку
+                                   (risk/resourceState.ts; хранится в settings-kv,
                                    ключ resource_state, миграция не нужна). Тот же объект
                                    едет в ответе /api/dashboard, чтобы поп-ап не стоил
                                    лишнего запроса

@@ -1,18 +1,29 @@
 import type { FastifyInstance } from "fastify";
+import { getLastClosedTrade } from "../db/repositories/trades.js";
 import { getRiskSettings, getStoredResourceState, setStoredResourceState } from "../db/repositories/settings.js";
 import { resolveResourceState, type ResourceStateView } from "../risk/resourceState.js";
 import { getTradingDayKey } from "../risk/tradingDay.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 /**
- * Текущее состояние отметки «в ресурсе» — всегда про сегодняшний ТОРГОВЫЙ день
- * (сброс в 07:00 по настройкам риск-плана, не в полночь). Используется и здесь,
- * и в ответе дашборда, чтобы поп-ап показывался без отдельного запроса.
+ * Нужно ли спросить «в ресурсе?» прямо сейчас. Две точки пересборки — новый торговый день
+ * и конец перерыва после сделки (см. risk/resourceState.ts), поэтому кроме сохранённого
+ * ответа смотрим на последнюю закрытую сделку и длину кулдауна из риск-настроек.
+ * Используется и роутом ниже, и ответом дашборда — чтобы поп-ап не стоил лишнего запроса.
  */
 export async function getResourceStateView(now: Date = new Date()): Promise<ResourceStateView> {
-  const [settings, stored] = await Promise.all([getRiskSettings(), getStoredResourceState()]);
-  const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
-  return resolveResourceState(stored, dayKey);
+  const [settings, stored, lastClosed] = await Promise.all([
+    getRiskSettings(),
+    getStoredResourceState(),
+    getLastClosedTrade(),
+  ]);
+  return resolveResourceState({
+    stored,
+    todayKey: getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes),
+    now,
+    lastTradeClosedAt: lastClosed?.closedAt ?? null,
+    cooldownMinutes: settings.cooldownMinutes,
+  });
 }
 
 export async function registerResourceStateRoutes(app: FastifyInstance): Promise<void> {
@@ -29,13 +40,11 @@ export async function registerResourceStateRoutes(app: FastifyInstance): Promise
       }
 
       const settings = await getRiskSettings();
-      const dayKey = getTradingDayKey(new Date(), settings.resetHour, settings.tzOffsetMinutes);
-      await setStoredResourceState({
-        dayKey,
-        isResourceful,
-        answeredAt: new Date().toISOString(),
-      });
-      return { dayKey, answered: true, isResourceful } satisfies ResourceStateView;
+      const now = new Date();
+      const dayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
+      await setStoredResourceState({ dayKey, isResourceful, answeredAt: now.toISOString() });
+      // Ответ только что сохранён — состояние заведомо «отвечено», лишний раз не считаем.
+      return { dayKey, answered: true, isResourceful, askReason: null } satisfies ResourceStateView;
     },
   );
 }

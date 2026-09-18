@@ -95,6 +95,7 @@ export function Dashboard() {
     <section className="flex flex-1 flex-col gap-6 pt-10">
       {data.resourceState && !data.resourceState.answered && (
         <ResourceStatePrompt
+          askReason={data.resourceState.askReason}
           onAnswered={(resourceState) =>
             setData((current) => (current ? { ...current, resourceState } : current))
           }
