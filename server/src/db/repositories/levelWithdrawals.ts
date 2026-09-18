@@ -20,12 +20,6 @@ export async function listLevelWithdrawals(): Promise<LevelWithdrawalRow[]> {
   return db.select().from(levelWithdrawals).orderBy(desc(levelWithdrawals.id));
 }
 
-export async function countLevelWithdrawals(): Promise<number> {
-  const db = getDb();
-  const rows = await db.select({ id: levelWithdrawals.id }).from(levelWithdrawals).limit(1);
-  return rows.length;
-}
-
 /** Требование вывода за пройденный уровень. */
 export async function createWithdrawalRequirement(input: {
   level: number;
