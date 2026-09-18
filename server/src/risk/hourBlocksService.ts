@@ -2,11 +2,14 @@ import { applyHourBlockDecision, listActiveHourBlocks } from "../db/repositories
 import { getRiskSettings } from "../db/repositories/settings.js";
 import { listAllClosedTrades } from "../db/repositories/trades.js";
 import { computeTradeInsights, toInsightInput } from "../history/insights.js";
+import { resolveTradeOutcome } from "../history/outcome.js";
 import {
   decideHourBlocks,
   formatHour,
   nextProfitableHour,
   openHourAfter,
+  overallWinrate,
+  type ClosedOutcome,
   type HourBlockDecision,
   type HourOutcome,
 } from "./hourBlocks.js";
@@ -19,10 +22,28 @@ import { getLocalHour } from "./tradingDay.js";
  * риск-гейта. Разделение то же, что у дневных лимитов: limits.ts (чистое) + service.ts.
  */
 
-/** Статистика по часам открытия — тот же расчёт, что показывает подсказка в истории. */
-async function loadHourOutcomes(tzOffsetMinutes: number): Promise<HourOutcome[]> {
+/**
+ * Статистика закрытых сделок для правила: часы открытия (тот же расчёт, что у подсказки
+ * в истории) и плоский список исходов со временем закрытия — по нему считается ОБЩИЙ
+ * винрейт, в том числе «каким он был на момент блокировки часа» (см. hourBlocks.ts).
+ */
+async function loadTradeStats(
+  tzOffsetMinutes: number,
+): Promise<{ hours: HourOutcome[]; closed: ClosedOutcome[] }> {
   const rows = await listAllClosedTrades();
-  return computeTradeInsights(rows.map(toInsightInput), tzOffsetMinutes).hourlyOutcomes;
+  const closed: ClosedOutcome[] = [];
+  const inputs = rows.map((row) => {
+    const input = toInsightInput(row);
+    // Та же выборка, что и у часов: сделки без результата в статистику не идут.
+    if (input.resultR !== null) {
+      closed.push({
+        closedAt: row.closedAt,
+        isTp: resolveTradeOutcome(input, input.resultR) === "tp",
+      });
+    }
+    return input;
+  });
+  return { hours: computeTradeInsights(inputs, tzOffsetMinutes).hourlyOutcomes, closed };
 }
 
 /**
@@ -34,15 +55,22 @@ async function loadHourOutcomes(tzOffsetMinutes: number): Promise<HourOutcome[]>
  */
 export async function syncHourBlocks(now: Date = new Date()): Promise<HourBlockDecision> {
   const settings = await getRiskSettings();
-  const [hours, active] = await Promise.all([
-    loadHourOutcomes(settings.tzOffsetMinutes),
+  const [{ hours, closed }, active] = await Promise.all([
+    loadTradeStats(settings.tzOffsetMinutes),
     listActiveHourBlocks(),
   ]);
 
-  const decision = decideHourBlocks(
+  const decision = decideHourBlocks({
     hours,
-    active.map((row) => row.hour),
-  );
+    // Винрейт на момент блокировки восстанавливаем по истории от blockedAt — отдельного
+    // поля в БД для этого не нужно, и правило само чинится, если исход сделки поправили
+    // вручную в админке.
+    blocked: active.map((row) => ({
+      hour: row.hour,
+      overallWinrateAtBlock: overallWinrate(closed, row.blockedAt),
+    })),
+    overallWinrate: overallWinrate(closed),
+  });
   if (decision.toBlock.length > 0 || decision.toUnblock.length > 0) {
     await applyHourBlockDecision(decision, now);
   }
@@ -77,7 +105,7 @@ export async function evaluateLosingHourBlock(now: Date = new Date()): Promise<B
   const until = openHourAfter(now, blockedHours, settings.tzOffsetMinutes);
   if (!until) return null;
 
-  const hours = await loadHourOutcomes(settings.tzOffsetMinutes);
+  const { hours } = await loadTradeStats(settings.tzOffsetMinutes);
   const profitableHour = nextProfitableHour(now, hours, settings.tzOffsetMinutes);
   const stat = hours.find((entry) => entry.hour === currentHour);
   const tpCount = stat?.tpCount ?? currentBlock.tpAtBlock;
