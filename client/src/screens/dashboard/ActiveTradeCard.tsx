@@ -36,15 +36,39 @@ function formatComputedPrice(value: number): string {
   return Number(value.toFixed(6)).toString();
 }
 
-/** Соотношение риск/прибыль сделки, если TP уже задан. */
-function riskRewardRatio(trade: ActiveTradeView): number | null {
-  if (!trade.tpPrice || !trade.entryPrice || !trade.slPrice) return null;
+/**
+ * Дистанция 1R, с которой вошли в сделку: riskUsd / объём. Именно от неё считают уровни
+ * трейлинг-лестница и ночное правило на сервере — стоп, подтянутый в процессе, её не меняет
+ * (riskUsd пересчитывается только выравнивающим пресетом, и это часть настройки входа).
+ * Запасной путь для старых сделок без riskUsd — текущая дистанция до стопа.
+ */
+function entryRiskDistance(trade: ActiveTradeView): number | null {
+  const quantity = Number(trade.quantity);
+  const riskUsd = trade.riskUsd !== null ? Number(trade.riskUsd) : NaN;
+  if (Number.isFinite(riskUsd) && riskUsd > 0 && Number.isFinite(quantity) && quantity > 0) {
+    return riskUsd / quantity;
+  }
   const entry = Number(trade.entryPrice);
-  const sl = Number(trade.slPrice);
-  const tp = Number(trade.tpPrice);
-  const risk = Math.abs(entry - sl);
-  if (risk === 0) return null;
-  return Math.abs(tp - entry) / risk;
+  const sl = trade.slPrice !== null ? Number(trade.slPrice) : NaN;
+  if (!Number.isFinite(entry) || !Number.isFinite(sl)) return null;
+  const distance = Math.abs(entry - sl);
+  return distance > 0 ? distance : null;
+}
+
+/**
+ * Соотношение риск/прибыль ПО ПЛАНУ ВХОДА (просьба пользователя от 18.09.2026): берём
+ * цену тейка, с которой вошли (tpPriceInitial), и исходную дистанцию риска. Раньше цифра
+ * считалась от текущих SL/TP, поэтому подтянутый стоп (трейлинг, ночное правило, правило
+ * после partial) на глазах превращал план 1/2 в «1/4», хотя сделка не менялась.
+ */
+function riskRewardRatio(trade: ActiveTradeView): number | null {
+  const plannedTp = trade.tpPriceInitial ?? trade.tpPrice;
+  if (!plannedTp || !trade.entryPrice) return null;
+  const entry = Number(trade.entryPrice);
+  const tp = Number(plannedTp);
+  const riskDistance = entryRiskDistance(trade);
+  if (riskDistance === null || !Number.isFinite(entry) || !Number.isFinite(tp)) return null;
+  return Math.abs(tp - entry) / riskDistance;
 }
 
 /** PnL по живой цене (USDT-M linear: delta цены × кол-во монет, с учётом направления). */

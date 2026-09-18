@@ -52,6 +52,8 @@ export async function createTrade(input: CreateTradeInput): Promise<Trade> {
 
 export type UpdateTradeInput = Partial<{
   tpPrice: number;
+  /** План входа: пишется один раз вместе с первым tpPrice, потом не трогается. */
+  tpPriceInitial: number;
   slPrice: number;
   /** Пересчитанный риск (выравнивающий пресет сужает стоп до −0.9×R₀). */
   riskUsd: number;
@@ -81,6 +83,7 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   const db = getDb();
   const patch: Record<string, unknown> = {};
   if (input.tpPrice !== undefined) patch.tpPrice = String(input.tpPrice);
+  if (input.tpPriceInitial !== undefined) patch.tpPriceInitial = String(input.tpPriceInitial);
   if (input.slPrice !== undefined) patch.slPrice = String(input.slPrice);
   if (input.riskUsd !== undefined) patch.riskUsd = String(input.riskUsd);
   if (input.rrPreset !== undefined) patch.rrPreset = input.rrPreset;

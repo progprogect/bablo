@@ -479,6 +479,9 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   try {
     const updated = await updateTrade(tradeId, {
       tpPrice,
+      // План входа для карточки: ночное правило потом может переставить tpPrice на 1/1,
+      // но риск/прибыль в карточке должны остаться такими, с какими вошли.
+      tpPriceInitial: tpPrice,
       rrPreset,
       partialTpPrice: partialTpOrderId !== undefined ? input.partialTpPrice : undefined,
       partialTpPercent: partialTpOrderId !== undefined ? PARTIAL_TP_PERCENT : undefined,

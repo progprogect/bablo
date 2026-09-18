@@ -34,6 +34,11 @@ export type Trade = {
   entryPrice: string | null;
   slPrice: string | null;
   tpPrice: string | null;
+  /**
+   * Цена тейка, с которой вошли в сделку. Не меняется, даже когда ночное правило
+   * переставляет tpPrice на 1/1 — по ней карточка показывает риск/прибыль по плану входа.
+   */
+  tpPriceInitial?: string | null;
   rrPreset: string | null;
   riskUsd: string | null;
   partialTpPrice: string | null;
