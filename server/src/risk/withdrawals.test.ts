@@ -5,7 +5,9 @@ import {
   checkWithdrawalAmount,
   completedLevels,
   matchWithdrawals,
+  requiredWithdrawalUsd,
   withdrawalBlockReason,
+  withdrawalMultiplierForLevel,
 } from "./withdrawals.js";
 
 const pending = { id: 1, level: 6, requiredUsd: 60 };
@@ -137,4 +139,20 @@ test("matchWithdrawals: два требования и два подходящи
     ],
   );
   assert.deepEqual(pairs.map((p) => [p.pendingId, p.record.id]), [[1, "w1"], [2, "w2"]]);
+});
+
+// --- Множитель вывода (19.09.2026): 2R, а с 22-го уровня 3R ---
+
+test("withdrawalMultiplierForLevel: до 22 уровня — 2R, с 22-го — 3R", () => {
+  assert.equal(withdrawalMultiplierForLevel(1), 2);
+  assert.equal(withdrawalMultiplierForLevel(21), 2);
+  assert.equal(withdrawalMultiplierForLevel(22), 3);
+  assert.equal(withdrawalMultiplierForLevel(50), 3);
+});
+
+test("requiredWithdrawalUsd: сумма = 1R уровня × множитель", () => {
+  assert.equal(requiredWithdrawalUsd(6, 60), 120); // прошла 6-й уровень (1R = 60$) → 120$
+  assert.equal(requiredWithdrawalUsd(21, 280), 560);
+  assert.equal(requiredWithdrawalUsd(22, 300), 900); // с 22-го — уже 3R
+  assert.equal(requiredWithdrawalUsd(50, 1000), 3000);
 });

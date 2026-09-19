@@ -13,6 +13,27 @@
  */
 
 /**
+ * Сколько R пройденного уровня нужно вывести (уточнение пользователя от 19.09.2026:
+ * было по 1R). Чем выше уровень, тем больше абсолютная прибыль на ступень — с 22-го
+ * уровня доля вывода растёт до 3R, чтобы деньги успевали выходить со счёта, а не только
+ * накапливаться в риске.
+ */
+export const WITHDRAWAL_R_MULTIPLIER = 2;
+export const WITHDRAWAL_R_MULTIPLIER_FROM_HIGH_LEVEL = 3;
+export const WITHDRAWAL_HIGH_LEVEL_FROM = 22;
+
+export function withdrawalMultiplierForLevel(level: number): number {
+  return level >= WITHDRAWAL_HIGH_LEVEL_FROM
+    ? WITHDRAWAL_R_MULTIPLIER_FROM_HIGH_LEVEL
+    : WITHDRAWAL_R_MULTIPLIER;
+}
+
+/** Сумма обязательного вывода за пройденный уровень: 1R уровня × множитель. */
+export function requiredWithdrawalUsd(level: number, levelRiskUsd: number): number {
+  return levelRiskUsd * withdrawalMultiplierForLevel(level);
+}
+
+/**
  * Совпадение суммы проверяется СТРОГО ДО ЦЕНТА (решение пользователя от 18.09.2026):
  * вывел меньше или больше — требование не закрыто. Сравниваем целые центы, чтобы
  * двоичная дробь (60.1 - 60.1 ≠ 0) не мешала.
