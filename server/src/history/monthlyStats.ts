@@ -110,7 +110,48 @@ export type MonthlyStat = {
   endBalance: number | null;
   /** Сумма ручных пополнений/выводов за месяц (пополнения > 0, выводы < 0). */
   adjustmentsUsd: number;
+  /**
+   * Та же сумма, разложенная по смыслу — чтобы UI мог показать, что именно не попало
+   * в процент месяца: пополнения (положительное число) и выводы на карту (тоже
+   * положительное — это СНЯТЫЕ деньги, а не отрицательная корректировка).
+   */
+  depositsUsd: number;
+  withdrawalsUsd: number;
 };
+
+/** Подтверждённый вывод прибыли по уровню — для сверки со списком корректировок. */
+export type ConfirmedWithdrawalInput = {
+  /** Локальная дата вывода (YYYY-MM-DD). */
+  date: string;
+  amountUsd: number;
+  /** Корректировка баланса, созданная вместе с выводом; null — её нет. */
+  equityAdjustmentId: number | null;
+};
+
+/**
+ * Выводы прибыли по уровням (docs/RISK_ENGINE.md, правило #12) записываются в
+ * equity_adjustments — оттуда их и вычитает процент месяца. Но связь может потеряться:
+ * запись корректировки делается best-effort (её сбой не должен мешать снять блокировку
+ * торговли), а строку могли удалить вручную в админке. Тогда вывод исчезал бы из
+ * компенсации, и месяц показывал бы заниженный процент — ровно то, на что жаловался
+ * пользователь 19.09.2026.
+ *
+ * Поэтому перед расчётом добавляем «осиротевшие» выводы как синтетические корректировки:
+ * те, у которых нет equityAdjustmentId или он указывает на уже удалённую строку. Выводы
+ * со ЖИВОЙ корректировкой не добавляются — двойного вычета не возникает.
+ */
+export function withOrphanWithdrawals(
+  adjustments: EquityAdjustmentInput[],
+  withdrawals: ConfirmedWithdrawalInput[],
+  existingAdjustmentIds: Iterable<number>,
+): EquityAdjustmentInput[] {
+  const known = new Set(existingAdjustmentIds);
+  const orphans = withdrawals
+    .filter((entry) => entry.equityAdjustmentId === null || !known.has(entry.equityAdjustmentId))
+    .filter((entry) => Number.isFinite(entry.amountUsd) && entry.amountUsd > 0)
+    .map((entry) => ({ date: entry.date, amountUsd: -Math.abs(entry.amountUsd) }));
+  return orphans.length > 0 ? [...adjustments, ...orphans] : adjustments;
+}
 
 /** @deprecated Используйте isBreakevenClose из history/outcome.ts — единый источник правды. */
 export function isMonthlyBreakevenClose(trade: MonthlyStatTradeInput, resultR: number): boolean {
@@ -481,9 +522,16 @@ export function computeMonthlyStats(
       endEquityExact && typeof endAnchor?.balance === "number" ? endAnchor.balance : null;
 
     let monthAdjustmentsUsd = 0;
+    let monthDepositsUsd = 0;
+    let monthWithdrawalsUsd = 0;
     for (const adjustment of adjustments) {
       if (adjustment.date >= monthStartKey && adjustment.date < nextMonthStartKey) {
         monthAdjustmentsUsd += adjustment.amountUsd;
+        if (adjustment.amountUsd >= 0) {
+          monthDepositsUsd += adjustment.amountUsd;
+        } else {
+          monthWithdrawalsUsd += -adjustment.amountUsd;
+        }
       }
     }
 
@@ -493,8 +541,11 @@ export function computeMonthlyStats(
      * с реальным движением счёта: в нём не было комиссий, funding и торговли мимо
      * приложения — за август они превращали +48 USDT «по сделкам» в −40 на депозите).
      *
-     * Записанные в админке пополнения/выводы вычитаются: они меняют депозит, но не
-     * являются результатом торговли — иначе пополнение выглядело бы прибылью месяца.
+     * Пополнения и выводы вычитаются: они меняют депозит, но не являются результатом
+     * торговли — иначе пополнение выглядело бы прибылью месяца, а вывод прибыли на карту
+     * (правило #12) «съедал» бы процент месяца, хотя деньги заработаны (уточнение от
+     * 19.09.2026). Источник — записи из админки И подтверждённые выводы по уровням,
+     * см. api/stats.ts.
      * Незакрытый месяц считается до «сейчас» (последний снимок), закрытый — до начала
      * следующего.
      */
@@ -530,6 +581,8 @@ export function computeMonthlyStats(
       startBalance,
       endBalance,
       adjustmentsUsd: monthAdjustmentsUsd,
+      depositsUsd: monthDepositsUsd,
+      withdrawalsUsd: monthWithdrawalsUsd,
     });
   }
 

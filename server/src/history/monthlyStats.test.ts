@@ -5,6 +5,7 @@ import {
   localMonthUtcRange,
   STATS_GRID_PRESETS,
   type MonthlyStatTradeInput,
+  withOrphanWithdrawals,
 } from "./monthlyStats.js";
 
 const TZ = 180; // UTC+3
@@ -884,4 +885,79 @@ test("computeMonthlyStats: сетка до 3R — сделка на 4R не по
   assert.equal(stat.sumR, 4); // и в сумме R тоже
   assert.deepEqual(stat.byRRPreset.map((entry) => entry.preset), ["1/1", "1/1.5", "1/2", "1/3"]);
   assert.deepEqual(stat.byRRPreset.filter((entry) => entry.count > 0), []); // но не в сетке
+});
+
+// --- Выведенная прибыль не должна занижать % месяца (19.09.2026) ---
+
+test("withOrphanWithdrawals: вывод со своей корректировкой не дублируется", () => {
+  const adjustments = [{ date: "2026-09-15", amountUsd: -120 }];
+  const result = withOrphanWithdrawals(
+    adjustments,
+    [{ date: "2026-09-15", amountUsd: 120, equityAdjustmentId: 7 }],
+    [7],
+  );
+  assert.deepEqual(result, adjustments);
+});
+
+test("withOrphanWithdrawals: вывод без корректировки добавляется минусом", () => {
+  const result = withOrphanWithdrawals(
+    [],
+    [{ date: "2026-09-15", amountUsd: 120, equityAdjustmentId: null }],
+    [],
+  );
+  assert.deepEqual(result, [{ date: "2026-09-15", amountUsd: -120 }]);
+});
+
+test("withOrphanWithdrawals: корректировку удалили вручную — вывод возвращается в расчёт", () => {
+  const result = withOrphanWithdrawals(
+    [{ date: "2026-09-02", amountUsd: 500 }],
+    [{ date: "2026-09-15", amountUsd: 120, equityAdjustmentId: 7 }],
+    [42], // строки с id 7 больше нет
+  );
+  assert.deepEqual(result, [
+    { date: "2026-09-02", amountUsd: 500 },
+    { date: "2026-09-15", amountUsd: -120 },
+  ]);
+});
+
+test("computeMonthlyStats: вывод прибыли не съедает процент месяца", () => {
+  const snapshots = [
+    { date: "2026-09-01", equity: 1000, balance: 1000 },
+    { date: "2026-09-30", equity: 1080, balance: 1080 },
+  ];
+  const september = computeMonthlyStats(
+    [trade({ openedAt: "2026-09-10T10:00:00Z", closedAt: "2026-09-10T11:00:00Z", resultR: 2 })],
+    180,
+    snapshots[1]!,
+    [{ date: "2026-09-15", amountUsd: -120 }],
+    new Date(Date.UTC(2026, 9, 5, 12, 0)),
+    snapshots,
+  ).find((month) => month.month === 9)!;
+
+  // Депозит вырос с 1000 до 1080, но 120 ушли на карту — заработано 200, это +20%.
+  assert.equal(september.resultPct, 20);
+  assert.equal(september.withdrawalsUsd, 120);
+  assert.equal(september.depositsUsd, 0);
+});
+
+test("computeMonthlyStats: пополнение и вывод в одном месяце разложены отдельно", () => {
+  const snapshots = [
+    { date: "2026-09-01", equity: 1000, balance: 1000 },
+    { date: "2026-09-30", equity: 1080, balance: 1080 },
+  ];
+  const september = computeMonthlyStats(
+    [trade({ openedAt: "2026-09-10T10:00:00Z", closedAt: "2026-09-10T11:00:00Z", resultR: 2 })],
+    180,
+    snapshots[1]!,
+    [
+      { date: "2026-09-15", amountUsd: -120 },
+      { date: "2026-09-18", amountUsd: 50 },
+    ],
+    new Date(Date.UTC(2026, 9, 5, 12, 0)),
+    snapshots,
+  ).find((month) => month.month === 9)!;
+
+  assert.equal(september.withdrawalsUsd, 120);
+  assert.equal(september.depositsUsd, 50);
+  assert.equal(september.resultPct, 15);
 });
