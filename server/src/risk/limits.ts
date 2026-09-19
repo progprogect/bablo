@@ -171,7 +171,7 @@ export function buildNotResourcefulBlock(now: Date): Block {
   const hours = NOT_RESOURCEFUL_PAUSE_MINUTES / 60;
   return {
     type: "not_resourceful",
-    reason: `Ты отметила, что не в ресурсе — пауза ${hours} часа. Торговля подождёт, ресурс важнее`,
+    reason: `Сейчас тебя качает — пауза ${hours} часа. Рынок никуда не денется, а ресурс важнее`,
     until: new Date(now.getTime() + NOT_RESOURCEFUL_PAUSE_MINUTES * 60_000),
   };
 }
