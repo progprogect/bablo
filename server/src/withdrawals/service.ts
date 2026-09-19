@@ -15,6 +15,7 @@ import {
   checkWithdrawalAmount,
   completedLevels,
   matchWithdrawals,
+  requiredWithdrawalUsd,
   withdrawalBlockReason,
   type ExternalWithdrawal,
   type PendingWithdrawal,
@@ -39,8 +40,8 @@ function toPending(row: LevelWithdrawalRow): PendingWithdrawal & { createdAtMs: 
 
 /**
  * Требования за уровни, пройденные при переходе previousLevel → nextLevel. Вызывается
- * после обновления риск-состояния (risk/service.ts): сумма вывода — это 1R ПРОЙДЕННОГО
- * уровня, поэтому её берём из лестницы по старому номеру, а не по новому.
+ * после обновления риск-состояния (risk/service.ts): сумма вывода считается от 1R
+ * ПРОЙДЕННОГО уровня (по старому номеру, а не по новому) с множителем правила.
  */
 export async function createRequirementsForLevelUp(
   previousLevel: number,
@@ -53,7 +54,11 @@ export async function createRequirementsForLevelUp(
   for (const level of levels) {
     const def = getLevelDef(defs, level);
     if (!def || !(def.riskUsd > 0)) continue;
-    await createWithdrawalRequirement({ level, requiredUsd: def.riskUsd, createdAt: at });
+    await createWithdrawalRequirement({
+      level,
+      requiredUsd: requiredWithdrawalUsd(level, def.riskUsd),
+      createdAt: at,
+    });
   }
 }
 
