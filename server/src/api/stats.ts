@@ -4,19 +4,29 @@ import { listEquitySnapshots } from "../db/repositories/equitySnapshots.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
 import { listAllClosedTrades } from "../db/repositories/trades.js";
 import { computeTradeInsights, toInsightInput } from "../history/insights.js";
-import { computeMonthlyStats, type EquityAnchor, type MonthlyStatTradeInput } from "../history/monthlyStats.js";
+import {
+  computeMonthlyStats,
+  withOrphanWithdrawals,
+  type ConfirmedWithdrawalInput,
+  type EquityAnchor,
+  type MonthlyStatTradeInput,
+} from "../history/monthlyStats.js";
+import { listLevelWithdrawals } from "../db/repositories/levelWithdrawals.js";
+import { getLocalDateKey } from "../risk/tradingDay.js";
 import { listBlockedHours } from "../risk/hourBlocksService.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/stats", { preHandler: requireAuth }, async () => {
-    const [rows, riskSettings, snapshotRows, adjustmentRows, blockedHours] = await Promise.all([
-      listAllClosedTrades(),
-      getRiskSettings(),
-      listEquitySnapshots(),
-      listEquityAdjustments(),
-      listBlockedHours(),
-    ]);
+    const [rows, riskSettings, snapshotRows, adjustmentRows, blockedHours, withdrawalRows] =
+      await Promise.all([
+        listAllClosedTrades(),
+        getRiskSettings(),
+        listEquitySnapshots(),
+        listEquityAdjustments(),
+        listBlockedHours(),
+        listLevelWithdrawals(),
+      ]);
 
     const insights = computeTradeInsights(rows.map(toInsightInput), riskSettings.tzOffsetMinutes);
 
@@ -47,7 +57,21 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       balance: row.balance !== null ? Number(row.balance) : null,
     }));
     const anchor: EquityAnchor | null = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
-    const adjustments = adjustmentRows.map((row) => ({ date: row.date, amountUsd: Number(row.amountUsd) }));
+    // Выведенная на карту прибыль не должна занижать % месяца: она уже лежит в
+    // корректировках, а потерявшие корректировку выводы добавляются синтетически
+    // (see history/monthlyStats.ts → withOrphanWithdrawals).
+    const confirmedWithdrawals: ConfirmedWithdrawalInput[] = withdrawalRows
+      .filter((row) => row.withdrawnAt !== null && row.withdrawnUsd !== null)
+      .map((row) => ({
+        date: getLocalDateKey(row.withdrawnAt!, riskSettings.tzOffsetMinutes),
+        amountUsd: Number(row.withdrawnUsd),
+        equityAdjustmentId: row.equityAdjustmentId,
+      }));
+    const adjustments = withOrphanWithdrawals(
+      adjustmentRows.map((row) => ({ date: row.date, amountUsd: Number(row.amountUsd) })),
+      confirmedWithdrawals,
+      adjustmentRows.map((row) => row.id),
+    );
 
     const monthly = computeMonthlyStats(
       monthlyInputs,

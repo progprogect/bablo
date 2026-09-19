@@ -253,6 +253,10 @@ export type MonthlyStat = {
   endBalance: number | null;
   /** Ручные пополнения/выводы за месяц — из-за них конец ≠ начало + результат сделок. */
   adjustmentsUsd: number;
+  /** Пополнения за месяц (положительное число) — в % месяца не учитываются. */
+  depositsUsd?: number;
+  /** Выведено на карту за месяц (положительное число) — в % месяца тоже не учитывается. */
+  withdrawalsUsd?: number;
 };
 
 export type StatsResponse = {

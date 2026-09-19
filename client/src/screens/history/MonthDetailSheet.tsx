@@ -190,6 +190,33 @@ export function MonthDetailSheet({ stat, onClose }: { stat: MonthlyStat; onClose
                     </span>
                   </div>
                 )}
+                {/* Выводы прибыли и пополнения меняют депозит, но не являются результатом
+                    торговли — процент месяца считается без них (docs/RISK_ENGINE.md,
+                    правило #12). Показываем суммы, чтобы цифра процента не выглядела
+                    расходящейся с движением депозита. */}
+                {(stat.withdrawalsUsd ?? 0) > 0 && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">Выведено на карту</span>
+                    <span className="font-medium tabular-nums text-ink">
+                      −{formatEquity(stat.withdrawalsUsd ?? 0)}
+                    </span>
+                  </div>
+                )}
+                {(stat.depositsUsd ?? 0) > 0 && (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-xs text-slate-500">Пополнено</span>
+                    <span className="font-medium tabular-nums text-ink">
+                      +{formatEquity(stat.depositsUsd ?? 0)}
+                    </span>
+                  </div>
+                )}
+                {((stat.withdrawalsUsd ?? 0) > 0 || (stat.depositsUsd ?? 0) > 0) && (
+                  <p className="text-xs text-slate-400">
+                    Проценты месяца считаются без выводов и пополнений — только результат
+                    торговли.
+                  </p>
+                )}
+
                 {(stat.startEquity !== null && !stat.startEquityExact) ||
                 (stat.endEquity !== null && !stat.endEquityExact) ? (
                   <p className="text-xs text-slate-400">
