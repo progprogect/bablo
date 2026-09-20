@@ -156,19 +156,6 @@ export type BingxWithdrawalCheck = {
   state: WithdrawalsState;
 };
 
-/**
- * Отметка «в ресурсе». Спрашиваем на двух точках: новый торговый день (сброс в 07:00,
- * а не в полночь) и конец перерыва после закрытой сделки. answered === false — показываем
- * поп-ап (askReason говорит, какой текст); isResourceful === false — у формы открытия
- * сделки висит напоминание.
- */
-export type ResourceState = {
-  dayKey: string;
-  answered: boolean;
-  isResourceful: boolean | null;
-  askReason?: "day" | "cooldown" | null;
-};
-
 export type DashboardResponse = {
   balance: BingXBalance | null;
   balanceError: string | null;
@@ -176,7 +163,6 @@ export type DashboardResponse = {
   activeTrade: ActiveTradeView | null;
   externalPositions: ExternalPosition[];
   risk: RiskSnapshot;
-  resourceState: ResourceState;
 };
 
 export type BingxKeyStatus = {

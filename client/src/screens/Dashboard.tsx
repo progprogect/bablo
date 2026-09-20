@@ -9,7 +9,7 @@ import { ExternalPositionsPanel } from "./dashboard/ExternalPositionsPanel";
 import { BlockedPanel } from "./dashboard/BlockedPanel";
 import { AssetSlBlockedPanel } from "./dashboard/AssetSlBlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
-import { NotResourcefulNotice, ResourceStatePrompt } from "./dashboard/ResourceStatePrompt";
+import { ProtectDepositButton } from "./dashboard/ProtectDepositButton";
 import { WithdrawalRequiredPanel } from "./dashboard/WithdrawalRequiredPanel";
 import { RiskTreeSheet } from "./dashboard/RiskTreeSheet";
 
@@ -95,20 +95,6 @@ export function Dashboard() {
 
   return (
     <section className="flex flex-1 flex-col gap-6 pt-10">
-      {data.resourceState && !data.resourceState.answered && (
-        <ResourceStatePrompt
-          askReason={data.resourceState.askReason}
-          onAnswered={(resourceState) => {
-            setData((current) => (current ? { ...current, resourceState } : current));
-            // Ответ «нет» ставит паузу на 2 часа (docs/RISK_ENGINE.md, правило #13) —
-            // перезапрашиваем дашборд, чтобы блокировка с таймером появилась сразу.
-            if (!resourceState.isResourceful) {
-              loadDashboard();
-            }
-          }}
-        />
-      )}
-
       <BalanceCard balance={data.balance} balanceError={data.balanceError} />
 
       <LevelIndicator
@@ -154,7 +140,6 @@ export function Dashboard() {
           <BlockedPanel locks={data.risk.activeLocks} onExpired={loadDashboard} />
         ) : (
           <>
-            {data.resourceState?.isResourceful === false && <NotResourcefulNotice />}
             {assetSlLocks.length > 0 && (
               <AssetSlBlockedPanel locks={assetSlLocks} onExpired={loadDashboard} />
             )}
@@ -178,6 +163,9 @@ export function Dashboard() {
                 }}
               />
             )}
+            {/* Под формой открытия — добровольная пауза (docs/RISK_ENGINE.md, правило #13):
+                выход для сомнения ровно там, где оно возникает. */}
+            {selectedSymbol && <ProtectDepositButton onPaused={loadDashboard} />}
           </>
         ))}
     </section>
