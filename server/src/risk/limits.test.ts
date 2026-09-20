@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildNotResourcefulBlock,
+  buildVoluntaryPauseBlock,
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
@@ -215,20 +215,20 @@ test("isTpRatioAllowed: R/R посчитать не удалось — не бл
   assert.equal(isTpRatioAllowed(null, true), true);
 });
 
-// Правило #13 (18.09.2026): ответ «не в ресурсе» закрывает входы на два часа.
-test("buildNotResourcefulBlock: пауза 2 часа с понятной причиной", () => {
+// Правило #13: добровольная пауза «поберечь депозит» закрывает входы на два часа.
+test("buildVoluntaryPauseBlock: пауза 2 часа с понятной причиной", () => {
   const now = new Date("2026-09-18T10:00:00.000Z");
-  const block = buildNotResourcefulBlock(now);
-  assert.equal(block.type, "not_resourceful");
+  const block = buildVoluntaryPauseBlock(now);
+  assert.equal(block.type, "voluntary_pause");
   assert.equal(block.until.toISOString(), "2026-09-18T12:00:00.000Z");
   assert.match(block.reason, /пауза 2 часа/);
   // Глобальная блокировка — скрывает форму открытия целиком.
   assert.equal(isGlobalBlock(block), true);
 });
 
-test("buildNotResourcefulBlock: при нескольких глобальных локах действует самый долгий", () => {
+test("buildVoluntaryPauseBlock: при нескольких глобальных локах действует самый долгий", () => {
   const now = new Date("2026-09-18T10:00:00.000Z");
   const cooldown = evaluateCooldownBlock(now, new Date("2026-09-18T09:30:00.000Z"), 60);
-  const effective = pickEffectiveBlock([cooldown!, buildNotResourcefulBlock(now)]);
-  assert.equal(effective?.type, "not_resourceful");
+  const effective = pickEffectiveBlock([cooldown!, buildVoluntaryPauseBlock(now)]);
+  assert.equal(effective?.type, "voluntary_pause");
 });

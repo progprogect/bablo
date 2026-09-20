@@ -9,11 +9,12 @@ export type BlockType =
    */
   | "losing_hour"
   /**
-   * Пауза после ответа «не в ресурсе» (risk/resourceState.ts). Единственный лок, который
-   * ставит сам пользователь ответом на поп-ап; хранится в risk_locks и НЕ входит в
-   * MANAGED_TYPES, чтобы пересборка дневных локов его не стирала.
+   * Добровольная пауза «поберечь депозит» — единственный лок, который пользователь ставит
+   * себе сам кнопкой на дашборде (раньше — ответом на поп-ап про состояние, убран
+   * 20.09.2026). Хранится в risk_locks и НЕ входит в MANAGED_TYPES, чтобы пересборка
+   * дневных локов его не стирала.
    */
-  | "not_resourceful"
+  | "voluntary_pause"
   | "daily_loss"
   | "daily_profit"
   | "daily_stop_losses"
@@ -161,18 +162,19 @@ export function evaluateDailyLimitBlocks(
 }
 
 /**
- * Пауза после ответа «не в ресурсе» на поп-апе (правило пользователя от 18.09.2026):
- * два часа без входов. Ответ «нет» перестал быть просто напоминанием — торговля из
- * нересурсного состояния и есть главный источник импульсивных сделок.
+ * Добровольная пауза «поберечь депозит до лучшего входа» (правило пользователя от
+ * 18.09.2026, с 20.09.2026 ставится кнопкой на дашборде): два часа без входов. Смысл —
+ * дать себе простой способ подстраховаться, когда чувствуешь, что момент не твой:
+ * импульсивная сделка стоит дороже пропущенной.
  */
-export const NOT_RESOURCEFUL_PAUSE_MINUTES = 120;
+export const VOLUNTARY_PAUSE_MINUTES = 120;
 
-export function buildNotResourcefulBlock(now: Date): Block {
-  const hours = NOT_RESOURCEFUL_PAUSE_MINUTES / 60;
+export function buildVoluntaryPauseBlock(now: Date): Block {
+  const hours = VOLUNTARY_PAUSE_MINUTES / 60;
   return {
-    type: "not_resourceful",
-    reason: `Сейчас тебя качает — пауза ${hours} часа. Рынок никуда не денется, а ресурс важнее`,
-    until: new Date(now.getTime() + NOT_RESOURCEFUL_PAUSE_MINUTES * 60_000),
+    type: "voluntary_pause",
+    reason: `Бережём депозит до лучшего входа — пауза ${hours} часа. Рынок никуда не денется`,
+    until: new Date(now.getTime() + VOLUNTARY_PAUSE_MINUTES * 60_000),
   };
 }
 

@@ -10,7 +10,6 @@ import type {
   OpenTradeResult,
   PagedTrades,
   BingxWithdrawalCheck,
-  ResourceState,
   RiskLevel,
   RiskSettings,
   SetTakeProfitResult,
@@ -135,6 +134,16 @@ export const refreshBalanceRequest = () =>
     snapshotUpdated: boolean;
   }>("/admin/refresh-balance", { method: "POST", body: JSON.stringify({}) });
 
+/**
+ * Добровольная пауза «поберечь депозит» — закрывает открытие сделок на 2 часа
+ * (docs/RISK_ENGINE.md, правило #13).
+ */
+export const pauseTradingRequest = () =>
+  request<{ type: string; reason: string; until: string }>("/pause", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
 // --- Выводы прибыли по уровням (docs/RISK_ENGINE.md, правило #12) ---
 
 export const getWithdrawals = () => request<WithdrawalsState>("/withdrawals");
@@ -151,13 +160,6 @@ export const checkBingxWithdrawalsRequest = () =>
   request<BingxWithdrawalCheck>("/withdrawals/check-bingx", {
     method: "POST",
     body: JSON.stringify({}),
-  });
-
-/** Ответ на вопрос «сегодня в ресурсе?» — один раз за торговый день (см. ResourceState). */
-export const setResourceStateRequest = (isResourceful: boolean) =>
-  request<ResourceState>("/resource-state", {
-    method: "POST",
-    body: JSON.stringify({ isResourceful }),
   });
 
 /** Сделки без SL/TP (external/manual) — для ручной атрибуции в админке. */

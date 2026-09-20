@@ -142,8 +142,7 @@ bablo/
 
 ```
 settings        — ключ/значение: API-ключи (зашифрованы AES-256-GCM, ключ в ENV),
-                  таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств,
-                  отметка «в ресурсе» на торговый день (resource_state)
+                  таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств
 assets          — symbol, leverage, sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
@@ -214,14 +213,9 @@ POST /api/withdrawals/confirm   — { id, amountUsd } — ручное подт�
 POST /api/withdrawals/check-bingx — разовая сверка с историей выводов BingX (эндпоинт
                                    КОШЕЛЬКА: у торгового ключа может не быть прав, тогда
                                    ошибка возвращается текстом и остаётся ручной путь)
-GET  /api/resource-state        — { dayKey, answered, isResourceful, askReason }: отметка
-                                   «в ресурсе». Спрашиваем на двух точках — новый торговый
-                                   день ("day") и конец перерыва после сделки ("cooldown")
-POST /api/resource-state        — { isResourceful } — ответ на поп-ап, по одному на точку
-                                   (risk/resourceState.ts; хранится в settings-kv,
-                                   ключ resource_state, миграция не нужна). Тот же объект
-                                   едет в ответе /api/dashboard, чтобы поп-ап не стоил
-                                   лишнего запроса
+POST /api/pause                 — добровольная пауза «поберечь депозит»: лок
+                                   voluntary_pause в risk_locks на 2 часа
+                                   (docs/RISK_ENGINE.md, правило #13)
 POST /api/admin/refresh-balance — разовый запрос баланса у BingX по кнопке в админке:
                                    возвращает { date, equity, balance, snapshotUpdated } и
                                    ПЕРЕЗАПИСЫВАЕТ снимок эквити за сегодня (обычный снимок
