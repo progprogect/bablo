@@ -86,8 +86,8 @@ export function ProtectDepositButton({ onPaused }: { onPaused: () => void }) {
       </button>
       <p className="text-center text-[11px] text-slate-400">
         {isConfirming
-          ? "Нажми ещё раз — входы закроются на 2 часа"
-          : "Если момент не твой — пауза 2 часа вместо сделки на сомнении"}
+          ? "Нажми ещё раз — и берём паузу на 2 часа"
+          : "Сомнение — тоже сигнал. Дай себе 2 часа тишины"}
       </p>
       {error && <p className="text-center text-xs text-red-600">{error}</p>}
     </div>
