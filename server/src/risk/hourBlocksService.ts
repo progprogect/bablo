@@ -154,20 +154,16 @@ export async function syncHourBlocks(now: Date = new Date()): Promise<HourBlockD
 }
 
 /**
- * Заблокированные часы для UI: всё закрытое и отдельно закрытое вручную (у него другое
- * пояснение — оно ждёт проверки винрейта, а не следует из статистики часа). Пустые
- * списки, когда правило выключено в админке: тумблер гасит механизм целиком, включая
- * ручные блокировки (решение от 22.09.2026).
+ * Заблокированные часы для UI: и рассчитанные правилом, и закрытые вручную — в подсказке
+ * у них один и тот же замок, различать их там не нужно (пояснение про ручные убрано
+ * 23.09.2026 как лишнее). Пустой список, когда правило выключено в админке: тумблер гасит
+ * механизм целиком, включая ручные блокировки (решение от 22.09.2026).
  */
-export async function listBlockedHours(): Promise<{ hours: number[]; manualHours: number[] }> {
+export async function listBlockedHours(): Promise<number[]> {
   const settings = await getRiskSettings();
-  if (!settings.blockLosingHours) return { hours: [], manualHours: [] };
+  if (!settings.blockLosingHours) return [];
   const active = await listActiveHourBlocks();
-  const byHour = (a: number, b: number) => a - b;
-  return {
-    hours: active.map((row) => row.hour).sort(byHour),
-    manualHours: active.filter(isManualBlock).map((row) => row.hour).sort(byHour),
-  };
+  return active.map((row) => row.hour).sort((a, b) => a - b);
 }
 
 /** Активные ручные блокировки для админки: час + состояние проверки. */

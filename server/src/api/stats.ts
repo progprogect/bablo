@@ -69,15 +69,10 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
 
     // Смещение таймзоны риск-плана — по нему сгруппированы часы в insights, по нему же
     // UI (InsightPanel) подсвечивает текущий час: время устройства может не совпадать.
-    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено);
-    // manualBlockedHours — подмножество закрытых вручную: у них другое пояснение в UI.
-    return {
-      insights,
-      monthly,
-      tzOffsetMinutes: riskSettings.tzOffsetMinutes,
-      blockedHours: blockedHours.hours,
-      manualBlockedHours: blockedHours.manualHours,
-    };
+    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено).
+    // Происхождение блокировки (расчёт или решение пользователя) наружу не отдаётся:
+    // в подсказке у обеих один и тот же замок, отдельное пояснение убрано 23.09.2026.
+    return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes, blockedHours };
   });
 
   /**

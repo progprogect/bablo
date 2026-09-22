@@ -128,7 +128,6 @@ export function History() {
             insights={stats.insights}
             tzOffsetMinutes={stats.tzOffsetMinutes}
             blockedHours={stats.blockedHours ?? []}
-            manualBlockedHours={stats.manualBlockedHours ?? []}
             selectedHour={hourFilter}
             onSelectHour={(hour) => setHourFilter((current) => (current === hour ? null : hour))}
           />
