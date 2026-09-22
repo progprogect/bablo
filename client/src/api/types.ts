@@ -207,6 +207,12 @@ export type ManualHourBlock = {
 export type PagedTrades = {
   trades: Trade[];
   total: number;
+  /**
+   * Сумма R по всей выборке (не по загруженной странице) — приходит только при фильтре
+   * по часу: для полного списка её пришлось бы считать по всей истории на каждый запрос.
+   */
+  sumPositiveR?: number;
+  sumNegativeR?: number;
 };
 
 export type TradeInsights = {

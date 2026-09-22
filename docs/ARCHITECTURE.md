@@ -251,7 +251,9 @@ GET  /api/trades                — история (пагинация limit/off
                                   этот локальный час (фильтр по клику на час в подсказке).
                                   Считается getLocalHour в JS, тем же вызовом, что и
                                   гистограмма в history/insights.ts — чтобы счётчик в
-                                  подсказке и длина списка не разошлись
+                                  подсказке и длина списка не разошлись. С hour ответ
+                                  дополнен sumPositiveR/sumNegativeR — суммы R по всей
+                                  выборке часа (сводка «+R / −R» над списком)
 GET  /api/trades/month          — ?year&month: все сделки локального месяца (границы —
                                    localMonthUtcRange, как в группировке monthlyStats) +
                                    exchange: суммы начислений BingX user/income за месяц

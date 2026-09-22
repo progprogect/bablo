@@ -95,7 +95,7 @@ async function listClosedTradesPage(
   limit: number,
   offset: number,
   hour: number | null,
-): Promise<{ trades: Trade[]; total: number }> {
+): Promise<{ trades: Trade[]; total: number; sumPositiveR?: number; sumNegativeR?: number }> {
   if (hour === null) {
     return listClosedTrades({ limit, offset });
   }
@@ -106,7 +106,25 @@ async function listClosedTradesPage(
     // Тот же порядок, что у нефильтрованного списка: сначала недавно закрытые.
     .sort((a, b) => (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0));
 
-  return { trades: matching.slice(offset, offset + limit), total: matching.length };
+  // Сводка «+R / −R» по ВСЕЙ выборке часа, а не по текущей странице: она стоит рядом с
+  // числом сделок, и считать её по 20 загруженным значило бы показывать цифру, которая
+  // меняется от нажатия «Показать ещё». R берётся тот же (statsResultR), что подписан на
+  // карточках ниже и в месячной статистике, — разойтись они не могут.
+  let sumPositiveR = 0;
+  let sumNegativeR = 0;
+  for (const trade of matching) {
+    const r = withOutcome(trade).statsResultR;
+    if (r === null) continue;
+    if (r > 0) sumPositiveR += r;
+    else if (r < 0) sumNegativeR += r;
+  }
+
+  return {
+    trades: matching.slice(offset, offset + limit),
+    total: matching.length,
+    sumPositiveR,
+    sumNegativeR,
+  };
 }
 
 export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
