@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../client.js";
 import { hourBlocks } from "../schema.js";
 import type { HourBlockDecision } from "../../risk/hourBlocks.js";
+import { MANUAL_HOUR_BLOCK_SOURCE } from "../../risk/hourBlockReview.js";
 
 export type HourBlockRow = typeof hourBlocks.$inferSelect;
 
@@ -36,4 +37,39 @@ export async function applyHourBlockDecision(decision: HourBlockDecision, now: D
       })),
     );
   }
+}
+
+/**
+ * Снимает активные блокировки перечисленных часов. Используется проверкой ручных
+ * блокировок (risk/hourBlockReview.ts) и кнопкой «открыть» в админке — в отличие от
+ * applyHourBlockDecision, здесь снимаются часы независимо от происхождения.
+ */
+export async function unblockHours(hours: number[], now: Date): Promise<number> {
+  if (hours.length === 0) return 0;
+  const db = getDb();
+  const updated = await db
+    .update(hourBlocks)
+    .set({ unblockedAt: now })
+    .where(and(inArray(hourBlocks.hour, hours), isNull(hourBlocks.unblockedAt)))
+    .returning({ hour: hourBlocks.hour });
+  return updated.length;
+}
+
+/**
+ * Помечает проверку ручных блокировок выполненной: гипотеза подтвердилась, час остаётся
+ * закрытым бессрочно и больше не проверяется (решение от 22.09.2026).
+ */
+export async function markHourBlocksReviewed(hours: number[], now: Date): Promise<void> {
+  if (hours.length === 0) return;
+  const db = getDb();
+  await db
+    .update(hourBlocks)
+    .set({ reviewedAt: now })
+    .where(
+      and(
+        inArray(hourBlocks.hour, hours),
+        isNull(hourBlocks.unblockedAt),
+        eq(hourBlocks.source, MANUAL_HOUR_BLOCK_SOURCE),
+      ),
+    );
 }

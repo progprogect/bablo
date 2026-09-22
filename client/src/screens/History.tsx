@@ -90,6 +90,7 @@ export function History() {
             insights={stats.insights}
             tzOffsetMinutes={stats.tzOffsetMinutes}
             blockedHours={stats.blockedHours ?? []}
+            manualBlockedHours={stats.manualBlockedHours ?? []}
           />
 
           {trades.length === 0 ? (

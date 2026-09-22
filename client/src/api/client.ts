@@ -6,6 +6,7 @@ import type {
   DashboardResponse,
   BingXBalance,
   EquitySnapshot,
+  ManualHourBlock,
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
@@ -330,6 +331,11 @@ export const getRiskSettings = () => request<RiskSettings>("/admin/risk-settings
 
 export const updateRiskSettingsRequest = (patch: Partial<RiskSettings>) =>
   request<RiskSettings>("/admin/risk-settings", { method: "PUT", body: JSON.stringify(patch) });
+
+export const getManualHourBlocks = () => request<ManualHourBlock[]>("/admin/hour-blocks");
+
+export const releaseManualHourBlockRequest = (hour: number) =>
+  request<void>(`/admin/hour-blocks/${hour}`, { method: "DELETE" });
 
 // --- Уведомления (Web Push) ---
 

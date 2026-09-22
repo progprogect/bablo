@@ -24,6 +24,7 @@ import {
   TradeError,
 } from "../trades/service.js";
 import { resyncTradingDayRisk } from "../risk/service.js";
+import { listManualHourBlocks, releaseManualHourBlock } from "../risk/hourBlocksService.js";
 import {
   createEquityAdjustment,
   deleteEquityAdjustment,
@@ -519,6 +520,30 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return setRiskSettings(patch);
+  });
+
+  // --- Риск-план: часы, закрытые вручную ---
+  // Такая блокировка снимается только разовой проверкой месячного винрейта
+  // (см. risk/hourBlockReview.ts), а при подтверждённой гипотезе — не снимается вовсе.
+  // Без этой ручки единственным выходом остался бы тумблер «Блокировать убыточные часы»,
+  // который вырубает и все авто-блокировки заодно.
+
+  app.get("/admin/hour-blocks", async () => {
+    return listManualHourBlocks();
+  });
+
+  app.delete<{ Params: { hour: string } }>("/admin/hour-blocks/:hour", async (request, reply) => {
+    const hour = Number(request.params.hour);
+    if (!(Number.isInteger(hour) && hour >= 0 && hour <= 23)) {
+      reply.code(400).send({ error: "Час должен быть от 0 до 23" });
+      return;
+    }
+    const released = await releaseManualHourBlock(hour);
+    if (!released) {
+      reply.code(404).send({ error: "Час не закрыт вручную" });
+      return;
+    }
+    reply.code(204);
   });
 
   // --- Корректировки баланса (пополнения/выводы, не связанные с результатом торговли) ---

@@ -54,6 +54,48 @@ export type MonthlyStatTradeInput = {
   statsRrPreset?: string | null;
 };
 
+/**
+ * Строка закрытой сделки из БД → вход месячной статистики. Вынесено сюда, чтобы все
+ * потребители (карточка месяца в /api/stats и проверка ручных блокировок часа в
+ * risk/hourBlockReview.ts) считали по ОДНИМ данным: расхождение маппинга означало бы,
+ * что на экране один винрейт, а решение принято по другому.
+ */
+export function toMonthlyStatInput(row: {
+  openedAt: Date;
+  closedAt: Date | null;
+  closeReason: string | null;
+  resultR: string | number | null;
+  riskUsd: string | number | null;
+  rrPreset: string | null;
+  entryPrice: string | number | null;
+  slPrice: string | number | null;
+  side: string | null;
+  quantity: string | number;
+  partialTpPrice: string | number | null;
+  partialTpFilledAt: Date | null;
+  nightTpAppliedAt: Date | null;
+  statsRrPreset: string | null;
+  statsOutcome: string | null;
+}): MonthlyStatTradeInput {
+  return {
+    openedAt: row.openedAt,
+    closedAt: row.closedAt,
+    closeReason: row.closeReason,
+    resultR: row.resultR !== null ? Number(row.resultR) : null,
+    riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
+    rrPreset: row.rrPreset,
+    entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
+    slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
+    side: row.side,
+    quantity: Number(row.quantity),
+    partialTpPrice: row.partialTpPrice !== null ? Number(row.partialTpPrice) : null,
+    partialTpFilledAt: row.partialTpFilledAt,
+    nightTpAppliedAt: row.nightTpAppliedAt,
+    statsRrPreset: row.statsRrPreset,
+    statsOutcome: row.statsOutcome,
+  };
+}
+
 export type MonthlyRRPresetCount = { preset: string; count: number };
 
 export type MonthlyStat = {

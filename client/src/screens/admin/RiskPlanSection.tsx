@@ -1,26 +1,39 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  getManualHourBlocks,
   getRiskLevels,
   getRiskSettings,
+  releaseManualHourBlockRequest,
   updateRiskLevelRequest,
   updateRiskSettingsRequest,
 } from "../../api/client";
-import type { RiskLevel, RiskSettings } from "../../api/types";
+import type { ManualHourBlock, RiskLevel, RiskSettings } from "../../api/types";
 
 export function RiskPlanSection() {
   const [levels, setLevels] = useState<RiskLevel[] | null>(null);
   const [settings, setSettings] = useState<RiskSettings | null>(null);
+  const [manualHours, setManualHours] = useState<ManualHourBlock[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getRiskLevels(), getRiskSettings()])
-      .then(([levelsResult, settingsResult]) => {
+    Promise.all([getRiskLevels(), getRiskSettings(), getManualHourBlocks()])
+      .then(([levelsResult, settingsResult, manualResult]) => {
         setLevels(levelsResult);
         setSettings(settingsResult);
+        setManualHours(manualResult);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Не удалось загрузить риск-план"));
   }, []);
+
+  async function handleReleaseHour(hour: number) {
+    try {
+      await releaseManualHourBlockRequest(hour);
+      setManualHours((current) => current.filter((entry) => entry.hour !== hour));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось открыть час");
+    }
+  }
 
   async function handleLevelChange(level: RiskLevel, patch: { riskUsd?: number; requiredR?: number }) {
     try {
@@ -80,6 +93,33 @@ export function RiskPlanSection() {
             value={settings.blockLosingHours}
             onChange={(value) => handleSettingsChange({ blockLosingHours: value })}
           />
+        </div>
+      )}
+
+      {/* Часы, закрытые вручную (docs/RISK_ENGINE.md, правило #10). Их не снимает ни
+          гистерезис, ни пересчёт — только своя проверка винрейта, а после подтверждённой
+          гипотезы не снимает и она. Эта строка — единственный способ открыть такой час,
+          не выключая правило целиком. */}
+      {manualHours.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-lg border border-line bg-card p-3">
+          <span className="text-xs text-slate-500">Закрыты вручную</span>
+          {manualHours.map((entry) => (
+            <div key={entry.hour} className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-ink">
+                {entry.hour}:00
+                <span className="ml-2 text-xs text-slate-500">
+                  {entry.reviewed ? "проверка пройдена" : "ждёт проверки винрейта"}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => handleReleaseHour(entry.hour)}
+                className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+              >
+                открыть
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

@@ -198,6 +198,12 @@ export type RiskSettings = {
   blockLosingHours: boolean;
 };
 
+/** Час, закрытый вручную: `reviewed` — проверка винрейта уже состоялась, час закрыт бессрочно. */
+export type ManualHourBlock = {
+  hour: number;
+  reviewed: boolean;
+};
+
 export type PagedTrades = {
   trades: Trade[];
   total: number;
@@ -252,6 +258,11 @@ export type StatsResponse = {
   tzOffsetMinutes: number;
   /** Часы, закрытые правилом убыточных часов; пусто, если правило выключено в админке. */
   blockedHours: number[];
+  /**
+   * Подмножество blockedHours, закрытое вручную решением пользователя (не расчётом
+   * правила). У них своё пояснение: они ждут разовой проверки месячного винрейта.
+   */
+  manualBlockedHours?: number[];
 };
 
 /** Точка графика роста депозита — один снимок эквити за календарный день. */

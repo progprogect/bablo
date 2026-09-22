@@ -176,7 +176,11 @@ hour_blocks     — история блокировок убыточных ча�
                    снимки статистики на момент блокировки/разблокировки). Активная
                    блокировка — строка с unblocked_at IS NULL, на час не больше одной
                    (частичный уникальный индекс). Состояние, а не кэш: правило с
-                   гистерезисом (см. docs/RISK_ENGINE.md, правило #10)
+                   гистерезисом (см. docs/RISK_ENGINE.md, правило #10).
+                   source ('auto' | 'manual') задаёт, КАК блокировка снимается: авто —
+                   гистерезисом, ручная — разовой проверкой месячного винрейта по
+                   review_baseline_month / review_from_month; reviewed_at — проверка
+                   состоялась и подтвердила гипотезу, час закрыт бессрочно
 ```
 
 ## API (набросок контракта)
@@ -225,6 +229,8 @@ GET/POST/DELETE /api/admin/equity-adjustments — пополнения/выво�
 POST /api/admin/reclassify-trades — пересверка "external"-сделок с BingX (см. выше)
 POST /api/admin/trades/:id/stats-outcome — ручной исход сделки для статистики
                                    ('tp' | 'sl' | 'be' | null — авто); closeReason не меняет
+GET  /api/admin/hour-blocks     — часы, закрытые вручную [{ hour, reviewed }]
+DELETE /api/admin/hour-blocks/:hour — открыть закрытый вручную час (см. RISK_ENGINE #10)
 GET  /api/push/public-key       — публичный VAPID-ключ для подписки на push
 POST /api/push/subscribe        — { subscription } — регистрация устройства
 POST /api/push/unsubscribe      — { endpoint } — снятие подписки устройства

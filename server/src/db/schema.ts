@@ -189,6 +189,21 @@ export const hourBlocks = pgTable("hour_blocks", {
   tpAtBlock: integer("tp_at_block").notNull(),
   referenceAtBlock: integer("reference_at_block").notNull(),
   referenceAtUnblock: integer("reference_at_unblock"),
+  /**
+   * Откуда взялась блокировка: "auto" — расчёт правила, "manual" — решение пользователя.
+   * Разница в том, КАК она снимается: авто — гистерезисом «эталон ×1.5», ручная — разовой
+   * проверкой месячного винрейта (поля ниже). Пересборка авто-правила ручные не трогает.
+   */
+  source: text("source").notNull().default("auto"),
+  /** Месяц-база сравнения, "YYYY-MM". Только у ручных блокировок. */
+  reviewBaselineMonth: text("review_baseline_month"),
+  /** С какого месяца ("YYYY-MM") искать завершённый месяц для проверки. */
+  reviewFromMonth: text("review_from_month"),
+  /**
+   * Проверка выполнена и признала гипотезу верной — час остаётся закрытым бессрочно.
+   * Проверка разовая: повторно она не запускается (решение от 22.09.2026).
+   */
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 });
 
 /**
