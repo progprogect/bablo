@@ -3,6 +3,7 @@ import { requireAuth } from "../api/plugins/auth-guard.js";
 import { getTradeById } from "../db/repositories/trades.js";
 import {
   ANSWER_TYPES,
+  buildAnalysisAggregates,
   isAnswerType,
   validateAnswers,
   type AnswerInput,
@@ -33,7 +34,6 @@ import {
   upsertEntry,
   type JournalTradesFilter,
 } from "./repository.js";
-import { buildAnalysisAggregates } from "./logic.js";
 import { toTradeCard, toTradeDetail } from "./view.js";
 
 const DEFAULT_LIMIT = 50;

@@ -46,13 +46,17 @@ export function JournalSettings() {
     }
   }
 
-  async function run(action: () => Promise<unknown>) {
+  /** true — действие прошло; поля ввода очищаются только при успехе, чтобы при ошибке
+      («категория уже есть») набранный текст не пропадал. */
+  async function run(action: () => Promise<unknown>): Promise<boolean> {
     try {
       await action();
       await refresh();
       setError(null);
+      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось сохранить изменение");
+      return false;
     }
   }
 
@@ -83,6 +87,7 @@ export function JournalSettings() {
               if (window.confirm(message)) run(() => deleteCategory(category.id));
             }}
             onAddItem={(label, answerType) => run(() => createItem(category.id, label, answerType))}
+
             onRenameItem={(itemId, label) => run(() => renameItem(itemId, label))}
             onDeleteItem={(itemId, hasAnswers, label) => {
               const message = hasAnswers
@@ -100,7 +105,9 @@ export function JournalSettings() {
           event.preventDefault();
           const name = newCategoryName.trim();
           if (!name) return;
-          run(() => createCategory(name)).then(() => setNewCategoryName(""));
+          void run(() => createCategory(name)).then((ok) => {
+            if (ok) setNewCategoryName("");
+          });
         }}
       >
         <input
@@ -132,7 +139,7 @@ function CategoryCard({
   category: ConstructorCategory;
   onRename: (name: string) => void;
   onDelete: () => void;
-  onAddItem: (label: string, answerType: AnswerType) => void;
+  onAddItem: (label: string, answerType: AnswerType) => Promise<boolean>;
   onRenameItem: (itemId: number, label: string) => void;
   onDeleteItem: (itemId: number, hasAnswers: boolean, label: string) => void;
 }) {
@@ -203,8 +210,9 @@ function CategoryCard({
           event.preventDefault();
           const label = newItemLabel.trim();
           if (!label) return;
-          onAddItem(label, newItemType);
-          setNewItemLabel("");
+          void onAddItem(label, newItemType).then((ok) => {
+            if (ok) setNewItemLabel("");
+          });
         }}
       >
         <input
