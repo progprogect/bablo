@@ -1,8 +1,20 @@
-import { applyHourBlockDecision, listActiveHourBlocks } from "../db/repositories/hourBlocks.js";
+import {
+  applyHourBlockDecision,
+  listActiveHourBlocks,
+  markHourBlocksReviewed,
+  unblockHours,
+  type HourBlockRow,
+} from "../db/repositories/hourBlocks.js";
 import { getRiskSettings } from "../db/repositories/settings.js";
-import { listAllClosedTrades } from "../db/repositories/trades.js";
+import { listAllClosedTrades, type Trade as TradeRow } from "../db/repositories/trades.js";
 import { computeTradeInsights, toInsightInput } from "../history/insights.js";
+import { computeMonthlyStats, toMonthlyStatInput } from "../history/monthlyStats.js";
 import { resolveTradeOutcome } from "../history/outcome.js";
+import {
+  decideManualHourReview,
+  MANUAL_HOUR_BLOCK_SOURCE,
+  type MonthWinrate,
+} from "./hourBlockReview.js";
 import {
   decideHourBlocks,
   formatHour,
@@ -29,7 +41,7 @@ import { getLocalHour } from "./tradingDay.js";
  */
 async function loadTradeStats(
   tzOffsetMinutes: number,
-): Promise<{ hours: HourOutcome[]; closed: ClosedOutcome[] }> {
+): Promise<{ hours: HourOutcome[]; closed: ClosedOutcome[]; rows: TradeRow[] }> {
   const rows = await listAllClosedTrades();
   const closed: ClosedOutcome[] = [];
   const inputs = rows.map((row) => {
@@ -43,7 +55,60 @@ async function loadTradeStats(
     }
     return input;
   });
-  return { hours: computeTradeInsights(inputs, tzOffsetMinutes).hourlyOutcomes, closed };
+  return { hours: computeTradeInsights(inputs, tzOffsetMinutes).hourlyOutcomes, closed, rows };
+}
+
+/** Блокировка поставлена решением пользователя, а не расчётом правила. */
+function isManualBlock(row: HourBlockRow): boolean {
+  return row.source === MANUAL_HOUR_BLOCK_SOURCE;
+}
+
+/**
+ * Винрейты по месяцам — ровно те, что показывает карточка месяца в «Статистике»
+ * (`computeMonthlyStats`). Снимки эквити и корректировки не нужны: они влияют только на
+ * «% к депозиту», а винрейт считается по одним сделкам.
+ */
+function monthWinrates(rows: TradeRow[], tzOffsetMinutes: number, now: Date): MonthWinrate[] {
+  return computeMonthlyStats(rows.map(toMonthlyStatInput), tzOffsetMinutes, null, [], now, []).map(
+    (month) => ({
+      year: month.year,
+      month: month.month,
+      totalTrades: month.totalTrades,
+      winRate: month.winRate,
+    }),
+  );
+}
+
+/**
+ * Разовая проверка ручных блокировок по месячному винрейту (см. hourBlockReview.ts).
+ * Ленивая и идемпотентная: запускается на тех же точках пересчёта, что и авто-правило,
+ * поэтому отдельный крон не нужен — на границе месяца решение примет первое же закрытие
+ * сделки, рестарт сервера или кнопка «Пересчитать».
+ */
+async function reviewManualHourBlocks(
+  active: HourBlockRow[],
+  rows: TradeRow[],
+  tzOffsetMinutes: number,
+  now: Date,
+): Promise<number[]> {
+  const pending = active.filter((row) => isManualBlock(row) && row.reviewedAt === null);
+  if (pending.length === 0) return [];
+
+  const decision = decideManualHourReview({
+    blocks: pending.map((row) => ({
+      hour: row.hour,
+      baselineMonth: row.reviewBaselineMonth,
+      fromMonth: row.reviewFromMonth,
+      reviewed: false,
+    })),
+    months: monthWinrates(rows, tzOffsetMinutes, now),
+    now,
+    tzOffsetMinutes,
+  });
+
+  await unblockHours(decision.toUnblock, now);
+  await markHourBlocksReviewed(decision.toMarkReviewed, now);
+  return decision.toUnblock;
 }
 
 /**
@@ -55,7 +120,7 @@ async function loadTradeStats(
  */
 export async function syncHourBlocks(now: Date = new Date()): Promise<HourBlockDecision> {
   const settings = await getRiskSettings();
-  const [{ hours, closed }, active] = await Promise.all([
+  const [{ hours, closed, rows }, active] = await Promise.all([
     loadTradeStats(settings.tzOffsetMinutes),
     listActiveHourBlocks(),
   ]);
@@ -68,21 +133,59 @@ export async function syncHourBlocks(now: Date = new Date()): Promise<HourBlockD
     blocked: active.map((row) => ({
       hour: row.hour,
       overallWinrateAtBlock: overallWinrate(closed, row.blockedAt),
+      manual: isManualBlock(row),
     })),
     overallWinrate: overallWinrate(closed),
   });
   if (decision.toBlock.length > 0 || decision.toUnblock.length > 0) {
     await applyHourBlockDecision(decision, now);
   }
-  return decision;
+
+  // Ручные блокировки автоматика выше не трогает — у них своя разовая проверка.
+  const reviewUnblocked = await reviewManualHourBlocks(active, rows, settings.tzOffsetMinutes, now);
+  if (reviewUnblocked.length === 0) return decision;
+
+  const opened = new Set(reviewUnblocked);
+  return {
+    ...decision,
+    toUnblock: [...decision.toUnblock, ...reviewUnblocked.map((hour) => ({ hour, reference: 0 }))],
+    blockedHours: decision.blockedHours.filter((hour) => !opened.has(hour)),
+  };
 }
 
-/** Заблокированные часы для UI: пустой список, когда правило выключено в админке. */
-export async function listBlockedHours(): Promise<number[]> {
+/**
+ * Заблокированные часы для UI: всё закрытое и отдельно закрытое вручную (у него другое
+ * пояснение — оно ждёт проверки винрейта, а не следует из статистики часа). Пустые
+ * списки, когда правило выключено в админке: тумблер гасит механизм целиком, включая
+ * ручные блокировки (решение от 22.09.2026).
+ */
+export async function listBlockedHours(): Promise<{ hours: number[]; manualHours: number[] }> {
   const settings = await getRiskSettings();
-  if (!settings.blockLosingHours) return [];
+  if (!settings.blockLosingHours) return { hours: [], manualHours: [] };
   const active = await listActiveHourBlocks();
-  return active.map((row) => row.hour).sort((a, b) => a - b);
+  const byHour = (a: number, b: number) => a - b;
+  return {
+    hours: active.map((row) => row.hour).sort(byHour),
+    manualHours: active.filter(isManualBlock).map((row) => row.hour).sort(byHour),
+  };
+}
+
+/** Активные ручные блокировки для админки: час + состояние проверки. */
+export async function listManualHourBlocks(): Promise<{ hour: number; reviewed: boolean }[]> {
+  const active = await listActiveHourBlocks();
+  return active
+    .filter(isManualBlock)
+    .map((row) => ({ hour: row.hour, reviewed: row.reviewedAt !== null }))
+    .sort((a, b) => a.hour - b.hour);
+}
+
+/** Снять ручную блокировку часа из админки. Возвращает false, если такой блокировки нет. */
+export async function releaseManualHourBlock(hour: number, now: Date = new Date()): Promise<boolean> {
+  const active = await listActiveHourBlocks();
+  const target = active.find((row) => row.hour === hour && isManualBlock(row));
+  if (!target) return false;
+  await unblockHours([hour], now);
+  return true;
 }
 
 /**
@@ -94,10 +197,28 @@ export async function evaluateLosingHourBlock(now: Date = new Date()): Promise<B
   const settings = await getRiskSettings();
   if (!settings.blockLosingHours) return null;
 
-  const active = await listActiveHourBlocks();
+  let active = await listActiveHourBlocks();
   if (active.length === 0) return null;
 
   const currentHour = getLocalHour(now, settings.tzOffsetMinutes);
+  if (!active.some((row) => row.hour === currentHour)) return null;
+
+  // Дальше нужна статистика сделок — и для текста, и (если час закрыт вручную и ждёт
+  // проверки) для самой проверки. Читаем один раз.
+  const { hours, rows } = await loadTradeStats(settings.tzOffsetMinutes);
+
+  // Прогон проверки прямо здесь, а не только на закрытии сделки и старте сервера: иначе
+  // после смены месяца час остался бы закрытым до первой закрытой сделки — а закрыть её
+  // как раз и мешает этот час. Путь редкий (торговля и так заблокирована), поэтому
+  // лишней работы на горячих запросах не появляется.
+  if (active.some((row) => isManualBlock(row) && row.reviewedAt === null)) {
+    const opened = await reviewManualHourBlocks(active, rows, settings.tzOffsetMinutes, now);
+    if (opened.length > 0) {
+      active = await listActiveHourBlocks();
+      if (!active.some((row) => row.hour === currentHour)) return null;
+    }
+  }
+
   const currentBlock = active.find((row) => row.hour === currentHour);
   if (!currentBlock) return null;
 
@@ -105,7 +226,6 @@ export async function evaluateLosingHourBlock(now: Date = new Date()): Promise<B
   const until = openHourAfter(now, blockedHours, settings.tzOffsetMinutes);
   if (!until) return null;
 
-  const { hours } = await loadTradeStats(settings.tzOffsetMinutes);
   const profitableHour = nextProfitableHour(now, hours, settings.tzOffsetMinutes);
   const stat = hours.find((entry) => entry.hour === currentHour);
   const tpCount = stat?.tpCount ?? currentBlock.tpAtBlock;
@@ -116,12 +236,15 @@ export async function evaluateLosingHourBlock(now: Date = new Date()): Promise<B
     profitableHour !== null && profitableHour !== getLocalHour(until, settings.tzOffsetMinutes)
       ? `, ближайший прибыльный час — ${formatHour(profitableHour)}`
       : "";
+  const opensAt = `Торговля откроется в ${formatHour(getLocalHour(until, settings.tzOffsetMinutes))}${profitableHint}`;
 
-  return {
-    type: "losing_hour",
-    reason:
-      `${formatHour(currentHour)} — убыточный час: ${tpCount} из ${total} сделок в тейк (${winratePct}%). ` +
-      `Торговля откроется в ${formatHour(getLocalHour(until, settings.tzOffsetMinutes))}${profitableHint}`,
-    until,
-  };
+  // У ручной блокировки статистика часа ничего не объясняет: час закрыт решением, а не
+  // расчётом. Показывать «убыточный час: 4 из 5 в тейк» было бы прямой ложью.
+  const reason = isManualBlock(currentBlock)
+    ? currentBlock.reviewedAt !== null
+      ? `${formatHour(currentHour)} — час закрыт: без него винрейт за месяц оказался выше. ${opensAt}`
+      : `${formatHour(currentHour)} — час закрыт до проверки винрейта по итогам месяца. ${opensAt}`
+    : `${formatHour(currentHour)} — убыточный час: ${tpCount} из ${total} сделок в тейк (${winratePct}%). ${opensAt}`;
+
+  return { type: "losing_hour", reason, until };
 }

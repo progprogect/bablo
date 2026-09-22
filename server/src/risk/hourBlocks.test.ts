@@ -218,3 +218,31 @@ test("decideHourBlocks: час исчез из статистики — откр
   const decision = decide([hour(15, 6, 9)], [9], { atBlock: 0.4, now: 0.9 });
   assert.deepEqual(decision.toUnblock.map((entry) => entry.hour), [9]);
 });
+
+test("decideHourBlocks: ручную блокировку гистерезис не снимает", () => {
+  // Время второго шанса пришло (эталон 15 ≥ 10 × 1.5) и винрейт не вырос — авто-блокировка
+  // тут открылась бы. Ручная остаётся: у неё своя проверка (см. hourBlockReview.ts).
+  const hours = [hour(9, 3, 10), hour(15, 10, 15)];
+  const manual: BlockedHourState = { hour: 9, overallWinrateAtBlock: 0.5, manual: true };
+  const decision = decideHourBlocks({ hours, blocked: [manual], overallWinrate: 0.5 });
+  assert.deepEqual(decision.toUnblock, []);
+  assert.deepEqual(decision.blockedHours, [9]);
+});
+
+test("decideHourBlocks: ручная блокировка держится и на часе без статистики", () => {
+  // Час закрыт решением, сделок в нём нет вовсе — ветка «час пропал из статистики»
+  // не должна его открыть.
+  const hours = [hour(15, 10, 15)];
+  const manual: BlockedHourState = { hour: 9, overallWinrateAtBlock: null, manual: true };
+  const decision = decideHourBlocks({ hours, blocked: [manual], overallWinrate: 0.6 });
+  assert.deepEqual(decision.toUnblock, []);
+  assert.deepEqual(decision.blockedHours, [9]);
+});
+
+test("decideHourBlocks: ручная блокировка не мешает авто-правилу закрывать другие часы", () => {
+  const hours = [hour(9, 0, 2), hour(12, 3, 16), hour(15, 10, 15)];
+  const manual: BlockedHourState = { hour: 9, overallWinrateAtBlock: null, manual: true };
+  const decision = decideHourBlocks({ hours, blocked: [manual], overallWinrate: 0.6 });
+  assert.deepEqual(decision.toBlock.map((entry) => entry.hour), [12]);
+  assert.deepEqual(decision.blockedHours, [9, 12]);
+});

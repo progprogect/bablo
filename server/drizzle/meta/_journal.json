@@ -127,6 +127,13 @@
       "when": 1788825600000,
       "tag": "0017_withdrawal_multiplier",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790035200000,
+      "tag": "0018_manual_hour_blocks",
+      "breakpoints": true
     }
   ]
 }

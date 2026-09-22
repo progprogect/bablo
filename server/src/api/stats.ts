@@ -6,6 +6,7 @@ import { listAllClosedTrades } from "../db/repositories/trades.js";
 import { computeTradeInsights, toInsightInput } from "../history/insights.js";
 import {
   computeMonthlyStats,
+  toMonthlyStatInput,
   withOrphanWithdrawals,
   type ConfirmedWithdrawalInput,
   type EquityAnchor,
@@ -30,23 +31,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
 
     const insights = computeTradeInsights(rows.map(toInsightInput), riskSettings.tzOffsetMinutes);
 
-    const monthlyInputs: MonthlyStatTradeInput[] = rows.map((row) => ({
-      openedAt: row.openedAt,
-      closedAt: row.closedAt,
-      closeReason: row.closeReason,
-      resultR: row.resultR !== null ? Number(row.resultR) : null,
-      riskUsd: row.riskUsd !== null ? Number(row.riskUsd) : null,
-      rrPreset: row.rrPreset,
-      entryPrice: row.entryPrice !== null ? Number(row.entryPrice) : null,
-      slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
-      side: row.side,
-      quantity: Number(row.quantity),
-      partialTpPrice: row.partialTpPrice !== null ? Number(row.partialTpPrice) : null,
-      partialTpFilledAt: row.partialTpFilledAt,
-      nightTpAppliedAt: row.nightTpAppliedAt,
-      statsRrPreset: row.statsRrPreset,
-      statsOutcome: row.statsOutcome,
-    }));
+    const monthlyInputs: MonthlyStatTradeInput[] = rows.map(toMonthlyStatInput);
 
     // Все дневные снимки эквити: границы месяцев считаются от БЛИЖАЙШЕГО к границе
     // снимка (см. history/monthlyStats.ts), последний снимок — якорь «сейчас»
@@ -84,8 +69,15 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
 
     // Смещение таймзоны риск-плана — по нему сгруппированы часы в insights, по нему же
     // UI (InsightPanel) подсвечивает текущий час: время устройства может не совпадать.
-    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено).
-    return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes, blockedHours };
+    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено);
+    // manualBlockedHours — подмножество закрытых вручную: у них другое пояснение в UI.
+    return {
+      insights,
+      monthly,
+      tzOffsetMinutes: riskSettings.tzOffsetMinutes,
+      blockedHours: blockedHours.hours,
+      manualBlockedHours: blockedHours.manualHours,
+    };
   });
 
   /**
