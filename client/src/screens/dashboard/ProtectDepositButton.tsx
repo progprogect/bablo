@@ -8,6 +8,16 @@ import { ApiError, pauseTradingRequest } from "../../api/client";
  *
  * Одно нажатие, без подтверждения (просьба пользователя от 20.09.2026): пауза — это
  * забота о себе, а не опасное действие, и лишний шаг тут только мешает.
+ *
+ * Геометрия карточки повторяет LevelIndicator (просьба от 22.09.2026 — единая стилистика
+ * дашборда): те же px-4 py-2.5, тот же кружок иконки h-9 w-9 и gap-3.
+ *
+ * Высота всё же на ~13px больше уровня, и это осознанно. Высоту держит не иконка (36px),
+ * а подпись: «Сомнение — тоже сигнал. Дай себе 2 часа тишины» требует 281px при доступных
+ * 257px, поэтому переносится на вторую строку. Ровно 58px, как у уровня, получается
+ * только если подпись влезает в одну строку — то есть если её сократить (пользователь
+ * 22.09.2026 отказался) или увести на 10px (влезает с запасом −1px, то есть на реальном
+ * Safari скорее всего снова перенесётся). Сокращаешь подпись — карточка сама сядет в 58px.
  */
 export function ProtectDepositButton({ onPaused }: { onPaused: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
@@ -33,17 +43,17 @@ export function ProtectDepositButton({ onPaused }: { onPaused: () => void }) {
         type="button"
         disabled={isSaving}
         onClick={handleClick}
-        className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-3.5 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60"
+        className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card px-4 py-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60"
       >
         <span
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface text-2xl leading-none"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-xl leading-none"
           aria-hidden="true"
         >
           🛟
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="text-sm font-medium text-ink">Поберечь депозит</span>
-          <span className="text-[11px] leading-snug text-slate-500">
+          <span className="text-[11px] leading-tight text-slate-500">
             {isSaving ? "Беру паузу…" : "Сомнение — тоже сигнал. Дай себе 2 часа тишины"}
           </span>
         </span>
