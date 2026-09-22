@@ -39,11 +39,13 @@ Realtime — без поллинга: сервер держит WebSocket-сое
 ```
 bablo/
 ├── docs/                  # эта документация
-├── client/                # React PWA
+├── client/                # React PWA (две точки входа: index.html и journal.html)
 │   └── src/
 │       ├── screens/       # Dashboard, History, Admin
 │       ├── components/
-│       └── api/           # типизированный клиент API + SSE
+│       ├── api/           # типизированный клиент API + SSE (http.ts — общий транспорт)
+│       └── journal/       # PWA «Bablo.Дневник»: свой бандл, экраны, api; из общего —
+│                          # AuthGate (PIN), транспорт и токены-классы Tailwind
 ├── server/
 │   └── src/
 │       ├── api/           # HTTP-роуты (Fastify)
@@ -55,6 +57,8 @@ bablo/
 │       ├── tracker/       # трекинг активной сделки (MFE, безубыток)
 │       ├── security/      # шифрование, PIN, сессии
 │       ├── db/            # схема Drizzle, миграции, репозитории
+│       ├── journal/       # журнал разбора сделок (schema, logic, repository, routes) —
+│       │                 # изолированный контур: из основного только читает trades
 │       └── events/        # внутренняя шина → SSE
 └── package.json           # workspaces
 ```
@@ -126,6 +130,43 @@ bablo/
 - Текст уведомления использует ту же логику исхода, что и статистика
   (`resolveTradeOutcome` + `roundStatsR`) — цифры в пуше и в приложении совпадают.
 
+### Журнал разбора сделок (`server/src/journal`, `client/src/journal`)
+
+Отдельный контур «Bablo.Дневник» (см. docs/PROJECT.md): пост-анализ закрытых сделок с
+категориями, чек-листами и таблицей анализа. Правила изоляции:
+
+- из основных данных — только ЧТЕНИЕ `trades` (+ общий `history/outcome.ts`, чтобы исход
+  и фактический R совпадали с Историей до цифры); торговые пути, BingX, риск-движок и
+  SSE не затрагиваются, основной код из журнала не импортирует ничего;
+- всё состояние — в таблицах `journal_*` (свой файл схемы `journal/schema.ts`, подключён
+  в drizzle.config рядом с основным);
+- чистая логика без I/O — `journal/logic.ts` (валидация ответов чек-листа, восстановление
+  стопа при входе, MFE→R, агрегаты таблицы), под тестами `logic.test.ts`; I/O —
+  `repository.ts`; HTTP — `routes.ts`, регистрируется одной строкой в app.ts;
+- «неразобранные» сделки не хранятся и не синхронизируются: это `closed trades LEFT JOIN
+  journal_entries IS NULL` — новая закрытая сделка попадает в очередь разбора сама.
+
+**Две PWA на одном origin.** `journal.html` — вторая точка входа Vite (rollupOptions.input)
+со своим бандлом `src/journal/main.tsx` (BrowserRouter basename="/journal"). Манифесты
+обеих PWA — статические файлы в `client/public/` (`manifest.webmanifest` — терминал,
+`journal.webmanifest` — журнал, scope `/journal`): автогенерация манифеста в
+vite-plugin-pwa выключена (`manifest: false`), потому что она вставляла бы один манифест
+во все html. Service worker ОБЩИЙ (`src/sw.ts`): два NavigationRoute — журнальный
+(allowlist `/^\/journal([/?]|$)/`) первым, у основного этот же паттерн в denylist.
+Регексп учитывает query string: workbox матчит `pathname + search`, и `(\/|$)` отдавал
+бы `/journal?x=1` терминалу. Серверный SPA-fallback (app.ts) по той же причине сравнивает
+путь БЕЗ query: `/journal…` → `journal.html`, остальное → `index.html`.
+
+**Палитра.** Цветовые токены Tailwind (`surface/card/line/ink/accent` + `positive/
+negative/muted`) — CSS-переменные RGB-триплетами (`rgb(var(--x-rgb) / <alpha-value>)`,
+чтобы работали alpha-модификаторы вида `bg-surface/95`): `:root` в index.css — прежний
+айвори терминала, класс `theme-journal` на `<html>` журнала — палитра iOS. Иконки журнала
+генерируются из `client/journal-icon-source.svg`: `magick -background none … -resize
+512x512` → `sips -z 192` (галочка в исходнике нарисована полигонами с кружками на
+концах — MSVG-рендер ImageMagick не рисует stroke-path). Apple-touch-иконка (180) —
+из варианта с `rx="0"`: это полный квадрат без прозрачных углов, iOS скругляет сам,
+а прозрачность в apple-touch-icon он заливает чёрным.
+
 ### Деплой (Railway)
 - Один сервис из корня монорепо: собирает и клиент, и сервер (`npm run build`).
 - **Watch Paths: НЕ задавать нигде** — ни в railway.json, ни в UI сервиса (там выставлено
@@ -181,6 +222,18 @@ hour_blocks     — история блокировок убыточных ча�
                    гистерезисом, ручная — разовой проверкой месячного винрейта по
                    review_baseline_month / review_from_month; reviewed_at — проверка
                    состоялась и подтвердила гипотезу, час закрыт бессрочно
+journal_categories — категории разбора (журнал): name, sort_order, archived_at.
+                   Архив вместо удаления, когда по категории уже есть разборы
+journal_checklist_items — пункты чек-листа категории: label, answer_type
+                   ('yes_no' | 'scale_0_10' | 'text' — фиксируется при создании),
+                   sort_order, archived_at (архив, если на пункт уже отвечали)
+journal_entries — разбор сделки: trade_id (UNIQUE — одна категория на сделку,
+                   ON DELETE CASCADE от trades: «Очистить данные для нового аккаунта»
+                   уносит и разборы), category_id (без каскада — категорию с разборами
+                   БД удалить не даст, сервис архивирует)
+journal_answers — ответ на пункт: entry_id, item_id, значение в колонке своего типа
+                   (value_bool / value_int / value_text — ровно одна не-null; типизированные
+                   колонки вместо jsonb ради простых агрегатов), UNIQUE(entry_id, item_id)
 ```
 
 ## API (набросок контракта)
@@ -236,6 +289,19 @@ POST /api/admin/trades/:id/stats-outcome — ручной исход сделк�
                                    ('tp' | 'sl' | 'be' | null — авто); closeReason не меняет
 GET  /api/admin/hour-blocks     — часы, закрытые вручную [{ hour, reviewed }]
 DELETE /api/admin/hour-blocks/:hour — открыть закрытый вручную час (см. RISK_ENGINE #10)
+GET  /api/journal/overview      — журнал: счётчик неразобранных + категории с числами
+GET  /api/journal/trades        — журнал: лента закрытых сделок (?filter=unsorted|all|<catId>,
+                                   limit/offset); карточка считается сервером из trades
+                                   (outcome/statsResultR — те же, что в Истории; стоп при
+                                   входе восстановлен из riskUsd/qty, тейк — tp_price_initial)
+GET  /api/journal/trades/:id    — журнал: деталь сделки + разбор с ответами
+PUT  /api/journal/trades/:id/entry — сохранить разбор { categoryId, answers[] }; сервер
+                                   требует ответ на КАЖДЫЙ активный пункт чек-листа
+DELETE /api/journal/trades/:id/entry — вернуть сделку в неразобранные
+GET/POST/PATCH/DELETE /api/journal/categories[...] и /api/journal/items/:id — конструктор
+                                   (удаление с данными = архив; тип пункта не меняется)
+GET  /api/journal/analysis/:id  — таблица категории: columns (активные пункты + архивные
+                                   с ответами), rows, aggregates {plus, minus}
 GET  /api/push/public-key       — публичный VAPID-ключ для подписки на push
 POST /api/push/subscribe        — { subscription } — регистрация устройства
 POST /api/push/unsubscribe      — { endpoint } — снятие подписки устройства

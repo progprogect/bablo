@@ -17,6 +17,7 @@ import { registerRiskRoutes } from "./api/risk.js";
 import { registerPushRoutes } from "./api/push.js";
 import { registerWithdrawalRoutes } from "./api/withdrawals.js";
 import { registerPauseRoutes } from "./api/pause.js";
+import { registerJournalRoutes } from "./journal/routes.js";
 import { env } from "./config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +59,7 @@ export function buildApp() {
   app.register(registerPushRoutes, { prefix: "/api" });
   app.register(registerWithdrawalRoutes, { prefix: "/api" });
   app.register(registerPauseRoutes, { prefix: "/api" });
+  app.register(registerJournalRoutes, { prefix: "/api" });
 
   const clientBuildExists = existsSync(path.join(clientDistPath, "index.html"));
 
@@ -73,13 +75,19 @@ export function buildApp() {
   }
 
   // SPA fallback: любой не-/api маршрут отдаёт index.html, роутинг — на клиенте.
+  // Журнал (/journal…) — отдельная точка входа со своим бандлом, манифестом и палитрой
+  // (PWA «Bablo.Дневник»): его пути получают journal.html. Ссылок между терминалом и
+  // журналом нет ни в одну сторону — попасть в журнал можно только прямым URL.
   app.setNotFoundHandler((request, reply) => {
     if (request.raw.url?.startsWith("/api")) {
       reply.code(404).send({ error: "Not Found" });
       return;
     }
     if (clientBuildExists) {
-      reply.sendFile("index.html", clientDistPath);
+      // Путь без query: /journal?x=1 — тоже журнал (url в raw содержит query string).
+      const pathOnly = (request.raw.url ?? "").split("?")[0] ?? "";
+      const isJournal = pathOnly === "/journal" || pathOnly.startsWith("/journal/");
+      reply.sendFile(isJournal ? "journal.html" : "index.html", clientDistPath);
       return;
     }
     reply.code(404).send({ error: "Client build not found" });

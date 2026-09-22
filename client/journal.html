@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru" class="theme-journal">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <title>Bablo.Дневник</title>
+    <meta name="description" content="Журнал разбора сделок Bablo" />
+    <meta name="theme-color" content="#F2F2F7" />
+
+    <!-- iOS: установка как standalone-приложение через "Добавить на экран Домой".
+         Это ВТОРАЯ PWA на том же origin: свои имя, иконка и манифест (scope /journal),
+         service worker общий с терминалом (src/sw.ts). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Bablo.Дневник" />
+    <link rel="apple-touch-icon" href="/icons/journal-apple-touch-icon.png" />
+
+    <link rel="icon" type="image/png" href="/icons/journal-icon-192.png" />
+    <link rel="manifest" href="/journal.webmanifest" />
+  </head>
+  <body class="bg-surface text-ink">
+    <div id="root"></div>
+    <script type="module" src="/src/journal/main.tsx"></script>
+  </body>
+</html>
