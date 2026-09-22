@@ -1,0 +1,18 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Иконка PWA «Bablo.Дневник»: systemBlue-фон (палитра журнала — iOS), страница
+       дневника со строками, галочка чек-листа. Галочка — полигонами с кружками на
+       концах: stroke-path не рендерится MSVG-парсером ImageMagick, которым из этого
+       файла собираются PNG (magick + sips, см. docs/ARCHITECTURE.md). -->
+  <rect width="512" height="512" rx="96" fill="#007AFF"/>
+  <rect x="128" y="96" width="256" height="320" rx="28" fill="#FFFFFF"/>
+  <rect x="168" y="150" width="176" height="22" rx="11" fill="#007AFF"/>
+  <rect x="168" y="206" width="176" height="16" rx="8" fill="#C7C7CC"/>
+  <rect x="168" y="250" width="140" height="16" rx="8" fill="#C7C7CC"/>
+  <rect x="168" y="294" width="160" height="16" rx="8" fill="#C7C7CC"/>
+  <circle cx="360" cy="392" r="56" fill="#34C759"/>
+  <polygon points="328.3,397.7 346.3,415.7 357.7,404.3 339.7,386.3" fill="#FFFFFF"/>
+  <polygon points="358.0,415.3 392.0,377.3 380.0,366.7 346.0,404.7" fill="#FFFFFF"/>
+  <circle cx="334" cy="392" r="8.0" fill="#FFFFFF"/>
+  <circle cx="352" cy="410" r="8.0" fill="#FFFFFF"/>
+  <circle cx="386" cy="372" r="8.0" fill="#FFFFFF"/>
+</svg>

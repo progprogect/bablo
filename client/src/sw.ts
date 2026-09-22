@@ -20,8 +20,18 @@ clientsClaim();
 // торговые данные не должны отдаваться из кэша.
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
+// Две точки входа: журнал (/journal…) — отдельная PWA «Bablo.Дневник» со своим html.
+// Маршруты проверяются в порядке регистрации, поэтому журнальный стоит первым, а у
+// основного /journal в denylist — иначе офлайн-навигация в журнал получала бы терминал.
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL("index.html"), { denylist: [/^\/api\//] }),
+  new NavigationRoute(createHandlerBoundToURL("journal.html"), {
+    allowlist: [/^\/journal([/?]|$)/],
+  }),
+);
+registerRoute(
+  new NavigationRoute(createHandlerBoundToURL("index.html"), {
+    denylist: [/^\/api\//, /^\/journal([/?]|$)/],
+  }),
 );
 
 type PushPayload = {

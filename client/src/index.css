@@ -2,6 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Цветовые темы. Токены Tailwind (tailwind.config.ts) ссылаются на эти переменные,
+ * поэтому одни и те же классы (bg-surface, border-line…) дают разные палитры:
+ * :root — терминал (тёплый айвори, как было с самого начала), .theme-journal — журнал
+ * разбора сделок в палитре iOS (class на <html> в journal.html). Значения — RGB-триплеты,
+ * чтобы работали alpha-модификаторы (bg-surface/95).
+ */
+:root {
+  --surface-rgb: 247 246 241; /* #F7F6F1 — айвори-фон терминала */
+  --card-rgb: 255 255 255;
+  --line-rgb: 231 228 218; /* #E7E4DA — тёплая светлая граница */
+  --ink-rgb: 23 26 33; /* #171A21 — основной текст */
+  --accent-rgb: 47 111 237; /* #2F6FED — голубой акцент */
+  --positive-rgb: 5 150 105; /* emerald-600 — прибыль */
+  --negative-rgb: 220 38 38; /* red-600 — убыток */
+  --muted-rgb: 100 116 139; /* slate-500 — вторичный текст */
+}
+
+.theme-journal {
+  --surface-rgb: 242 242 247; /* systemGroupedBackground #F2F2F7 */
+  --card-rgb: 255 255 255;
+  --line-rgb: 226 226 231; /* разделители в духе iOS separator */
+  --ink-rgb: 28 28 30; /* label #1C1C1E */
+  --accent-rgb: 0 122 255; /* systemBlue #007AFF */
+  --positive-rgb: 52 199 89; /* systemGreen #34C759 */
+  --negative-rgb: 255 59 48; /* systemRed #FF3B30 */
+  --muted-rgb: 142 142 147; /* secondaryLabel #8E8E93 */
+}
+
 html,
 body,
 #root {
@@ -11,6 +40,6 @@ body,
 body {
   /* iPhone safe area (notch / home indicator) */
   padding-top: env(safe-area-inset-top);
-  background-color: #f7f6f1;
-  color: #171a21;
+  background-color: rgb(var(--surface-rgb));
+  color: rgb(var(--ink-rgb));
 }

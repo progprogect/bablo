@@ -20,28 +20,9 @@ import type {
   WithdrawalsState,
 } from "./types";
 
-export class ApiError extends Error {}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const message = (body as { error?: string } | null)?.error ?? "Запрос не выполнен";
-    throw new ApiError(message);
-  }
-
-  return body as T;
-}
+// Транспорт вынесен в api/http.ts — он общий с журналом (journal/api.ts).
+export { ApiError } from "./http";
+import { request } from "./http";
 
 // --- Аутентификация ---
 

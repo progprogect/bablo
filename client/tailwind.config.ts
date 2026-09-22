@@ -1,22 +1,27 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./journal.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Тёплый айвори-белый фон приложения (в духе BingX light) — используется как
-        // на bg-surface (страница/шторки/нижняя навигация), так и на text-surface
-        // (светлый текст на насыщенных цветных кнопках, см. использования ниже).
-        surface: "#F7F6F1",
-        // Белые карточки на айвори-фоне — лёгкий контраст без жёстких границ.
-        card: "#FFFFFF",
-        // Тёплая светлая граница вместо тёмной — мягкий, а не "жирный" контур.
-        line: "#E7E4DA",
-        // Основной текст (замена text-slate-100 из тёмной темы).
-        ink: "#171A21",
-        // Приятный голубой акцент (замена цианового accent из тёмной темы).
-        accent: "#2F6FED",
+        // Все токены — через CSS-переменные (RGB-триплеты, чтобы работали alpha-модификаторы
+        // вроде bg-surface/95). Значения задаются в src/index.css: :root — палитра терминала
+        // (тёплый айвори в духе BingX light), .theme-journal — палитра журнала в духе iOS.
+        // Классы (bg-surface, text-ink и т.д.) одни и те же в обоих приложениях — темы
+        // отличаются только значениями переменных, поэтому компоненты остаются общими.
+        surface: "rgb(var(--surface-rgb) / <alpha-value>)",
+        card: "rgb(var(--card-rgb) / <alpha-value>)",
+        line: "rgb(var(--line-rgb) / <alpha-value>)",
+        ink: "rgb(var(--ink-rgb) / <alpha-value>)",
+        accent: "rgb(var(--accent-rgb) / <alpha-value>)",
+        // Смысловые цвета результата (прибыль/убыток) и вторичного текста. Терминал
+        // исторически использует готовые классы Tailwind (emerald-600/red-600/slate-500)
+        // напрямую — их не трогаем; токены нужны журналу, где эти же роли исполняют
+        // системные цвета iOS (systemGreen/systemRed/secondaryLabel).
+        positive: "rgb(var(--positive-rgb) / <alpha-value>)",
+        negative: "rgb(var(--negative-rgb) / <alpha-value>)",
+        muted: "rgb(var(--muted-rgb) / <alpha-value>)",
       },
       spacing: {
         // Нижний отступ контента под фиксированной мобильной навигацией (BottomNav):
