@@ -12,7 +12,7 @@ import { WithdrawalsCard } from "./history/WithdrawalsCard";
 
 const PAGE_SIZE = 20;
 
-type Tab = "trades" | "stats" | "notifications";
+type Tab = "trades" | "stats" | "withdrawals" | "notifications";
 
 export function History() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -89,11 +89,21 @@ export function History() {
     <section className="flex flex-1 flex-col gap-6 pt-10">
       <h1 className="px-4 text-lg font-medium text-ink">История</h1>
 
-      <div className="flex justify-center gap-2 px-4">
+      {/* Четыре таба в 375px: при px-4/gap-2 ряду нужно 379px и он не влезает (замерено
+          23.09.2026). Поджаты отступы, а не названия — запас стал 30px. */}
+      <div className="flex justify-center gap-1.5 px-2">
         <TabButton label="Сделки" active={tab === "trades"} onClick={() => setTab("trades")} />
         <TabButton label="Статистика" active={tab === "stats"} onClick={() => setTab("stats")} />
         <TabButton
+          label="Выводы"
+          active={tab === "withdrawals"}
+          onClick={() => setTab("withdrawals")}
+        />
+        {/* Уведомления — редкая настройка «включил и забыл», поэтому занимают не слово, а
+            иконку (просьба от 23.09.2026): освободившееся место ушло вкладке «Выводы». */}
+        <TabButton
           label="Уведомления"
+          iconOnly
           active={tab === "notifications"}
           onClick={() => setTab("notifications")}
         />
@@ -103,6 +113,12 @@ export function History() {
         <div className="mx-4 flex flex-col gap-3">
           <NotificationsSection />
           <ChimeSoundPicker />
+        </div>
+      )}
+
+      {tab === "withdrawals" && (
+        <div className="mx-4 flex flex-col gap-3">
+          <WithdrawalsCard />
         </div>
       )}
 
@@ -161,8 +177,6 @@ export function History() {
 
       {tab === "stats" && (
         <div className="mx-4 flex flex-col gap-3">
-          <WithdrawalsCard />
-
           <button
             type="button"
             onClick={() => setShowEquityChart(true)}
@@ -197,18 +211,55 @@ export function History() {
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+/**
+ * Колокольчик вкладки «Уведомления»: свой SVG в стиле остальных значков приложения
+ * (галочка прибыльного часа, замок в подсказке), а не эмодзи — эмодзи выглядит инородно
+ * и рисуется по-разному на разных системах. `currentColor` — чтобы активное и неактивное
+ * состояние окрашивались тем же правилом, что и текстовые табы.
+ */
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" aria-hidden="true">
+      <path
+        d="M5.5 8.2a4.5 4.5 0 0 1 9 0c0 2.5.5 3.9 1.2 4.8.3.4 0 1-.5 1H4.8c-.5 0-.8-.6-.5-1 .7-.9 1.2-2.3 1.2-4.8Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M8.3 16a1.8 1.8 0 0 0 3.4 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Таб экрана «История». `iconOnly` — узкий таб только со значком: label остаётся, но уходит
+ * в aria-label, чтобы кнопка оставалась понятной без зрения.
+ */
+function TabButton({
+  label,
+  active,
+  onClick,
+  iconOnly = false,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  iconOnly?: boolean;
+}) {
+  const tone = active
+    ? "bg-accent text-white font-medium"
+    : "border border-line text-slate-500";
   return (
     <button
       type="button"
       onClick={onClick}
-      className={
-        active
-          ? "rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white"
-          : "rounded-full border border-line px-4 py-1.5 text-sm text-slate-500"
-      }
+      aria-label={iconOnly ? label : undefined}
+      title={iconOnly ? label : undefined}
+      className={`flex items-center justify-center rounded-full py-1.5 text-sm ${tone} ${
+        iconOnly ? "px-2.5" : "px-3.5"
+      }`}
     >
-      {label}
+      {iconOnly ? <BellIcon /> : label}
     </button>
   );
 }
