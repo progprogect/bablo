@@ -193,7 +193,12 @@ POST /api/trades                — открыть { symbol, side, quantity, slP
 GET  /api/trades/active         — активная сделка + живые данные позиции (ликвидация, PnL)
 POST /api/trades/:id/takeprofit — { tpPrice | rrPreset } → выставить TP
 POST /api/trades/:id/close      — закрыть вручную (этап 3+)
-GET  /api/trades                — история (пагинация limit/offset), сначала новые
+GET  /api/trades                — история (пагинация limit/offset), сначала новые;
+                                  необязательный hour=0..23 — только сделки, ОТКРЫТЫЕ в
+                                  этот локальный час (фильтр по клику на час в подсказке).
+                                  Считается getLocalHour в JS, тем же вызовом, что и
+                                  гистограмма в history/insights.ts — чтобы счётчик в
+                                  подсказке и длина списка не разошлись
 GET  /api/trades/month          — ?year&month: все сделки локального месяца (границы —
                                    localMonthUtcRange, как в группировке monthlyStats) +
                                    exchange: суммы начислений BingX user/income за месяц

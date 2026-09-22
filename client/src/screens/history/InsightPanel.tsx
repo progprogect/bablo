@@ -117,73 +117,92 @@ function HourBar({
   entry,
   isNow,
   isBlocked,
+  isSelected,
+  onSelect,
   grown,
 }: {
   hour: number;
   entry: HourEntry | undefined;
   isNow: boolean;
   isBlocked: boolean;
+  isSelected: boolean;
+  onSelect: (hour: number) => void;
   grown: boolean;
 }) {
   const total = entry?.total ?? 0;
   const share = total > 0 ? entry!.tpCount / total : null;
   const pct = share !== null ? Math.round(share * 100) : null;
   const isStrong = share !== null && share >= STRONG_SHARE;
+  // Час без сделок не фильтруем: список гарантированно пустой, это тупик.
+  const isSelectable = total > 0;
+
+  // Выбранный час подсвечивается рамкой и белой подложкой, а «сейчас» — мягкой заливкой
+  // акцента: два состояния могут совпасть на одном часе, поэтому они специально разные.
+  const rowTone = isSelected
+    ? "bg-card ring-1 ring-inset ring-accent"
+    : isNow
+      ? "bg-accent/[0.07] ring-1 ring-inset ring-accent/25"
+      : "";
 
   return (
-    <li
-      aria-current={isNow ? "time" : undefined}
-      className={`flex items-center gap-1.5 rounded-lg py-1 pl-1 pr-1.5 ${
-        isNow ? "bg-accent/[0.07] ring-1 ring-inset ring-accent/25" : ""
-      }`}
-    >
-      <span className="flex w-1.5 shrink-0 justify-center">
-        {isNow && (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            <span className="sr-only">сейчас</span>
-          </>
-        )}
-      </span>
-      <span
-        className={`w-6 shrink-0 text-[11px] tabular-nums ${
-          isNow
-            ? "font-semibold text-accent"
-            : total > 0
-              ? "text-slate-600"
-              : "text-slate-400"
+    <li aria-current={isNow ? "time" : undefined}>
+      <button
+        type="button"
+        disabled={!isSelectable}
+        aria-pressed={isSelected}
+        onClick={() => onSelect(hour)}
+        className={`flex w-full items-center gap-1.5 rounded-lg py-1 pl-1 pr-1.5 text-left transition-colors ${rowTone} ${
+          isSelectable ? "active:bg-accent/10" : "cursor-default"
         }`}
       >
-        {hour}ч
-      </span>
-      <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-line/70">
-        {/* Засечка ровно на половине дорожки — граница «прибыльного» часа. Лежит ПОД полосой:
-            у сильных часов её закрывает заливка, у слабых видно, сколько не дотянули. */}
-        <span className="absolute inset-y-0 left-1/2 w-px bg-slate-900/10" />
-        {pct !== null && (
-          <span
-            className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out ${
-              isStrong
-                ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
-                : "bg-gradient-to-r from-slate-300 to-slate-400"
-            }`}
-            style={{ width: `${grown ? Math.max(pct, MIN_BAR_PCT) : 0}%` }}
-          />
-        )}
-      </span>
-      <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-slate-400">
-        {total > 0 ? `${entry!.tpCount}/${total}` : "—"}
-      </span>
-      <span
-        className={`w-8 shrink-0 text-right text-[11px] font-medium tabular-nums ${
-          isStrong ? "text-emerald-600" : "text-slate-500"
-        }`}
-      >
-        {pct !== null ? `${pct}%` : ""}
-      </span>
-      <span className="w-3.5 shrink-0">
-        {isBlocked ? <BlockedHourMark /> : isStrong ? <StrongHourMark /> : null}
-      </span>
+        <span className="flex w-1.5 shrink-0 justify-center">
+          {isNow && (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              <span className="sr-only">сейчас</span>
+            </>
+          )}
+        </span>
+        <span
+          className={`w-6 shrink-0 text-[11px] tabular-nums ${
+            isNow
+              ? "font-semibold text-accent"
+              : total > 0
+                ? "text-slate-600"
+                : "text-slate-400"
+          }`}
+        >
+          {hour}ч
+        </span>
+        <span className="relative h-2 flex-1 overflow-hidden rounded-full bg-line/70">
+          {/* Засечка ровно на половине дорожки — граница «прибыльного» часа. Лежит ПОД полосой:
+              у сильных часов её закрывает заливка, у слабых видно, сколько не дотянули. */}
+          <span className="absolute inset-y-0 left-1/2 w-px bg-slate-900/10" />
+          {pct !== null && (
+            <span
+              className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out ${
+                isStrong
+                  ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+                  : "bg-gradient-to-r from-slate-300 to-slate-400"
+              }`}
+              style={{ width: `${grown ? Math.max(pct, MIN_BAR_PCT) : 0}%` }}
+            />
+          )}
+        </span>
+        <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-slate-400">
+          {total > 0 ? `${entry!.tpCount}/${total}` : "—"}
+        </span>
+        <span
+          className={`w-8 shrink-0 text-right text-[11px] font-medium tabular-nums ${
+            isStrong ? "text-emerald-600" : "text-slate-500"
+          }`}
+        >
+          {pct !== null ? `${pct}%` : ""}
+        </span>
+        <span className="w-3.5 shrink-0">
+          {isBlocked ? <BlockedHourMark /> : isStrong ? <StrongHourMark /> : null}
+        </span>
+      </button>
     </li>
   );
 }
@@ -205,11 +224,15 @@ function HoursChart({
   tzOffsetMinutes,
   blockedHours,
   manualBlockedHours,
+  selectedHour,
+  onSelectHour,
 }: {
   items: HourEntry[];
   tzOffsetMinutes: number;
   blockedHours: number[];
   manualBlockedHours: number[];
+  selectedHour: number | null;
+  onSelectHour: (hour: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const currentHour = useCurrentHour(tzOffsetMinutes);
@@ -231,6 +254,8 @@ function HoursChart({
             entry={byHour.get(hour)}
             isNow={hour === currentHour}
             isBlocked={blocked.has(hour)}
+            isSelected={hour === selectedHour}
+            onSelect={onSelectHour}
             grown={grown}
           />
         ))}
@@ -267,11 +292,16 @@ export function InsightPanel({
   tzOffsetMinutes,
   blockedHours,
   manualBlockedHours = [],
+  selectedHour = null,
+  onSelectHour,
 }: {
   insights: TradeInsights;
   tzOffsetMinutes: number;
   blockedHours: number[];
   manualBlockedHours?: number[];
+  /** Час, по которому сейчас отфильтрован список сделок под подсказкой (или null). */
+  selectedHour?: number | null;
+  onSelectHour?: (hour: number) => void;
 }) {
   const hourlyOutcomes = insights.hourlyOutcomes ?? [];
   if (hourlyOutcomes.length === 0) return null;
@@ -284,6 +314,8 @@ export function InsightPanel({
         tzOffsetMinutes={tzOffsetMinutes}
         blockedHours={blockedHours}
         manualBlockedHours={manualBlockedHours}
+        selectedHour={selectedHour}
+        onSelectHour={onSelectHour ?? (() => {})}
       />
     </div>
   );
