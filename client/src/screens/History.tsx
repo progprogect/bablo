@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getStats, getTradeHistory } from "../api/client";
+import { formatSignedR } from "../lib/format";
 import type { MonthlyStat, StatsResponse, Trade } from "../api/types";
 import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
@@ -17,6 +18,8 @@ type Tab = "trades" | "stats" | "withdrawals" | "notifications";
 export function History() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [total, setTotal] = useState(0);
+  /** Сводка «+R / −R» по всей выборке часа — приходит вместе со страницей при фильтре. */
+  const [filterR, setFilterR] = useState<{ positive: number; negative: number } | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -46,6 +49,11 @@ export function History() {
         if (cancelled) return;
         setTrades(history.trades);
         setTotal(history.total);
+        setFilterR(
+          history.sumPositiveR !== undefined && history.sumNegativeR !== undefined
+            ? { positive: history.sumPositiveR, negative: history.sumNegativeR }
+            : null,
+        );
       })
       .catch((err) => {
         if (cancelled) return;
@@ -138,6 +146,21 @@ export function History() {
             <div className="mx-4 flex items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/[0.07] px-3 py-2">
               <span className="text-xs text-slate-600">
                 Открытые в {hourFilter}ч · {total}
+                {/* Сводка по R — рядом с числом сделок, чтобы час читался одной строкой:
+                    сколько входов и чем они в сумме закончились. Прячем, когда R нет
+                    вовсе (обе суммы нулевые), — «+0R / 0R» ничего не сообщает. */}
+                {filterR && (filterR.positive !== 0 || filterR.negative !== 0) && (
+                  <>
+                    <span className="text-slate-400"> · </span>
+                    <span className="font-medium text-emerald-600">
+                      {formatSignedR(filterR.positive)}
+                    </span>
+                    <span className="text-slate-400"> / </span>
+                    <span className="font-medium text-red-600">
+                      {formatSignedR(filterR.negative)}
+                    </span>
+                  </>
+                )}
               </span>
               <button
                 type="button"
