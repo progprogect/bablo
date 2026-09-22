@@ -207,13 +207,6 @@ function HourBar({
   );
 }
 
-/** Список часов человеческим языком: «9ч», «9ч и 10ч», «9ч, 10ч и 14ч». */
-function formatHourList(hours: number[]): string {
-  const labels = [...hours].sort((a, b) => a - b).map((hour) => `${hour}ч`);
-  if (labels.length <= 1) return labels[0] ?? "";
-  return `${labels.slice(0, -1).join(", ")} и ${labels[labels.length - 1]}`;
-}
-
 /**
  * Все 24 часа торгового дня подряд, 7ч…6ч (решение от 30.08.2026). С 11.09.2026 это не
  * текст, а горизонтальная гистограмма: длина полосы — доля тейков от 100%, так сильные и
@@ -223,14 +216,12 @@ function HoursChart({
   items,
   tzOffsetMinutes,
   blockedHours,
-  manualBlockedHours,
   selectedHour,
   onSelectHour,
 }: {
   items: HourEntry[];
   tzOffsetMinutes: number;
   blockedHours: number[];
-  manualBlockedHours: number[];
   selectedHour: number | null;
   onSelectHour: (hour: number) => void;
 }) {
@@ -263,14 +254,6 @@ function HoursChart({
       {blocked.size > 0 && (
         <p className="text-[11px] text-slate-400">Замок — час закрыт, сделки в нём не открыть</p>
       )}
-      {/* Ручные блокировки закрыты решением, а не статистикой часа: без этой строки замок
-          на сильном с виду часе выглядит ошибкой расчёта. */}
-      {manualBlockedHours.length > 0 && (
-        <p className="text-[11px] text-slate-400">
-          {formatHourList(manualBlockedHours)} закрыт{manualBlockedHours.length > 1 ? "ы" : ""} вручную
-          — до проверки винрейта по итогам месяца
-        </p>
-      )}
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
@@ -291,14 +274,12 @@ export function InsightPanel({
   insights,
   tzOffsetMinutes,
   blockedHours,
-  manualBlockedHours = [],
   selectedHour = null,
   onSelectHour,
 }: {
   insights: TradeInsights;
   tzOffsetMinutes: number;
   blockedHours: number[];
-  manualBlockedHours?: number[];
   /** Час, по которому сейчас отфильтрован список сделок под подсказкой (или null). */
   selectedHour?: number | null;
   onSelectHour?: (hour: number) => void;
@@ -313,7 +294,6 @@ export function InsightPanel({
         items={hourlyOutcomes}
         tzOffsetMinutes={tzOffsetMinutes}
         blockedHours={blockedHours}
-        manualBlockedHours={manualBlockedHours}
         selectedHour={selectedHour}
         onSelectHour={onSelectHour ?? (() => {})}
       />
