@@ -2,7 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { requireAuth } from "./plugins/auth-guard.js";
 import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } from "../trades/service.js";
 import type { TradeSide } from "../trades/math.js";
-import { listClosedTrades, listClosedTradesBetween, type Trade } from "../db/repositories/trades.js";
+import {
+  listAllClosedTrades,
+  listClosedTrades,
+  listClosedTradesBetween,
+  type Trade,
+} from "../db/repositories/trades.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
 import { getIncomeHistory, type BingXCredentials, type BingXIncomeRecord } from "../bingx/client.js";
 import {
@@ -11,6 +16,7 @@ import {
   type IncomeSummary,
 } from "../history/incomeSummary.js";
 import { localMonthUtcRange } from "../history/monthlyStats.js";
+import { getLocalHour } from "../risk/tradingDay.js";
 import { resolveStatsResultR, resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
 const DEFAULT_HISTORY_LIMIT = 50;
@@ -70,6 +76,39 @@ async function listIncomeForRange(
   return { records: all, complete: false };
 }
 
+/**
+ * Страница истории, с фильтром по часу ОТКРЫТИЯ или без него.
+ *
+ * Фильтр приходит с гистограммы часов на вкладке «Сделки» (клик по часу — просьба
+ * пользователя от 23.09.2026). Фильтруем в JS той же функцией `getLocalHour`, которой
+ * считается сама гистограмма (history/insights.ts), а не выражением в SQL: так список и
+ * подсказка не могут разойтись в принципе — иначе подсказка показывала бы «4/5», а в
+ * списке оказалось бы другое число.
+ *
+ * Именно час ОТКРЫТИЯ: список отсортирован по закрытию, но группировка в подсказке — по
+ * открытию, и фильтр обязан совпадать с ней.
+ *
+ * Читать всю историю на фильтрованный запрос не жалко: выборка личная и небольшая, а
+ * `/api/stats` делает ровно то же самое на каждый заход на экран.
+ */
+async function listClosedTradesPage(
+  limit: number,
+  offset: number,
+  hour: number | null,
+): Promise<{ trades: Trade[]; total: number }> {
+  if (hour === null) {
+    return listClosedTrades({ limit, offset });
+  }
+
+  const { tzOffsetMinutes } = await getRiskSettings();
+  const matching = (await listAllClosedTrades())
+    .filter((trade) => getLocalHour(trade.openedAt, tzOffsetMinutes) === hour)
+    // Тот же порядок, что у нефильтрованного списка: сначала недавно закрытые.
+    .sort((a, b) => (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0));
+
+  return { trades: matching.slice(offset, offset + limit), total: matching.length };
+}
+
 export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
 
@@ -77,14 +116,31 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
     return getActiveTradeView();
   });
 
-  app.get<{ Querystring: { limit?: string; offset?: string } }>("/trades", async (request) => {
-    const limit = Math.min(Math.max(Number(request.query.limit) || DEFAULT_HISTORY_LIMIT, 1), MAX_HISTORY_LIMIT);
-    const offset = Math.max(Number(request.query.offset) || 0, 0);
-    const page = await listClosedTrades({ limit, offset });
-    // Исход считает сервер (history/outcome.ts), а не клиент: та же трактовка, что в
-    // статистике и дневных лимитах — иначе подпись в истории разошлась бы с цифрами.
-    return { ...page, trades: page.trades.map(withOutcome) };
-  });
+  app.get<{ Querystring: { limit?: string; offset?: string; hour?: string } }>(
+    "/trades",
+    async (request, reply) => {
+      const limit = Math.min(
+        Math.max(Number(request.query.limit) || DEFAULT_HISTORY_LIMIT, 1),
+        MAX_HISTORY_LIMIT,
+      );
+      const offset = Math.max(Number(request.query.offset) || 0, 0);
+
+      const rawHour = request.query.hour;
+      let hour: number | null = null;
+      if (rawHour !== undefined && rawHour !== "") {
+        hour = Number(rawHour);
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+          reply.code(400).send({ error: "hour должен быть целым от 0 до 23" });
+          return;
+        }
+      }
+
+      const page = await listClosedTradesPage(limit, offset, hour);
+      // Исход считает сервер (history/outcome.ts), а не клиент: та же трактовка, что в
+      // статистике и дневных лимитах — иначе подпись в истории разошлась бы с цифрами.
+      return { ...page, trades: page.trades.map(withOutcome) };
+    },
+  );
 
   // Все сделки одного локального месяца (детализация карточки в «Статистике»). Границы
   // месяца — те же, что у группировки monthlyStats (localMonthUtcRange), иначе сделка

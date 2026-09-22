@@ -23,21 +23,43 @@ export function History() {
   const [tab, setTab] = useState<Tab>("trades");
   const [showEquityChart, setShowEquityChart] = useState(false);
   const [monthDetail, setMonthDetail] = useState<MonthlyStat | null>(null);
+  /**
+   * Фильтр по часу открытия: клик по часу в подсказке (просьба от 23.09.2026). Живёт
+   * обычным стейтом — повторный клик и перезагрузка страницы сбрасывают его, как и
+   * просил пользователь; в URL и localStorage намеренно не сохраняется.
+   */
+  const [hourFilter, setHourFilter] = useState<number | null>(null);
 
   useEffect(() => {
-    Promise.all([getTradeHistory(PAGE_SIZE, 0), getStats()])
-      .then(([history, statsResponse]) => {
-        setTrades(history.trades);
-        setTotal(history.total);
-        setStats(statsResponse);
-      })
+    getStats()
+      .then(setStats)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Не удалось загрузить историю"));
   }, []);
+
+  // Список перезагружается с сервера при смене фильтра: фильтровать уже загруженную
+  // страницу нельзя — в ней лежат только первые 20 сделок, и час из подсказки показал бы
+  // меньше сделок, чем в ней написано.
+  useEffect(() => {
+    let cancelled = false;
+    getTradeHistory(PAGE_SIZE, 0, hourFilter)
+      .then((history) => {
+        if (cancelled) return;
+        setTrades(history.trades);
+        setTotal(history.total);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? err.message : "Не удалось загрузить историю");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hourFilter]);
 
   async function loadMore() {
     setIsLoadingMore(true);
     try {
-      const next = await getTradeHistory(PAGE_SIZE, trades.length);
+      const next = await getTradeHistory(PAGE_SIZE, trades.length, hourFilter);
       setTrades((current) => [...current, ...next.trades]);
       setTotal(next.total);
     } catch (err) {
@@ -91,10 +113,31 @@ export function History() {
             tzOffsetMinutes={stats.tzOffsetMinutes}
             blockedHours={stats.blockedHours ?? []}
             manualBlockedHours={stats.manualBlockedHours ?? []}
+            selectedHour={hourFilter}
+            onSelectHour={(hour) => setHourFilter((current) => (current === hour ? null : hour))}
           />
 
+          {/* Список уезжает под подсказку, поэтому без этой строки непонятно, почему сделок
+              вдруг мало. Она же — кнопка сброса, кроме повторного клика по часу. */}
+          {hourFilter !== null && (
+            <div className="mx-4 flex items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/[0.07] px-3 py-2">
+              <span className="text-xs text-slate-600">
+                Открытые в {hourFilter}ч · {total}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHourFilter(null)}
+                className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+              >
+                показать все
+              </button>
+            </div>
+          )}
+
           {trades.length === 0 ? (
-            <p className="px-6 text-center text-sm text-slate-500">Закрытых сделок пока нет.</p>
+            <p className="px-6 text-center text-sm text-slate-500">
+              {hourFilter !== null ? `В ${hourFilter}ч сделок не было.` : "Закрытых сделок пока нет."}
+            </p>
           ) : (
             <div className="flex flex-col gap-3">
               {trades.map((trade) => (

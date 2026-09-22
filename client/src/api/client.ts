@@ -298,8 +298,11 @@ export const closeTradeRequest = (tradeId: number) =>
 
 // --- История и статистика ---
 
-export const getTradeHistory = (limit: number, offset: number) =>
-  request<PagedTrades>(`/trades?limit=${limit}&offset=${offset}`);
+/** `hour` — фильтр по часу ОТКРЫТИЯ сделки (клик по часу в подсказке), 0–23 или null. */
+export const getTradeHistory = (limit: number, offset: number, hour: number | null = null) =>
+  request<PagedTrades>(
+    `/trades?limit=${limit}&offset=${offset}${hour !== null ? `&hour=${hour}` : ""}`,
+  );
 
 export const getStats = () => request<StatsResponse>("/stats");
 
