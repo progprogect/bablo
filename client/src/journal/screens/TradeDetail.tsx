@@ -79,10 +79,8 @@ export function TradeDetail() {
         <span className="text-xs text-muted">{formatDateTime(trade.openedAt)}</span>
       </div>
 
-      <TradePicture trade={trade} />
-      <TradeChart trade={trade} />
-      <AnalysisData trade={trade} />
-
+      {/* Разбор — первым блоком (просьба от 23.09.2026): выбрать категорию и ответить
+          на чек-лист чаще всего достаточно, остальное — ниже для сверки глазами. */}
       {isEditing ? (
         <EntryForm
           tradeId={trade.id}
@@ -113,6 +111,10 @@ export function TradeDetail() {
           />
         )
       )}
+
+      <TradePicture trade={trade} />
+      <TradeChart trade={trade} />
+      <AnalysisData trade={trade} />
     </section>
   );
 }
@@ -141,14 +143,16 @@ function TradePicture({ trade }: { trade: JournalTradeDetail }) {
   return (
     <div className="mx-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <DetailList>
-        <DetailRow label="Вход" value={formatPrice(trade.entryPrice)} />
+        <DetailRow align="right" label="Вход" value={formatPrice(trade.entryPrice)} />
         <DetailRow
+          align="right"
           label="Стоп при входе"
           value={formatPrice(trade.initialSlPrice)}
           hint={trade.riskUsd !== null ? `−${formatPrice(trade.riskUsd, 2)} USDT · 1R` : undefined}
           hintTone="negative"
         />
         <DetailRow
+          align="right"
           label="Тейк (план)"
           value={formatPrice(trade.plannedTpPrice)}
           hint={
@@ -160,6 +164,7 @@ function TradePicture({ trade }: { trade: JournalTradeDetail }) {
         />
         {slMoved && (
           <DetailRow
+            align="right"
             label="Стоп в конце"
             value={formatPrice(trade.finalSlPrice)}
             hint="подтянут в ходе сделки"
@@ -195,6 +200,7 @@ function AnalysisData({ trade }: { trade: JournalTradeDetail }) {
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Для анализа</p>
       <DetailList>
         <DetailRow
+          align="right"
           label="Лучший ход (MFE)"
           value={
             trade.mfeR !== null
@@ -203,18 +209,21 @@ function AnalysisData({ trade }: { trade: JournalTradeDetail }) {
           }
         />
         <DetailRow
+          align="right"
           label="Возврат к безубытку"
           value={trade.beCrossed ? "Был" : "Не было"}
-          hint={trade.beCrossed ? "цена сходила в плюс и вернулась к входу" : undefined}
+          hint={trade.beCrossed ? "цена была в плюсе и вернулась" : undefined}
         />
-        <DetailRow label="Длительность" value={formatDuration(trade.openedAt, trade.closedAt)} />
-        <DetailRow label="Час открытия" value={`${openedHour}ч`} />
+        <DetailRow align="right" label="Длительность" value={formatDuration(trade.openedAt, trade.closedAt)} />
+        <DetailRow align="right" label="Час открытия" value={`${openedHour}ч`} />
         <DetailRow
+          align="right"
           label="Объём"
           value={trade.quantity !== null ? `${trimTrailingZeros(trade.quantity, 4)} монет` : "—"}
         />
-        <DetailRow label="Плечо" value={`${trade.leverage}×`} />
+        <DetailRow align="right" label="Плечо" value={`${trade.leverage}×`} />
         <DetailRow
+          align="right"
           label="Маржа"
           value={trade.marginUsd !== null ? `${formatPrice(trade.marginUsd, 2)} USDT` : "—"}
         />

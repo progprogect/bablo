@@ -21,16 +21,25 @@ export function DetailRow({
   value,
   hint,
   hintTone,
+  align = "left",
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   hintTone?: "positive" | "negative";
+  /**
+   * right — для блоков однострочных ЧИСЕЛ (картина сделки, «Для анализа»): колонка цифр
+   * по правому краю, как итоговая строка, — сравнивать в столбик удобнее (правка от
+   * 23.09.2026: «что-то по центру, что-то справа»). Для текстовых ответов разбора
+   * остаётся left: многострочный текст по правому краю читается рвано.
+   */
+  align?: "left" | "right";
 }) {
+  const alignClass = align === "right" ? "text-right" : "";
   return (
     <div className="grid grid-cols-[7.5rem_1fr] items-baseline gap-x-3 py-2 first:pt-0 last:pb-0">
       <dt className="text-xs leading-5 text-muted">{label}</dt>
-      <dd className="min-w-0">
+      <dd className={`min-w-0 ${alignClass}`}>
         <div className="text-sm leading-5 text-ink tabular-nums">{value}</div>
         {hint && (
           <p
