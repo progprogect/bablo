@@ -3,8 +3,8 @@ import { requireAuth } from "../api/plugins/auth-guard.js";
 import { getTradeById } from "../db/repositories/trades.js";
 import {
   ANSWER_TYPES,
-  buildAnalysisAggregates,
   isAnswerType,
+  parseChoiceOptions,
   validateAnswers,
   validateDrawings,
   validateItemsReorder,
@@ -49,6 +49,13 @@ import { getCandleSync, getDrawings, listCandles, saveDrawings } from "./marketR
 import { buildStructure } from "./structure.js";
 
 const DEFAULT_LIMIT = 50;
+
+/** options пункта из jsonb: массив строк или null (не-choice пункты). */
+function itemOptions(raw: unknown): string[] | undefined {
+  return Array.isArray(raw) && raw.every((value) => typeof value === "string")
+    ? (raw as string[])
+    : undefined;
+}
 const MAX_LIMIT = 200;
 const MAX_CATEGORY_NAME_LENGTH = 60;
 const MAX_ITEM_LABEL_LENGTH = 120;
@@ -170,6 +177,7 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
         id: item.id,
         label: item.label,
         answerType: item.answerType as AnswerType,
+        options: itemOptions(item.options),
       }));
       const validated = validateAnswers(itemDefs, answers);
       if (!validated.ok) {
@@ -219,6 +227,7 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
           id: item.id,
           label: item.label,
           answerType: item.answerType,
+          options: itemOptions(item.options),
           hasAnswers: withAnswers.has(item.id),
         })),
       });
@@ -287,7 +296,7 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
-  app.post<{ Params: { id: string }; Body: { label?: string; answerType?: string } }>(
+  app.post<{ Params: { id: string }; Body: { label?: string; answerType?: string; options?: unknown } }>(
     "/journal/categories/:id/items",
     { preHandler: requireAuth },
     async (request, reply) => {
@@ -302,13 +311,28 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
         reply.code(400).send({ error: `Тип ответа — один из: ${ANSWER_TYPES.join(", ")}` });
         return;
       }
+      // Варианты обязательны для «выбора» и фиксируются при создании — как и сам тип.
+      let options: string[] | null = null;
+      if (answerType === "choice") {
+        const parsed = parseChoiceOptions(request.body?.options);
+        if (!parsed.ok) {
+          reply.code(400).send({ error: parsed.error });
+          return;
+        }
+        options = parsed.options;
+      }
       const category = await getActiveCategory(categoryId);
       if (!category) {
         reply.code(404).send({ error: "Категория не найдена" });
         return;
       }
-      const created = await createItem(categoryId, label, answerType);
-      return { id: created.id, label: created.label, answerType: created.answerType };
+      const created = await createItem(categoryId, label, answerType, options);
+      return {
+        id: created.id,
+        label: created.label,
+        answerType: created.answerType,
+        options: itemOptions(created.options),
+      };
     },
   );
 
@@ -492,12 +516,6 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
       }
       // Колонки: активные пункты всегда, архивные — только если по ним есть ответы.
       const columns = allItems.filter((item) => item.archivedAt === null || answeredItemIds.has(item.id));
-      const columnDefs: ChecklistItemDef[] = columns.map((item) => ({
-        id: item.id,
-        label: item.label,
-        answerType: item.answerType as AnswerType,
-      }));
-
       const rows = entryRows.map((row) => {
         const card = toTradeCard(row.trade, categoryId);
         const answers: Record<number, boolean | number | string> = {};
@@ -517,24 +535,19 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
         };
       });
 
-      const aggregates = buildAnalysisAggregates(
-        columnDefs,
-        rows.map((row) => ({
-          resultR: row.statsResultR,
-          answers: new Map(Object.entries(row.answers).map(([k, v]) => [Number(k), v])),
-        })),
-      );
-
       return {
         category: { id: category.id, name: category.name, archived: category.archivedAt !== null },
         columns: columns.map((item) => ({
           itemId: item.id,
           label: item.label,
           answerType: item.answerType,
+          options: itemOptions(item.options),
           archived: item.archivedAt !== null,
         })),
         rows,
-        aggregates,
+        // Агрегаты «В плюсе/В минусе» сервер больше не считает: с появлением фильтров
+        // таблицы (23.09.2026) честные цифры — только по видимым строкам, это чисто
+        // презентационная логика клиента (aggregateGroup в CategoryTable.tsx).
       };
     },
   );

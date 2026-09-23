@@ -2,7 +2,7 @@
 
 export type TradeSide = "long" | "short";
 export type TradeOutcome = "tp" | "sl" | "be" | "other";
-export type AnswerType = "yes_no" | "scale_0_10" | "stars_0_5" | "text";
+export type AnswerType = "yes_no" | "scale_0_10" | "stars_0_5" | "choice" | "text";
 export type AnswerValue = boolean | number | string;
 
 export type JournalOverview = {
@@ -76,6 +76,8 @@ export type ConstructorItem = {
   id: number;
   label: string;
   answerType: AnswerType;
+  /** Только для answerType='choice': варианты ответа (фиксируются при создании). */
+  options?: string[];
   hasAnswers: boolean;
 };
 
@@ -90,6 +92,7 @@ export type AnalysisColumn = {
   itemId: number;
   label: string;
   answerType: AnswerType;
+  options?: string[];
   archived: boolean;
 };
 
@@ -107,18 +110,15 @@ export type AnalysisRow = {
 export type ColumnAggregate =
   | { kind: "yes_no"; yesCount: number; total: number }
   | { kind: "scale"; average: number | null; total: number }
+  | { kind: "choice"; top: { value: string; count: number } | null; total: number }
   | { kind: "text"; total: number };
-
-export type GroupAggregates = {
-  tradesCount: number;
-  byItem: Record<number, ColumnAggregate>;
-};
 
 export type AnalysisResponse = {
   category: { id: number; name: string; archived: boolean };
   columns: AnalysisColumn[];
   rows: AnalysisRow[];
-  aggregates: { plus: GroupAggregates; minus: GroupAggregates };
+  // Агрегаты «В плюсе/В минусе» клиент считает сам по отфильтрованным строкам
+  // (CategoryTable.tsx#aggregateGroup) — сервер их не шлёт с появлением фильтров.
 };
 
 export type ChartCandle = { t: number; o: number; h: number; l: number; c: number; v: number };

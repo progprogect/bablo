@@ -122,6 +122,7 @@ export async function createItem(
   categoryId: number,
   label: string,
   answerType: AnswerType,
+  options: string[] | null = null,
 ): Promise<JournalChecklistItem> {
   const db = getDb();
   return db.transaction(async (tx) => {
@@ -131,7 +132,7 @@ export async function createItem(
       .where(eq(journalChecklistItems.categoryId, categoryId));
     const [created] = await tx
       .insert(journalChecklistItems)
-      .values({ categoryId, label, answerType, sortOrder: Number(orderRow?.maxOrder ?? 0) + 1 })
+      .values({ categoryId, label, answerType, options, sortOrder: Number(orderRow?.maxOrder ?? 0) + 1 })
       .returning();
     if (!created) throw new Error("Не удалось создать пункт чек-листа");
     return created;
