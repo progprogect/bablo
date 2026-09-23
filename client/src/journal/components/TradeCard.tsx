@@ -29,30 +29,18 @@ export function SideBadge({ side }: { side: "long" | "short" }) {
 }
 
 /**
- * Карточка сделки в ленте «Разбора»: дата уже в заголовке группы, поэтому здесь — время,
- * уровни входа (стоп/тейк ПРИ ВХОДЕ, R/R по плану) и факт закрытия. Геометрия — как у
- * карточек Истории терминала, палитра — токенами темы.
+ * Выжимка сделки в две строки: время закрытия и сумма, уровни входа (стоп/тейк ПРИ ВХОДЕ,
+ * R/R по плану) и исход. Общая разметка ленты «Разбора» и шапки детали сделки — экраны
+ * показывают одно и то же одинаково.
  */
-export function TradeCard({
-  trade,
-  categoryName,
-  showCategory,
-}: {
-  trade: JournalTradeCard;
-  categoryName: string | null;
-  /** Чип категории показывается только в смешанной ленте «Все». */
-  showCategory: boolean;
-}) {
+export function TradeSummary({ trade }: { trade: JournalTradeCard }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const isProfit = trade.resultUsd !== null && trade.resultUsd > 0;
   const isLoss = trade.resultUsd !== null && trade.resultUsd < 0;
   const outcomeLabel = OUTCOME_LABELS[trade.outcome];
 
   return (
-    <Link
-      to={`/trades/${trade.id}`}
-      className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm"
-    >
+    <>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-ink">{displayName}</span>
@@ -73,6 +61,31 @@ export function TradeCard({
         </span>
         {outcomeLabel && <span>{outcomeLabel}</span>}
       </div>
+    </>
+  );
+}
+
+/**
+ * Карточка сделки в ленте «Разбора»: дата уже в заголовке группы, поэтому здесь — время,
+ * уровни входа и факт закрытия. Геометрия — как у карточек Истории терминала, палитра —
+ * токенами темы.
+ */
+export function TradeCard({
+  trade,
+  categoryName,
+  showCategory,
+}: {
+  trade: JournalTradeCard;
+  categoryName: string | null;
+  /** Чип категории показывается только в смешанной ленте «Все». */
+  showCategory: boolean;
+}) {
+  return (
+    <Link
+      to={`/trades/${trade.id}`}
+      className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm"
+    >
+      <TradeSummary trade={trade} />
 
       {showCategory && (
         <div className="flex items-center justify-between">

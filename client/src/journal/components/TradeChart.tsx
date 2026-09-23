@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/http";
 import { extendTradeChart, getTradeChart, saveDrawings } from "../api";
-import type { ChartCandle, ChartDrawing, JournalTradeDetail, TradeChartResponse } from "../types";
+import type {
+  ChartCandle,
+  ChartDrawing,
+  ChartInterval,
+  JournalTradeDetail,
+  TradeChartResponse,
+} from "../types";
 
 /**
  * Рабочая зона графика сделки (запрос пользователя от 23.09.2026): свечи BingX из кэша
@@ -14,7 +20,7 @@ import type { ChartCandle, ChartDrawing, JournalTradeDetail, TradeChartResponse 
  * Линии хранятся на сервере в координатах (время, цена) — не зависят от таймфрейма.
  */
 
-type Interval = "15m" | "1h";
+type Interval = ChartInterval;
 
 /** Высота встроенного графика; в полноэкранном режиме высоту диктует оверлей. */
 const CHART_HEIGHT = 320;
@@ -733,8 +739,11 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
 
   const content = (
     <>
-      <div className="flex items-center justify-between gap-2">
+      {/* flex-wrap: с «Удалить линию» инструменты не влезают в ширину телефона — пусть
+          переносятся на вторую строку, а не выезжают за край карточки. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1.5">
+          <ToolChip label="5м" active={interval === "5m"} onClick={() => setIntervalKey("5m")} />
           <ToolChip label="15м" active={interval === "15m"} onClick={() => setIntervalKey("15m")} />
           <ToolChip label="1ч" active={interval === "1h"} onClick={() => setIntervalKey("1h")} />
         </div>

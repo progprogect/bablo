@@ -29,7 +29,7 @@ import {
  * старте, ленивый добор при открытии графика — циклического опроса нет.
  */
 
-export type CandleIntervalKey = "15m" | "1h";
+export type CandleIntervalKey = "5m" | "15m" | "1h";
 
 export type CandleIntervalConfig = {
   key: CandleIntervalKey;
@@ -43,7 +43,10 @@ export type CandleIntervalConfig = {
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+// Окна подобраны так, чтобы до входа было примерно по 288 свечей на каждом таймфрейме —
+// контекста для глаза поровну, а объём запроса к бирже предсказуем.
 export const JOURNAL_CANDLE_INTERVALS: CandleIntervalConfig[] = [
+  { key: "5m", stepMs: 5 * 60_000, beforeMs: 1 * DAY, afterMs: 6 * HOUR },
   { key: "15m", stepMs: 15 * 60_000, beforeMs: 3 * DAY, afterMs: 1 * DAY },
   { key: "1h", stepMs: HOUR, beforeMs: 12 * DAY, afterMs: 3 * DAY },
 ];
@@ -54,6 +57,7 @@ export const JOURNAL_CANDLE_INTERVALS: CandleIntervalConfig[] = [
  * бесконечного дотягивания в мегазапросы.
  */
 export const EXTEND_MAX_DEPTH_MS: Record<CandleIntervalKey, number> = {
+  "5m": 15 * DAY,
   "15m": 45 * DAY,
   "1h": 365 * DAY,
 };

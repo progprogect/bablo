@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/http";
-import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
+import { formatPrice, trimTrailingZeros } from "../../lib/format";
 import { getCategories, getJournalTrade, removeEntry, saveEntry } from "../api";
 import { DetailList, DetailRow } from "../components/DetailRow";
 import { StarsInput, StarsView } from "../components/Stars";
 import { TradeChart } from "../components/TradeChart";
-import { OUTCOME_LABELS, SideBadge } from "../components/TradeCard";
+import { SideBadge, TradeSummary } from "../components/TradeCard";
 import type {
   AnswerValue,
   ConstructorCategory,
@@ -112,7 +112,7 @@ export function TradeDetail() {
         )
       )}
 
-      <TradePicture trade={trade} />
+      <TradeSummaryCard trade={trade} />
       <TradeChart trade={trade} />
       <AnalysisData trade={trade} />
     </section>
@@ -130,64 +130,15 @@ function BackLink() {
   );
 }
 
-/** Картина сделки: план входа и факт закрытия — те же уровни, что при открытии в терминале. */
-function TradePicture({ trade }: { trade: JournalTradeDetail }) {
-  const outcomeLabel = OUTCOME_LABELS[trade.outcome];
-  const isProfit = trade.resultUsd !== null && trade.resultUsd > 0;
-  const isLoss = trade.resultUsd !== null && trade.resultUsd < 0;
-  const slMoved =
-    trade.finalSlPrice !== null &&
-    trade.initialSlPrice !== null &&
-    Math.abs(trade.finalSlPrice - trade.initialSlPrice) > Math.abs(trade.initialSlPrice) * 1e-9;
-
+/**
+ * Выжимка сделки — та же карточка, что в ленте «Разбора» (просьба пользователя от
+ * 23.09.2026): уровни входа и факт закрытия одной строкой. Цены входа, стопа и тейка
+ * подробно видны на графике ниже — бейджами на оси цен, повторять их числами незачем.
+ */
+function TradeSummaryCard({ trade }: { trade: JournalTradeDetail }) {
   return (
-    <div className="mx-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <DetailList>
-        <DetailRow align="right" label="Вход" value={formatPrice(trade.entryPrice)} />
-        <DetailRow
-          align="right"
-          label="Стоп при входе"
-          value={formatPrice(trade.initialSlPrice)}
-          hint={trade.riskUsd !== null ? `−${formatPrice(trade.riskUsd, 2)} USDT · 1R` : undefined}
-          hintTone="negative"
-        />
-        <DetailRow
-          align="right"
-          label="Тейк (план)"
-          value={formatPrice(trade.plannedTpPrice)}
-          hint={
-            trade.plannedProfitUsd !== null && trade.plannedRR !== null
-              ? `+${formatPrice(trade.plannedProfitUsd, 2)} USDT · R/R 1/${trimTrailingZeros(trade.plannedRR, 1)}`
-              : undefined
-          }
-          hintTone="positive"
-        />
-        {slMoved && (
-          <DetailRow
-            align="right"
-            label="Стоп в конце"
-            value={formatPrice(trade.finalSlPrice)}
-            hint="подтянут в ходе сделки"
-          />
-        )}
-      </DetailList>
-
-      {/* Итог — единственная акцентная строка карточки, сумма справа осознанно:
-          однострочное число с правым краем сравнивать удобно, это не многострочный текст. */}
-      <div className="mt-2 flex items-baseline justify-between border-t border-line pt-3">
-        <span className="text-xs text-muted">
-          Закрытие <span className="tabular-nums">{formatPrice(trade.closePrice)}</span>
-          {outcomeLabel ? ` · ${outcomeLabel}` : ""}
-        </span>
-        <span
-          className={`text-base font-semibold tabular-nums ${isProfit ? "text-positive" : isLoss ? "text-negative" : "text-ink"}`}
-        >
-          {formatSignedUsd(trade.resultUsd)}
-        </span>
-      </div>
-      {trade.statsResultR !== null && trade.statsResultR !== 0 && (
-        <p className="text-right text-xs text-muted">факт {formatRWithSign(trade.statsResultR)}</p>
-      )}
+    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <TradeSummary trade={trade} />
     </div>
   );
 }

@@ -107,7 +107,7 @@ export const journalCandles = pgTable(
   {
     id: serial("id").primaryKey(),
     symbol: text("symbol").notNull(),
-    /** "15m" | "1h" (JOURNAL_CANDLE_INTERVALS в journal/marketData.ts). */
+    /** "5m" | "15m" | "1h" (JOURNAL_CANDLE_INTERVALS в journal/marketData.ts). */
     interval: text("interval").notNull(),
     openTime: timestamp("open_time", { withTimezone: true }).notNull(),
     open: numeric("open", { precision: 20, scale: 8 }).notNull(),

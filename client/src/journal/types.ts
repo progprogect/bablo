@@ -123,6 +123,9 @@ export type AnalysisResponse = {
 
 export type ChartCandle = { t: number; o: number; h: number; l: number; c: number; v: number };
 
+/** Таймфреймы графика сделки — зеркало JOURNAL_CANDLE_INTERVALS на сервере. */
+export type ChartInterval = "5m" | "15m" | "1h";
+
 export type ChartDrawing = { id: string; t1: number; p1: number; t2: number; p2: number };
 
 export type PriceLevel = { price: number; touches: number; kind: "support" | "resistance" | "mixed" };
@@ -138,7 +141,7 @@ export type PriceStructure = {
 };
 
 export type TradeChartResponse = {
-  interval: "15m" | "1h";
+  interval: ChartInterval;
   stepMs: number;
   range: { fromMs: number; toMs: number };
   candles: ChartCandle[];

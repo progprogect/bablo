@@ -2,6 +2,7 @@ import { request } from "../api/http";
 import type {
   AnalysisResponse,
   ChartDrawing,
+  ChartInterval,
   ExtendChartResponse,
   TradeChartResponse,
   AnswerType,
@@ -75,7 +76,7 @@ export const deleteItem = (id: number) =>
 export const getAnalysis = (categoryId: number) =>
   request<AnalysisResponse>(`/journal/analysis/${categoryId}`);
 
-export const getTradeChart = (tradeId: number, interval: "15m" | "1h") =>
+export const getTradeChart = (tradeId: number, interval: ChartInterval) =>
   request<TradeChartResponse>(`/journal/trades/${tradeId}/chart?interval=${interval}`);
 
 export const saveDrawings = (tradeId: number, drawings: ChartDrawing[]) =>
@@ -84,7 +85,7 @@ export const saveDrawings = (tradeId: number, drawings: ChartDrawing[]) =>
     body: JSON.stringify({ drawings }),
   });
 
-export const extendTradeChart = (tradeId: number, interval: "15m" | "1h") =>
+export const extendTradeChart = (tradeId: number, interval: ChartInterval) =>
   request<ExtendChartResponse>(`/journal/trades/${tradeId}/chart/extend`, {
     method: "POST",
     body: JSON.stringify({ interval }),

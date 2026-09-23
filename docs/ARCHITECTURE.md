@@ -160,7 +160,8 @@ vite-plugin-pwa выключена (`manifest: false`), потому что он
 **Рыночные данные и график.** `bingx/client.ts#getKlines` — публичный market-data
 эндпоинт (`/openApi/swap/v3/quote/klines`, без подписи, как getLatestPrice), порядок
 свечей нормализуется сортировкой. `journal/marketData.ts` — окна сбора по сделке
-(15м: −3д/+1д; 1ч: −12д/+3д), идемпотентный сбор (факт — journal_candle_syncs, свечи —
+(5м: −1д/+6ч; 15м: −3д/+1д; 1ч: −12д/+3д — до входа везде ~288 свечей), идемпотентный
+сбор (факт — journal_candle_syncs, свечи —
 ON CONFLICT DO NOTHING), снапшот индикаторов (`journal/indicators.ts` — чистые EMA/RSI/
 ATR/MACD/Bollinger/объём + MAE/MFE по свечам, под тестами) в journal_trade_metrics
 (version = METRICS_VERSION). Точки сбора: fire-and-forget в finalizeTradeClose (сбой не
@@ -331,7 +332,7 @@ PUT  /api/journal/trades/:id/entry — сохранить разбор { categor
 DELETE /api/journal/trades/:id/entry — вернуть сделку в неразобранные
 GET/POST/PATCH/DELETE /api/journal/categories[...] и /api/journal/items/:id — конструктор
                                    (удаление с данными = архив; тип пункта не меняется)
-GET  /api/journal/trades/:id/chart — свечи для рабочей зоны (?interval=15m|1h): кэш из
+GET  /api/journal/trades/:id/chart — свечи рабочей зоны (?interval=5m|15m|1h): кэш из
                                    journal_candles + ленивый добор с биржи; range окна,
                                    stepMs и линии пользователя
 PUT  /api/journal/trades/:id/drawings — линии рабочей зоны целиком ({ drawings },
