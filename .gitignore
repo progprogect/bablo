@@ -10,3 +10,8 @@ coverage/
 
 # Vite / PWA generated
 client/dev-dist/
+
+# Выгрузка боевых данных для анализа — НЕ коммитить без явного решения
+data/
+__pycache__/
+*.pyc
