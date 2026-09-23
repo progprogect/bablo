@@ -157,6 +157,18 @@ vite-plugin-pwa выключена (`manifest: false`), потому что он
 бы `/journal?x=1` терминалу. Серверный SPA-fallback (app.ts) по той же причине сравнивает
 путь БЕЗ query: `/journal…` → `journal.html`, остальное → `index.html`.
 
+**Рыночные данные и график.** `bingx/client.ts#getKlines` — публичный market-data
+эндпоинт (`/openApi/swap/v3/quote/klines`, без подписи, как getLatestPrice), порядок
+свечей нормализуется сортировкой. `journal/marketData.ts` — окна сбора по сделке
+(15м: −3д/+1д; 1ч: −12д/+3д), идемпотентный сбор (факт — journal_candle_syncs, свечи —
+ON CONFLICT DO NOTHING), снапшот индикаторов (`journal/indicators.ts` — чистые EMA/RSI/
+ATR/MACD/Bollinger/объём + MAE/MFE по свечам, под тестами) в journal_trade_metrics
+(version = METRICS_VERSION). Точки сбора: fire-and-forget в finalizeTradeClose (сбой не
+влияет на закрытие), backfillJournalMarketData на старте (последовательно, пауза 300мс),
+ленивый добор в GET графика. Клиент — TradeChart.tsx: canvas без библиотек, пан/зум/
+pinch на pointer events, линии пользователя в координатах (время, цена) с сохранением
+через PUT drawings.
+
 **Палитра.** Цветовые токены Tailwind (`surface/card/line/ink/accent` + `positive/
 negative/muted`) — CSS-переменные RGB-триплетами (`rgb(var(--x-rgb) / <alpha-value>)`,
 чтобы работали alpha-модификаторы вида `bg-surface/95`): `:root` в index.css — прежний
@@ -232,6 +244,15 @@ journal_entries — разбор сделки: trade_id (UNIQUE — одна к�
                    ON DELETE CASCADE от trades: «Очистить данные для нового аккаунта»
                    уносит и разборы), category_id (без каскада — категорию с разборами
                    БД удалить не даст, сервис архивирует)
+journal_candles — кэш свечей BingX: (symbol, interval, open_time) UNIQUE, OHLCV.
+                   Свечи закрытых периодов не меняются — кэш вечный, переиспользуется
+                   между сделками одного символа
+journal_candle_syncs — факт «окно свечей сделки собрано»: (trade_id, interval) UNIQUE,
+                   границы окна и candles_fetched (0 — у биржи нет истории на период)
+journal_trade_metrics — снапшот индикаторов/производных сделки (payload jsonb, version):
+                   в UI не выводится, лежит для будущего анализа
+journal_chart_drawings — линии пользователя на графике сделки: jsonb-массив
+                   {id, t1, p1, t2, p2} в координатах (время ms, цена)
 journal_answers — ответ на пункт: entry_id, item_id, значение в колонке своего типа
                    (value_bool / value_int / value_text — ровно одна не-null; типизированные
                    колонки вместо jsonb ради простых агрегатов), UNIQUE(entry_id, item_id)
@@ -303,6 +324,11 @@ PUT  /api/journal/trades/:id/entry — сохранить разбор { categor
 DELETE /api/journal/trades/:id/entry — вернуть сделку в неразобранные
 GET/POST/PATCH/DELETE /api/journal/categories[...] и /api/journal/items/:id — конструктор
                                    (удаление с данными = архив; тип пункта не меняется)
+GET  /api/journal/trades/:id/chart — свечи для рабочей зоны (?interval=15m|1h): кэш из
+                                   journal_candles + ленивый добор с биржи; range окна,
+                                   stepMs и линии пользователя
+PUT  /api/journal/trades/:id/drawings — линии рабочей зоны целиком ({ drawings },
+                                   validateDrawings: id + четыре конечных числа)
 PUT  /api/journal/categories/:id/items-order — порядок пунктов после drag-and-drop:
                                    { itemIds } — перестановка РОВНО всех активных пунктов
                                    (validateItemsReorder), sort_order = позиция

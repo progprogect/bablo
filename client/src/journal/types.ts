@@ -120,3 +120,15 @@ export type AnalysisResponse = {
   rows: AnalysisRow[];
   aggregates: { plus: GroupAggregates; minus: GroupAggregates };
 };
+
+export type ChartCandle = { t: number; o: number; h: number; l: number; c: number; v: number };
+
+export type ChartDrawing = { id: string; t1: number; p1: number; t2: number; p2: number };
+
+export type TradeChartResponse = {
+  interval: "15m" | "1h";
+  stepMs: number;
+  range: { fromMs: number; toMs: number };
+  candles: ChartCandle[];
+  drawings: ChartDrawing[];
+};

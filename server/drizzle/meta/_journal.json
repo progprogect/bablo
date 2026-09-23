@@ -141,6 +141,13 @@
       "when": 1790121600000,
       "tag": "0019_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790125200000,
+      "tag": "0020_journal_chart",
+      "breakpoints": true
     }
   ]
 }

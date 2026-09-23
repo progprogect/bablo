@@ -5,6 +5,7 @@ import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/forma
 import { getCategories, getJournalTrade, removeEntry, saveEntry } from "../api";
 import { DetailList, DetailRow } from "../components/DetailRow";
 import { StarsInput, StarsView } from "../components/Stars";
+import { TradeChart } from "../components/TradeChart";
 import { OUTCOME_LABELS, SideBadge } from "../components/TradeCard";
 import type {
   AnswerValue,
@@ -79,6 +80,7 @@ export function TradeDetail() {
       </div>
 
       <TradePicture trade={trade} />
+      <TradeChart trade={trade} />
       <AnalysisData trade={trade} />
 
       {isEditing ? (

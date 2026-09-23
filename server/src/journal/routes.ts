@@ -6,6 +6,7 @@ import {
   buildAnalysisAggregates,
   isAnswerType,
   validateAnswers,
+  validateDrawings,
   validateItemsReorder,
   type AnswerInput,
   type AnswerType,
@@ -37,6 +38,12 @@ import {
   type JournalTradesFilter,
 } from "./repository.js";
 import { toTradeCard, toTradeDetail } from "./view.js";
+import {
+  ensureTradeCandles,
+  intervalConfig,
+  tradeCandleWindow,
+} from "./marketData.js";
+import { getDrawings, listCandles, saveDrawings } from "./marketRepository.js";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -365,6 +372,77 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
         return;
       }
       return result;
+    },
+  );
+
+  // --- График сделки: свечи + линии рабочей зоны --------------------------------------------
+
+  app.get<{ Params: { id: string }; Querystring: { interval?: string } }>(
+    "/journal/trades/:id/chart",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const tradeId = Number(request.params.id);
+      const config = intervalConfig(request.query.interval ?? "15m");
+      if (!Number.isInteger(tradeId) || !config) {
+        reply.code(400).send({ error: "Некорректный запрос графика" });
+        return;
+      }
+      const trade = await getTradeById(tradeId);
+      if (!trade || trade.status !== "closed") {
+        reply.code(404).send({ error: "Сделка не найдена" });
+        return;
+      }
+      // Ленивый добор: обычно окно уже собрано (закрытие сделки / бэкфилл), но для
+      // только что задеплоенных или пропущенных сделок дособираем событийно здесь.
+      // Сбой биржи не валит запрос — отдаём, что есть в кэше.
+      try {
+        await ensureTradeCandles(trade, config);
+      } catch (error) {
+        request.log.warn({ error, tradeId }, "Журнал: не удалось дособрать свечи (отдаём кэш)");
+      }
+      const { fromMs, toMs } = tradeCandleWindow(trade, config);
+      const [candles, drawings] = await Promise.all([
+        listCandles(trade.symbol, config.key, fromMs, toMs),
+        getDrawings(tradeId),
+      ]);
+      return {
+        interval: config.key,
+        stepMs: config.stepMs,
+        range: { fromMs, toMs },
+        candles: candles.map((candle) => ({
+          t: candle.time,
+          o: candle.open,
+          h: candle.high,
+          l: candle.low,
+          c: candle.close,
+          v: candle.volume,
+        })),
+        drawings,
+      };
+    },
+  );
+
+  app.put<{ Params: { id: string }; Body: { drawings?: unknown } }>(
+    "/journal/trades/:id/drawings",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const tradeId = Number(request.params.id);
+      if (!Number.isInteger(tradeId)) {
+        reply.code(400).send({ error: "Некорректный id сделки" });
+        return;
+      }
+      const trade = await getTradeById(tradeId);
+      if (!trade || trade.status !== "closed") {
+        reply.code(404).send({ error: "Сделка не найдена" });
+        return;
+      }
+      const validated = validateDrawings(request.body?.drawings);
+      if (!validated.ok) {
+        reply.code(400).send({ error: validated.error });
+        return;
+      }
+      await saveDrawings(tradeId, validated.drawings);
+      return { ok: true };
     },
   );
 
