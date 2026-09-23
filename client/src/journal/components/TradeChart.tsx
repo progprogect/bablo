@@ -16,6 +16,7 @@ import type { ChartCandle, ChartDrawing, JournalTradeDetail, TradeChartResponse 
 
 type Interval = "15m" | "1h";
 
+/** Высота встроенного графика; в полноэкранном режиме высоту диктует оверлей. */
 const CHART_HEIGHT = 320;
 const PRICE_AXIS_WIDTH = 56;
 const TIME_AXIS_HEIGHT = 20;
@@ -45,6 +46,9 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
   const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Уровни, зоны накопления, BOS и поглощения (просьба пользователя «видеть» их). */
+  const [showStructure, setShowStructure] = useState(true);
   const [draft, setDraft] = useState<DraftLine | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
 
@@ -96,12 +100,12 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
 
   // --- Геометрия ------------------------------------------------------------------------------
 
-  const plot = useCallback((widthCss: number) => {
+  const plot = useCallback((widthCss: number, heightCss: number) => {
     return {
       left: 0,
       top: 6,
       width: Math.max(widthCss - PRICE_AXIS_WIDTH, 10),
-      height: CHART_HEIGHT - TIME_AXIS_HEIGHT - 12,
+      height: Math.max(heightCss - TIME_AXIS_HEIGHT - 12, 40),
     };
   }, []);
 
@@ -134,29 +138,33 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
     if (!canvas || !wrap || !data || !viewport || !priceRange) return;
 
     const widthCss = wrap.clientWidth;
+    const heightCss = wrap.clientHeight;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(widthCss * dpr);
-    canvas.height = Math.round(CHART_HEIGHT * dpr);
+    canvas.height = Math.round(heightCss * dpr);
     canvas.style.width = `${widthCss}px`;
-    canvas.style.height = `${CHART_HEIGHT}px`;
+    canvas.style.height = `${heightCss}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const area = plot(widthCss);
+    const area = plot(widthCss, heightCss);
     const { t0, t1 } = viewport;
     const xFor = (t: number) => area.left + ((t - t0) / (t1 - t0)) * area.width;
     const yFor = (p: number) =>
       area.top + area.height - ((p - priceRange.min) / (priceRange.max - priceRange.min)) * area.height;
 
-    const ink = themeColor("--ink-rgb", 0.9);
     const muted = themeColor("--muted-rgb", 0.9);
     const line = themeColor("--line-rgb", 1);
     const accent = themeColor("--accent-rgb", 1);
     const positive = themeColor("--positive-rgb", 1);
     const negative = themeColor("--negative-rgb", 1);
 
-    ctx.clearRect(0, 0, widthCss, CHART_HEIGHT);
+    ctx.clearRect(0, 0, widthCss, heightCss);
+    // Фон рабочей зоны — всегда белый (карточка), в т.ч. на весь экран: на цветном
+    // фоне темы считать по свечам неудобно (правка пользователя от 23.09.2026).
+    ctx.fillStyle = themeColor("--card-rgb", 1);
+    ctx.fillRect(0, 0, widthCss, heightCss);
     ctx.font = "10px -apple-system, system-ui, sans-serif";
 
     // Сетка и ось цен: 5 «круглых» уровней.
@@ -193,6 +201,23 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
     ctx.rect(area.left, area.top, area.width, area.height);
     ctx.clip();
 
+    // Зоны накопления — под свечами.
+    if (showStructure && data.structure) {
+      for (const zone of data.structure.zones) {
+        const x1 = Math.max(xFor(zone.fromTime), area.left);
+        const x2 = Math.min(xFor(zone.toTime + data.stepMs), area.left + area.width);
+        if (x2 <= area.left || x1 >= area.left + area.width) continue;
+        const yTop = yFor(zone.high);
+        const yBottom = yFor(zone.low);
+        ctx.fillStyle = themeColor("--muted-rgb", 0.08);
+        ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
+        ctx.strokeStyle = themeColor("--muted-rgb", 0.25);
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(x1 + 0.5, yTop + 0.5, x2 - x1 - 1, yBottom - yTop - 1);
+        ctx.setLineDash([]);
+      }
+    }
+
     // Свечи.
     const bodyWidth = Math.max(Math.min((data.stepMs / (t1 - t0)) * area.width * 0.7, 13), 1);
     for (const candle of data.candles) {
@@ -211,6 +236,59 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
       const top = Math.min(yOpen, yClose);
       const height = Math.max(Math.abs(yOpen - yClose), 1);
       ctx.fillRect(x - bodyWidth / 2, top, bodyWidth, height);
+    }
+
+    // Структура: уровни, сломы (BOS), поглощения.
+    if (showStructure && data.structure) {
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = themeColor("--muted-rgb", 0.5);
+      for (const level of data.structure.levels) {
+        const y = Math.round(yFor(level.price)) + 0.5;
+        if (y < area.top || y > area.top + area.height) continue;
+        ctx.beginPath();
+        ctx.moveTo(area.left, y);
+        ctx.lineTo(area.left + area.width, y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      ctx.font = "8px -apple-system, system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      for (const brk of data.structure.breaks) {
+        if (brk.time + data.stepMs < t0 || brk.time > t1) continue;
+        const x = xFor(brk.time + data.stepMs / 2);
+        const y = yFor(brk.price);
+        const color = brk.direction === "up" ? positive : negative;
+        ctx.fillStyle = color;
+        ctx.textAlign = "center";
+        ctx.fillText("BOS", x, brk.direction === "up" ? y - 7 : y + 8);
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, Math.round(y) + 0.5);
+        ctx.lineTo(x + 4, Math.round(y) + 0.5);
+        ctx.stroke();
+      }
+
+      // Поглощение: ромб над (bear) или под (bull) свечой.
+      for (const engulfing of data.structure.engulfings) {
+        if (engulfing.time + data.stepMs < t0 || engulfing.time > t1) continue;
+        const candle = data.candles.find((c) => c.t === engulfing.time);
+        if (!candle) continue;
+        const x = xFor(engulfing.time + data.stepMs / 2);
+        const isBull = engulfing.direction === "bull";
+        const y = isBull ? yFor(candle.l) + 8 : yFor(candle.h) - 8;
+        ctx.strokeStyle = isBull ? positive : negative;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 3.5);
+        ctx.lineTo(x + 3.5, y);
+        ctx.lineTo(x, y + 3.5);
+        ctx.lineTo(x - 3.5, y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.font = "10px -apple-system, system-ui, sans-serif";
     }
 
     // Уровни сделки: вход / стоп при входе / тейк-план / закрытие.
@@ -295,11 +373,31 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
 
     ctx.restore();
 
+    // Бейджи цен уровней на оси (после клипа): сразу видно, где вход, стоп и тейк.
+    const badge = (price: number | null, color: string) => {
+      if (price === null) return;
+      const y = yFor(price);
+      if (y < area.top - 8 || y > area.top + area.height + 8) return;
+      ctx.fillStyle = color;
+      const x = area.left + area.width + 2;
+      const width = PRICE_AXIS_WIDTH - 4;
+      const height = 14;
+      ctx.beginPath();
+      ctx.roundRect(x, y - height / 2, width, height, 3);
+      ctx.fill();
+      ctx.fillStyle = "#FFFFFF";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(formatTick(price), x + width / 2, y + 0.5);
+    };
+    badge(trade.initialSlPrice, negative);
+    badge(trade.plannedTpPrice, positive);
+    badge(trade.entryPrice, accent);
+
     // Рамка области.
     ctx.strokeStyle = line;
     ctx.strokeRect(area.left + 0.5, area.top + 0.5, area.width - 1, area.height - 1);
-    void ink;
-  }, [data, viewport, priceRange, drawings, selectedId, draft, trade, plot]);
+  }, [data, viewport, priceRange, drawings, selectedId, draft, trade, plot, showStructure]);
 
   useEffect(() => {
     draw();
@@ -329,8 +427,7 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
     function toChart(clientX: number, clientY: number) {
       const rect = rectOf();
       const { viewport: vp } = stateRef.current;
-      const widthCss = rect.width;
-      const area = plot(widthCss);
+      const area = plot(rect.width, rect.height);
       const x = clientX - rect.left;
       const y = clientY - rect.top;
       if (!vp || !priceRangeRef.current) return { x, y, t: 0, p: 0, area };
@@ -422,7 +519,7 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
 
       if (panState && st.viewport) {
         const rect = rectOf();
-        const area = plot(rect.width);
+        const area = plot(rect.width, rect.height);
         const dx = event.clientX - panState.startX;
         if (Math.abs(dx) > TAP_THRESHOLD_PX) panState.moved = true;
         const sv = panState.startViewport;
@@ -458,7 +555,7 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
         if (!panState.moved) {
           // Тап в режиме пана — выбор линии под пальцем/курсором (радиус в пикселях).
           const rect = rectOf();
-          const area = plot(rect.width);
+          const area = plot(rect.width, rect.height);
           const vp = stateRef.current.viewport;
           const pr = priceRangeRef.current;
           if (vp && pr) {
@@ -517,10 +614,26 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
   const persistDrawingsRef = useRef(persistDrawings);
   persistDrawingsRef.current = persistDrawings;
 
+  // Полноэкранный режим: CSS-оверлей (Fullscreen API на iOS для элементов недоступен);
+  // скролл страницы под ним выключается, Escape закрывает.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFullscreen]);
+
   // --- Разметка -------------------------------------------------------------------------------
 
-  return (
-    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <div className="flex gap-1.5">
           <ToolChip label="15м" active={interval === "15m"} onClick={() => setIntervalKey("15m")} />
@@ -532,6 +645,17 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
               Удалить линию
             </button>
           )}
+          <button
+            type="button"
+            aria-label="Структура: уровни, зоны, BOS, поглощения"
+            title="Структура: уровни, зоны, BOS, поглощения"
+            onClick={() => setShowStructure((value) => !value)}
+            className={`flex h-[30px] w-[30px] items-center justify-center rounded-full ${
+              showStructure ? "bg-accent text-white" : "border border-line bg-card text-muted"
+            }`}
+          >
+            <LayersIcon />
+          </button>
           <ToolChip
             label="Линия"
             icon={<PencilMiniIcon />}
@@ -541,10 +665,22 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
               setSelectedId(null);
             }}
           />
+          <button
+            type="button"
+            aria-label={isFullscreen ? "Свернуть график" : "На весь экран"}
+            onClick={() => setIsFullscreen((value) => !value)}
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-line bg-card text-muted"
+          >
+            {isFullscreen ? <CollapseIcon /> : <ExpandIcon />}
+          </button>
         </div>
       </div>
 
-      <div ref={wrapRef} className="relative w-full" style={{ height: CHART_HEIGHT }}>
+      <div
+        ref={wrapRef}
+        className={`relative w-full ${isFullscreen ? "min-h-0 flex-1" : ""}`}
+        style={isFullscreen ? undefined : { height: CHART_HEIGHT }}
+      >
         {isLoading && (
           <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">Загрузка…</p>
         )}
@@ -564,8 +700,20 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
         Перетаскивание — движение, колесо или щипок — масштаб. «Линия» — провести по графику;
         тап по линии выделяет её.
       </p>
-    </div>
+    </>
   );
+
+  if (isFullscreen) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex flex-col gap-2 bg-card p-4"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      >
+        {content}
+      </div>
+    );
+  }
+  return <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">{content}</div>;
 }
 
 function ToolChip({
@@ -590,6 +738,49 @@ function ToolChip({
       {icon}
       {label}
     </button>
+  );
+}
+
+/** Слои — переключатель отрисовки структуры цены. */
+function LayersIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+      <path
+        d="m12 3 9 5-9 5-9-5 9-5ZM4.5 13.5 12 17.5l7.5-4"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CollapseIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

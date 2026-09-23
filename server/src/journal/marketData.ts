@@ -10,11 +10,13 @@ import {
   type TradeExcursions,
 } from "./indicators.js";
 import { entryRiskDistance } from "./logic.js";
+import { structureSnapshotAtEntry, type StructureSnapshot } from "./structure.js";
 import {
   getCandleSync,
   insertCandles,
   listCandles,
   listTradeIdsMissingSync,
+  listTradeIdsNeedingMetrics,
   upsertCandleSync,
   upsertTradeMetrics,
 } from "./marketRepository.js";
@@ -96,6 +98,8 @@ export type TradeMetricsPayload = {
   atEntry: Partial<Record<CandleIntervalKey, IndicatorSnapshot | null>>;
   /** MAE/MFE по 15m-свечам за время сделки. */
   excursions: TradeExcursions;
+  /** Структура цены на входе (по 15m): уровни, последний BOS до входа, вход в зоне. */
+  structure: StructureSnapshot | null;
 };
 
 /** Чистая сборка payload метрик — отделена от I/O ради тестируемости. */
@@ -130,7 +134,12 @@ export function buildTradeMetrics(
         )
       : { maeR: null, mfeRFromCandles: null };
 
-  return { version: METRICS_VERSION, atEntry, excursions };
+  const structure =
+    candles15m.length > 0
+      ? structureSnapshotAtEntry(candles15m, 15 * 60_000, openedMs, trade.entryPriceNum)
+      : null;
+
+  return { version: METRICS_VERSION, atEntry, excursions, structure };
 }
 
 /**
@@ -182,7 +191,11 @@ export async function backfillJournalMarketData(log: {
   info: (obj: unknown, msg?: string) => void;
   error: (obj: unknown, msg?: string) => void;
 }): Promise<void> {
-  const tradeIds = await listTradeIdsMissingSync(JOURNAL_CANDLE_INTERVALS.map((config) => config.key));
+  // Две причины пересборки: не собраны свечи ИЛИ метрики посчитаны старой версией формул
+  // (METRICS_VERSION вырос) — свечи у таких уже есть, пересчёт не ходит к бирже.
+  const missingSync = await listTradeIdsMissingSync(JOURNAL_CANDLE_INTERVALS.map((config) => config.key));
+  const staleMetrics = await listTradeIdsNeedingMetrics(METRICS_VERSION);
+  const tradeIds = [...new Set([...missingSync, ...staleMetrics])];
   if (tradeIds.length === 0) return;
   log.info({ trades: tradeIds.length }, "Журнал: бэкфилл свечей и метрик начат");
   let done = 0;

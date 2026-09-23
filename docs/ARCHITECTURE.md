@@ -165,8 +165,14 @@ ON CONFLICT DO NOTHING), снапшот индикаторов (`journal/indicat
 ATR/MACD/Bollinger/объём + MAE/MFE по свечам, под тестами) в journal_trade_metrics
 (version = METRICS_VERSION). Точки сбора: fire-and-forget в finalizeTradeClose (сбой не
 влияет на закрытие), backfillJournalMarketData на старте (последовательно, пауза 300мс),
-ленивый добор в GET графика. Клиент — TradeChart.tsx: canvas без библиотек, пан/зум/
-pinch на pointer events, линии пользователя в координатах (время, цена) с сохранением
+ленивый добор в GET графика. `journal/structure.ts` — чистый price-action-модуль
+(фрактальные свинги → кластеры-уровни; зоны накопления «окно ≥ 24 свечей в диапазоне
+≤ 1.6×ATR» со слиянием; BOS — закрытие за последним подтверждённым свингом; поглощения —
+тело перекрыло тело при противоположном направлении), под тестами structure.test.ts;
+GET графика отдаёт structure для отрисовки, выжимка на входе — в metrics. Клиент —
+TradeChart.tsx: canvas без библиотек (фон всегда белый — просьба пользователя), пан/зум/
+pinch на pointer events, полноэкранный CSS-оверлей, бейджи цен уровней сделки на оси,
+слой структуры тумблером, линии пользователя в координатах (время, цена) с сохранением
 через PUT drawings.
 
 **Палитра.** Цветовые токены Tailwind (`surface/card/line/ink/accent` + `positive/

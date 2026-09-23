@@ -108,3 +108,69 @@ test("computeExcursions: нет свечей в интервале — null", ()
   const result = computeExcursions(candles, "long", 100, 2, 10 * STEP, 11 * STEP, STEP);
   assert.deepEqual(result, { maeR: null, mfeRFromCandles: null });
 });
+
+// --- v2-индикаторы (23.09.2026) -------------------------------------------------------------
+
+import { adxSeries, cciAt, dayVwapAt, donchianAt, stochasticAt, williamsRAt } from "./indicators.js";
+
+test("donchianAt: экстремумы окна, null при нехватке", () => {
+  const candles = [candle(0, 100, 105, 95), candle(1, 100, 110, 96), candle(2, 100, 104, 90)];
+  assert.equal(donchianAt(candles, 3, 1), null);
+  assert.deepEqual(donchianAt(candles, 3, 2), { high: 110, low: 90 });
+});
+
+test("stochasticAt/williamsR: закрытие на максимуме канала → 100 и 0", () => {
+  // 17 свечей, канал 90..110, close последней = 110 (на максимуме).
+  const candles = Array.from({ length: 17 }, (_, i) => candle(i, 100, 110, 90));
+  candles[16] = { ...candles[16]!, close: 110 };
+  const stoch = stochasticAt(candles, 16);
+  assert.ok(stoch !== null && Math.abs(stoch.k - 100) < 1e-9);
+  const wr = williamsRAt(candles, 16);
+  assert.ok(wr !== null && Math.abs(wr - 0) < 1e-9);
+  // На минимуме — 0 и −100.
+  candles[16] = { ...candles[16]!, close: 90 };
+  assert.ok(Math.abs(stochasticAt(candles, 16)!.k - 0) < 1e-9);
+  assert.ok(Math.abs(williamsRAt(candles, 16)! + 100) < 1e-9);
+});
+
+test("cciAt: у ровного ряда 0, у выброса вверх — заметно положительный", () => {
+  const flat = Array.from({ length: 25 }, (_, i) => candle(i, 100));
+  assert.equal(cciAt(flat, 24), 0);
+  const withSpike = [...flat.slice(0, 24), candle(24, 108, 109, 107)];
+  assert.ok(cciAt(withSpike, 24)! > 100);
+});
+
+test("adxSeries: устойчивый тренд вверх — DI+ > DI− и ADX высокий", () => {
+  const candles = Array.from({ length: 60 }, (_, i) => candle(i, 100 + i, 101 + i, 99 + i));
+  const row = adxSeries(candles, 14)[59]!;
+  assert.ok(row.plusDi !== null && row.minusDi !== null && row.adx !== null);
+  assert.ok(row.plusDi! > row.minusDi!);
+  assert.ok(row.adx! > 50, `adx=${row.adx}`);
+});
+
+test("dayVwapAt: считает от начала UTC-суток по typical price", () => {
+  const day = Date.UTC(2026, 8, 23);
+  const mk = (offsetH: number, price: number, volume: number) => ({
+    time: day + offsetH * 3_600_000,
+    open: price,
+    high: price,
+    low: price,
+    close: price,
+    volume,
+  });
+  // Вчерашняя свеча не должна попасть в расчёт.
+  const candles = [mk(-1, 500, 100), mk(1, 100, 10), mk(2, 200, 30)];
+  // VWAP = (100·10 + 200·30) / 40 = 175.
+  assert.equal(dayVwapAt(candles, 2), 175);
+});
+
+test("snapshotAt: v2-поля заполняются при достатке данных", () => {
+  const candles = Array.from({ length: 250 }, (_, i) => candle(i, 100 + Math.sin(i / 5) * 3, 100 + Math.sin(i / 5) * 3 + 1.2, 100 + Math.sin(i / 5) * 3 - 1.2, 100 + (i % 7) * 10));
+  const snap = snapshotAt(candles, 249);
+  assert.ok(snap.stochastic14 !== null);
+  assert.ok(snap.williamsR14 !== null);
+  assert.ok(snap.cci20 !== null);
+  assert.ok(snap.adx14 !== null && snap.adx14.adx !== null);
+  assert.ok(snap.donchian20 !== null && snap.donchian20.positionPct >= 0 && snap.donchian20.positionPct <= 100);
+  assert.ok(snap.candleAnatomy !== null && snap.candleAnatomy.bodyAtr >= 0);
+});

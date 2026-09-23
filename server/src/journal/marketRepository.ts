@@ -118,6 +118,19 @@ export async function listTradeIdsMissingSync(intervals: string[]): Promise<numb
   return rows.map((row) => Number(row.id));
 }
 
+/** id закрытых сделок без метрик или с метриками устаревшей версии формул. */
+export async function listTradeIdsNeedingMetrics(currentVersion: number): Promise<number[]> {
+  const db = getDb();
+  const rows = await db.execute<{ id: number }>(sql`
+    SELECT t.id
+    FROM trades t
+    LEFT JOIN journal_trade_metrics m ON m.trade_id = t.id
+    WHERE t.status = 'closed' AND (m.trade_id IS NULL OR m.version < ${currentVersion})
+    ORDER BY t.closed_at DESC
+  `);
+  return rows.map((row) => Number(row.id));
+}
+
 // --- Метрики сделки --------------------------------------------------------------------------
 
 export async function upsertTradeMetrics(tradeId: number, version: number, payload: unknown): Promise<void> {
