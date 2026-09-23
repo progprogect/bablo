@@ -51,10 +51,10 @@ export const renameCategory = (id: number, name: string) =>
 export const deleteCategory = (id: number) =>
   request<{ archived: boolean }>(`/journal/categories/${id}`, { method: "DELETE" });
 
-export const createItem = (categoryId: number, label: string, answerType: AnswerType) =>
+export const createItem = (categoryId: number, label: string, answerType: AnswerType, options?: string[]) =>
   request<{ id: number; label: string; answerType: AnswerType }>(`/journal/categories/${categoryId}/items`, {
     method: "POST",
-    body: JSON.stringify({ label, answerType }),
+    body: JSON.stringify({ label, answerType, options }),
   });
 
 export const renameItem = (id: number, label: string) =>

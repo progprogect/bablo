@@ -293,6 +293,9 @@ function AnswerValueView({ type, value }: { type: string; value: AnswerValue | n
   if (type === "stars_0_5" && typeof value === "number") {
     return <StarsView value={value} />;
   }
+  if (type === "choice") {
+    return <span className="text-sm font-medium text-ink">{String(value)}</span>;
+  }
   return <span className="text-sm text-ink">{String(value)}</span>;
 }
 
@@ -395,6 +398,7 @@ function EntryForm({
                   key={item.id}
                   label={item.label}
                   answerType={item.answerType}
+                  options={item.options}
                   value={draft.get(item.id)}
                   onChange={(value) => setAnswer(item.id, value)}
                 />
@@ -433,11 +437,13 @@ function EntryForm({
 function ChecklistField({
   label,
   answerType,
+  options,
   value,
   onChange,
 }: {
   label: string;
   answerType: string;
+  options?: string[];
   value: AnswerValue | undefined;
   onChange: (value: AnswerValue) => void;
 }) {
@@ -460,6 +466,13 @@ function ChecklistField({
               onClick={() => onChange(score)}
               narrow
             />
+          ))}
+        </div>
+      )}
+      {answerType === "choice" && (
+        <div className="flex flex-wrap gap-1.5">
+          {(options ?? []).map((option) => (
+            <ChoiceChip key={option} label={option} active={value === option} onClick={() => onChange(option)} />
           ))}
         </div>
       )}

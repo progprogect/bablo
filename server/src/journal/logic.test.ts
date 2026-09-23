@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildAnalysisAggregates,
   entryRiskDistance,
   initialSlPrice,
   isAnswerType,
   mfeR,
   plannedRR,
+  parseChoiceOptions,
   validateAnswers,
   validateDrawings,
   validateItemsReorder,
@@ -157,50 +157,6 @@ test("plannedRR: |tp − entry| / дистанция 1R", () => {
   assert.equal(plannedRR(longTrade, null), null);
 });
 
-// --- Агрегаты таблицы анализа -----------------------------------------------------------
-
-function answers(map: Record<number, AnswerValue>): ReadonlyMap<number, AnswerValue> {
-  return new Map(Object.entries(map).map(([k, v]) => [Number(k), v]));
-}
-
-test("buildAnalysisAggregates: разрез плюс/минус, нулевые и безрезультатные сделки вне разрезов", () => {
-  const rows = [
-    { resultR: 2, answers: answers({ 1: true, 2: 8, 3: "ок" }) },
-    { resultR: 1, answers: answers({ 1: true, 2: 6, 3: "норм" }) },
-    { resultR: -1, answers: answers({ 1: false, 2: 3, 3: "рано вошла" }) },
-    { resultR: 0, answers: answers({ 1: true, 2: 10, 3: "бу" }) }, // безубыток — вне разрезов
-    { resultR: null, answers: answers({ 1: true, 2: 10, 3: "?" }) }, // нет R — вне разрезов
-  ];
-  const { plus, minus } = buildAnalysisAggregates(items, rows);
-
-  assert.equal(plus.tradesCount, 2);
-  assert.deepEqual(plus.byItem[1], { kind: "yes_no", yesCount: 2, total: 2 });
-  assert.deepEqual(plus.byItem[2], { kind: "scale", average: 7, total: 2 });
-  assert.deepEqual(plus.byItem[3], { kind: "text", total: 2 });
-
-  assert.equal(minus.tradesCount, 1);
-  assert.deepEqual(minus.byItem[1], { kind: "yes_no", yesCount: 0, total: 1 });
-  assert.deepEqual(minus.byItem[2], { kind: "scale", average: 3, total: 1 });
-});
-
-test("buildAnalysisAggregates: пропущенные ответы (архивный пункт) не искажают среднее", () => {
-  const rows = [
-    { resultR: 2, answers: answers({ 2: 8 }) }, // на пункт 1 не отвечали
-    { resultR: 3, answers: answers({ 1: true, 2: 4 }) },
-  ];
-  const { plus } = buildAnalysisAggregates(items, rows);
-  assert.deepEqual(plus.byItem[1], { kind: "yes_no", yesCount: 1, total: 1 });
-  assert.deepEqual(plus.byItem[2], { kind: "scale", average: 6, total: 2 });
-});
-
-test("buildAnalysisAggregates: пустая группа — нули и null-среднее", () => {
-  const { minus } = buildAnalysisAggregates(items, [
-    { resultR: 1, answers: answers({ 1: true, 2: 5, 3: "ок" }) },
-  ]);
-  assert.equal(minus.tradesCount, 0);
-  assert.deepEqual(minus.byItem[2], { kind: "scale", average: null, total: 0 });
-});
-
 // --- Звёзды 0–5 и переупорядочивание пунктов (23.09.2026) ---------------------------------
 
 
@@ -216,17 +172,6 @@ test("stars_0_5: дробные, вне диапазона и не числа �
   for (const value of [2.5, -1, 6, "3", true, null]) {
     assert.equal(validateAnswers(starsItems, [{ itemId: 5, value }]).ok, false, `value=${String(value)}`);
   }
-});
-
-test("stars_0_5: агрегируется как среднее (kind scale)", () => {
-  const rows = [
-    { resultR: 1, answers: answers({ 5: 4 }) },
-    { resultR: 2, answers: answers({ 5: 5 }) },
-    { resultR: -1, answers: answers({ 5: 1 }) },
-  ];
-  const { plus, minus } = buildAnalysisAggregates(starsItems, rows);
-  assert.deepEqual(plus.byItem[5], { kind: "scale", average: 4.5, total: 2 });
-  assert.deepEqual(minus.byItem[5], { kind: "scale", average: 1, total: 1 });
 });
 
 test("validateItemsReorder: перестановка ровно всех активных пунктов", () => {
@@ -259,4 +204,32 @@ test("validateDrawings: корректный набор проходит, мус
   );
   // Пустой массив валиден — «стереть все линии».
   assert.equal(validateDrawings([]).ok, true);
+});
+
+// --- Тип «выбор из вариантов» (23.09.2026) --------------------------------------------------
+
+
+const choiceItems: ChecklistItemDef[] = [
+  { id: 7, answerType: "choice", label: "Тип сетапа", options: ["Пробой", "Отбой", "Ретест"] },
+];
+
+test("choice: вариант из списка валиден, чужой и не-строка — нет", () => {
+  assert.equal(validateAnswers(choiceItems, [{ itemId: 7, value: "Отбой" }]).ok, true);
+  assert.equal(validateAnswers(choiceItems, [{ itemId: 7, value: "Флет" }]).ok, false);
+  assert.equal(validateAnswers(choiceItems, [{ itemId: 7, value: 1 }]).ok, false);
+});
+
+test("parseChoiceOptions: строка через запятую → trim, пустые отброшены", () => {
+  assert.deepEqual(parseChoiceOptions(" Пробой, Отбой , ,Ретест "), {
+    ok: true,
+    options: ["Пробой", "Отбой", "Ретест"],
+  });
+  assert.deepEqual(parseChoiceOptions(["A", "B"]), { ok: true, options: ["A", "B"] });
+});
+
+test("parseChoiceOptions: дубли, мало вариантов и мусор — ошибка", () => {
+  assert.equal(parseChoiceOptions("A, a").ok, false);
+  assert.equal(parseChoiceOptions("Один").ok, false);
+  assert.equal(parseChoiceOptions(42).ok, false);
+  assert.equal(parseChoiceOptions("A,B,C,D,E,F,G,H,I,J,K").ok, false);
 });

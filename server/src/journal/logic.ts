@@ -3,7 +3,7 @@
  * по тому же принципу, что risk/limits.ts и history/outcome.ts.
  */
 
-export const ANSWER_TYPES = ["yes_no", "scale_0_10", "stars_0_5", "text"] as const;
+export const ANSWER_TYPES = ["yes_no", "scale_0_10", "stars_0_5", "choice", "text"] as const;
 export type AnswerType = (typeof ANSWER_TYPES)[number];
 
 export function isAnswerType(value: unknown): value is AnswerType {
@@ -22,7 +22,47 @@ export type ChecklistItemDef = {
   id: number;
   answerType: AnswerType;
   label: string;
+  /** Только для answerType='choice': допустимые варианты ответа. */
+  options?: string[];
 };
+
+/** Ограничения вариантов пункта-«выбора». */
+export const CHOICE_MIN_OPTIONS = 2;
+export const CHOICE_MAX_OPTIONS = 10;
+export const CHOICE_OPTION_MAX_LENGTH = 40;
+
+export type ChoiceOptionsResult = { ok: true; options: string[] } | { ok: false; error: string };
+
+/**
+ * Варианты пункта-«выбора» из ввода конструктора (строки через запятую или массив):
+ * trim, пустые отбрасываются, дубли и превышения — ошибка.
+ */
+export function parseChoiceOptions(raw: unknown): ChoiceOptionsResult {
+  const parts = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? raw.split(",")
+      : null;
+  if (parts === null) return { ok: false, error: "Варианты — строка через запятую или массив" };
+  const options: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    if (typeof part !== "string") return { ok: false, error: "Вариант — строка" };
+    const trimmed = part.trim();
+    if (trimmed.length === 0) continue;
+    if (trimmed.length > CHOICE_OPTION_MAX_LENGTH) {
+      return { ok: false, error: `Вариант не длиннее ${CHOICE_OPTION_MAX_LENGTH} символов` };
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return { ok: false, error: `Вариант «${trimmed}» повторяется` };
+    seen.add(key);
+    options.push(trimmed);
+  }
+  if (options.length < CHOICE_MIN_OPTIONS || options.length > CHOICE_MAX_OPTIONS) {
+    return { ok: false, error: `Вариантов должно быть от ${CHOICE_MIN_OPTIONS} до ${CHOICE_MAX_OPTIONS}` };
+  }
+  return { ok: true, options };
+}
 
 export type AnswerInput = {
   itemId: number;
@@ -91,6 +131,12 @@ function normalizeValue(item: ChecklistItemDef, value: unknown): NormalizedAnswe
       if (value < STARS_MIN || value > STARS_MAX) return null;
       return { itemId: item.id, valueBool: null, valueInt: value, valueText: null };
     }
+    case "choice": {
+      if (typeof value !== "string") return null;
+      // Только вариант из списка пункта — ответ хранится этой же строкой в value_text.
+      if (!item.options || !item.options.includes(value)) return null;
+      return { itemId: item.id, valueBool: null, valueInt: null, valueText: value };
+    }
     case "text": {
       if (typeof value !== "string") return null;
       const trimmed = value.trim();
@@ -158,92 +204,8 @@ export function plannedRR(trade: TradeGeometry, tpPriceInitial: number | null): 
   return Math.abs(tpPriceInitial - entry) / distance;
 }
 
-// --- Таблица анализа по категории -------------------------------------------------------
-
+/** Значение ответа наружу (детали, таблица анализа): тип по answer_type пункта. */
 export type AnswerValue = boolean | number | string;
-
-export type AnalysisRowInput = {
-  /** Фактический R сделки (statsResultR) — по его знаку строки делятся на плюс/минус. */
-  resultR: number | null;
-  answers: ReadonlyMap<number, AnswerValue>;
-};
-
-export type ColumnAggregate =
-  | { kind: "yes_no"; yesCount: number; total: number }
-  | { kind: "scale"; average: number | null; total: number }
-  | { kind: "text"; total: number };
-
-export type GroupAggregates = {
-  tradesCount: number;
-  byItem: Record<number, ColumnAggregate>;
-};
-
-export type AnalysisAggregates = {
-  /** Сделки с фактическим R > 0. */
-  plus: GroupAggregates;
-  /** Сделки с фактическим R < 0. */
-  minus: GroupAggregates;
-};
-
-/**
- * Агрегаты «В плюсе / В минусе» для шапки таблицы анализа: доля «да» и среднее по шкале
- * отдельно среди прибыльных и убыточных сделок — так видно, какие пункты чек-листа
- * «сильные» (выполняются у плюсовых), а какие проседают у минусовых. Сделки с нулевым
- * или неизвестным R в разрезы не входят: они не свидетельствуют ни за, ни против.
- */
-export function buildAnalysisAggregates(
-  items: ChecklistItemDef[],
-  rows: AnalysisRowInput[],
-): AnalysisAggregates {
-  return {
-    plus: aggregateGroup(items, rows.filter((row) => row.resultR !== null && row.resultR > 0)),
-    minus: aggregateGroup(items, rows.filter((row) => row.resultR !== null && row.resultR < 0)),
-  };
-}
-
-function aggregateGroup(items: ChecklistItemDef[], rows: AnalysisRowInput[]): GroupAggregates {
-  const byItem: Record<number, ColumnAggregate> = {};
-  for (const item of items) {
-    switch (item.answerType) {
-      case "yes_no": {
-        let yesCount = 0;
-        let total = 0;
-        for (const row of rows) {
-          const value = row.answers.get(item.id);
-          if (typeof value === "boolean") {
-            total += 1;
-            if (value) yesCount += 1;
-          }
-        }
-        byItem[item.id] = { kind: "yes_no", yesCount, total };
-        break;
-      }
-      case "scale_0_10":
-      case "stars_0_5": {
-        let sum = 0;
-        let total = 0;
-        for (const row of rows) {
-          const value = row.answers.get(item.id);
-          if (typeof value === "number") {
-            total += 1;
-            sum += value;
-          }
-        }
-        byItem[item.id] = { kind: "scale", average: total > 0 ? sum / total : null, total };
-        break;
-      }
-      case "text": {
-        let total = 0;
-        for (const row of rows) {
-          if (typeof row.answers.get(item.id) === "string") total += 1;
-        }
-        byItem[item.id] = { kind: "text", total };
-        break;
-      }
-    }
-  }
-  return { tradesCount: rows.length, byItem };
-}
 
 // --- Переупорядочивание пунктов чек-листа (drag-and-drop в конструкторе) -----------------
 

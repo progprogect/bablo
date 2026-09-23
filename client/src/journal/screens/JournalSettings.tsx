@@ -18,6 +18,7 @@ const TYPE_LABELS: Record<AnswerType, string> = {
   yes_no: "Да/Нет",
   scale_0_10: "0–10",
   stars_0_5: "Звёзды",
+  choice: "Варианты",
   text: "Текст",
 };
 
@@ -88,7 +89,7 @@ export function JournalSettings() {
                   : `Удалить категорию «${category.name}»?`;
               if (window.confirm(message)) run(() => deleteCategory(category.id));
             }}
-            onAddItem={(label, answerType) => run(() => createItem(category.id, label, answerType))}
+            onAddItem={(label, answerType, options) => run(() => createItem(category.id, label, answerType, options))}
             onReorderItems={(itemIds) => run(() => reorderItems(category.id, itemIds))}
 
             onRenameItem={(itemId, label) => run(() => renameItem(itemId, label))}
@@ -143,7 +144,7 @@ function CategoryCard({
   category: ConstructorCategory;
   onRename: (name: string) => void;
   onDelete: () => void;
-  onAddItem: (label: string, answerType: AnswerType) => Promise<boolean>;
+  onAddItem: (label: string, answerType: AnswerType, options?: string[]) => Promise<boolean>;
   onRenameItem: (itemId: number, label: string) => void;
   onDeleteItem: (itemId: number, hasAnswers: boolean, label: string) => void;
   onReorderItems: (itemIds: number[]) => Promise<boolean>;
@@ -152,6 +153,8 @@ function CategoryCard({
   const [name, setName] = useState(category.name);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] = useState<AnswerType>("yes_no");
+  /** Для типа «Варианты»: список через запятую, парсит и валидирует сервер. */
+  const [newItemOptions, setNewItemOptions] = useState("");
 
   /**
    * Drag-and-drop порядка пунктов (23.09.2026) — на pointer events, без библиотек:
@@ -293,8 +296,15 @@ function CategoryCard({
           event.preventDefault();
           const label = newItemLabel.trim();
           if (!label) return;
-          void onAddItem(label, newItemType).then((ok) => {
-            if (ok) setNewItemLabel("");
+          const options =
+            newItemType === "choice"
+              ? newItemOptions.split(",").map((part) => part.trim()).filter(Boolean)
+              : undefined;
+          void onAddItem(label, newItemType, options).then((ok) => {
+            if (ok) {
+              setNewItemLabel("");
+              setNewItemOptions("");
+            }
           });
         }}
       >
@@ -304,6 +314,14 @@ function CategoryCard({
           placeholder="Новый пункт чек-листа…"
           className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
+        {newItemType === "choice" && (
+          <input
+            value={newItemOptions}
+            onChange={(event) => setNewItemOptions(event.target.value)}
+            placeholder="Варианты через запятую: Пробой, Отбой, Ретест"
+            className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+          />
+        )}
         <div className="flex items-center gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {(Object.keys(TYPE_LABELS) as AnswerType[]).map((type) => (

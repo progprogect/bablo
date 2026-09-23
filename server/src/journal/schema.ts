@@ -35,8 +35,14 @@ export const journalChecklistItems = pgTable("journal_checklist_items", {
     .notNull()
     .references(() => journalCategories.id, { onDelete: "cascade" }),
   label: text("label").notNull(),
-  /** 'yes_no' | 'scale_0_10' | 'text' — см. journal/logic.ts (ANSWER_TYPES). */
+  /** 'yes_no' | 'scale_0_10' | 'stars_0_5' | 'choice' | 'text' — journal/logic.ts. */
   answerType: text("answer_type").notNull(),
+  /**
+   * Для answer_type='choice' — массив вариантов (строки), фиксируется при создании
+   * пункта, как и тип: смена вариантов обесценила бы старые ответы. Ответ хранится
+   * в journal_answers.value_text выбранной строкой.
+   */
+  options: jsonb("options"),
   sortOrder: integer("sort_order").notNull().default(0),
   /**
    * Архив вместо удаления, когда на пункт уже отвечали: старые ответы сохраняются и
