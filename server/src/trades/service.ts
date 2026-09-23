@@ -24,6 +24,7 @@ import {
 } from "../db/repositories/trades.js";
 import { eventBus } from "../events/bus.js";
 import { sendTradeClosedPush } from "../push/service.js";
+import { collectTradeMarketData } from "../journal/marketData.js";
 import { bingxMessage, replaceConditionalOrder } from "./orders.js";
 import { startTrailingSlWatch, stopTrailingSlWatch } from "./trailingSlWatcher.js";
 import {
@@ -596,6 +597,9 @@ export async function finalizeTradeClose(
   eventBus.emitTyped("refresh", { reason: "trade.closed" });
   // Пуш на устройства — fire-and-forget: закрытие сделки не должно ждать push-сервисы.
   sendTradeClosedPush({ ...toOutcomeInput(updated), symbol: updated.symbol }, resultR);
+  // Журнал: свечи вокруг сделки + снапшот индикаторов — тоже fire-and-forget и best-effort
+  // (публичный market-data эндпоинт, без ключей). Сбой сбора не влияет на закрытие.
+  collectTradeMarketData(updated.id).catch(() => {});
   return updated;
 }
 

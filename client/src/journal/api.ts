@@ -1,6 +1,8 @@
 import { request } from "../api/http";
 import type {
   AnalysisResponse,
+  ChartDrawing,
+  TradeChartResponse,
   AnswerType,
   AnswerValue,
   ConstructorCategory,
@@ -71,3 +73,12 @@ export const deleteItem = (id: number) =>
 
 export const getAnalysis = (categoryId: number) =>
   request<AnalysisResponse>(`/journal/analysis/${categoryId}`);
+
+export const getTradeChart = (tradeId: number, interval: "15m" | "1h") =>
+  request<TradeChartResponse>(`/journal/trades/${tradeId}/chart?interval=${interval}`);
+
+export const saveDrawings = (tradeId: number, drawings: ChartDrawing[]) =>
+  request<{ ok: boolean }>(`/journal/trades/${tradeId}/drawings`, {
+    method: "PUT",
+    body: JSON.stringify({ drawings }),
+  });

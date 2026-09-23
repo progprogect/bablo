@@ -4,6 +4,7 @@ import { runMigrations } from "./db/runMigrations.js";
 import { ensureSeedAssets } from "./db/repositories/assets.js";
 import { ensureRiskSeeded, resyncTradingDayRisk } from "./risk/service.js";
 import { startRealtime } from "./realtime/manager.js";
+import { backfillJournalMarketData } from "./journal/marketData.js";
 
 const app = buildApp();
 
@@ -45,6 +46,12 @@ async function bootstrap() {
   } catch (error) {
     app.log.error({ error }, "Не удалось пересчитать дневные лимиты при старте (некритично)");
   }
+  // Журнал: разовый бэкфилл свечей и метрик для закрытых сделок без собранного окна
+  // (существующая история). Fire-and-forget после старта: последовательный, щадящий,
+  // идемпотентный — при рестарте продолжит только несобранное.
+  backfillJournalMarketData(app.log).catch((error) => {
+    app.log.error({ error }, "Журнал: бэкфилл рыночных данных не удался (некритично)");
+  });
 }
 
 bootstrap().catch((error) => {

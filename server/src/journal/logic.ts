@@ -269,3 +269,37 @@ export function validateItemsReorder(activeItemIds: number[], requested: unknown
   }
   return { ok: true, itemIds };
 }
+
+// --- Линии пользователя на графике сделки --------------------------------------------------
+
+export const MAX_DRAWINGS_PER_TRADE = 200;
+
+export type DrawingInput = { id: string; t1: number; p1: number; t2: number; p2: number };
+
+export type DrawingsValidation =
+  | { ok: true; drawings: DrawingInput[] }
+  | { ok: false; error: string };
+
+/** Линии рабочей зоны: id-строка и четыре конечных числа (time ms, цена) на линию. */
+export function validateDrawings(requested: unknown): DrawingsValidation {
+  if (!Array.isArray(requested)) return { ok: false, error: "Линии — массив" };
+  if (requested.length > MAX_DRAWINGS_PER_TRADE) {
+    return { ok: false, error: `Не больше ${MAX_DRAWINGS_PER_TRADE} линий на сделку` };
+  }
+  const drawings: DrawingInput[] = [];
+  const seen = new Set<string>();
+  for (const raw of requested) {
+    if (typeof raw !== "object" || raw === null) return { ok: false, error: "Линия — объект" };
+    const { id, t1, p1, t2, p2 } = raw as Record<string, unknown>;
+    if (typeof id !== "string" || id.length === 0 || id.length > 40 || seen.has(id)) {
+      return { ok: false, error: "У каждой линии — уникальный строковый id" };
+    }
+    const nums = [t1, p1, t2, p2];
+    if (!nums.every((value) => typeof value === "number" && Number.isFinite(value))) {
+      return { ok: false, error: "Координаты линии — конечные числа" };
+    }
+    seen.add(id);
+    drawings.push({ id, t1: t1 as number, p1: p1 as number, t2: t2 as number, p2: p2 as number });
+  }
+  return { ok: true, drawings };
+}

@@ -136,6 +136,72 @@ export async function getLatestPrice(symbol: string): Promise<number> {
   return Number(json.data.price);
 }
 
+export type BingXKline = {
+  /** Время открытия свечи, ms. */
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+type BingXKlineRaw = {
+  time?: number | string;
+  open?: number | string;
+  high?: number | string;
+  low?: number | string;
+  close?: number | string;
+  volume?: number | string;
+};
+
+/**
+ * Исторические свечи (журнал разбора сделок). Публичный market-data эндпоинт —
+ * подпись и ключи BingX не требуются, как и у getLatestPrice. Порядок в ответе биржи
+ * не гарантируем себе сами: нормализуем сортировкой по времени по возрастанию.
+ * Лимит BingX — до 1440 свечей за запрос.
+ */
+export async function getKlines(
+  symbol: string,
+  interval: string,
+  startTimeMs: number,
+  endTimeMs: number,
+  limit = 1440,
+): Promise<BingXKline[]> {
+  const params = new URLSearchParams({
+    symbol,
+    interval,
+    startTime: String(Math.floor(startTimeMs)),
+    endTime: String(Math.floor(endTimeMs)),
+    limit: String(limit),
+  });
+  const url = `${BASE_URL}/openApi/swap/v3/quote/klines?${params.toString()}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const json = (await response.json()) as BingXEnvelope<BingXKlineRaw[]>;
+  if (json.code !== 0) {
+    throw new BingXApiError(json.code, json.msg || "BingX API error");
+  }
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows
+    .map((row) => ({
+      time: Number(row.time),
+      open: Number(row.open),
+      high: Number(row.high),
+      low: Number(row.low),
+      close: Number(row.close),
+      volume: Number(row.volume ?? 0),
+    }))
+    .filter(
+      (candle) =>
+        Number.isFinite(candle.time) &&
+        Number.isFinite(candle.open) &&
+        Number.isFinite(candle.high) &&
+        Number.isFinite(candle.low) &&
+        Number.isFinite(candle.close),
+    )
+    .sort((a, b) => a.time - b.time);
+}
+
 export type BingXContractLimits = {
   symbol: string;
   quantityPrecision: number;

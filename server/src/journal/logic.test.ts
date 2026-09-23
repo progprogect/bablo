@@ -8,6 +8,7 @@ import {
   mfeR,
   plannedRR,
   validateAnswers,
+  validateDrawings,
   validateItemsReorder,
   type AnswerValue,
   type ChecklistItemDef,
@@ -239,4 +240,23 @@ test("validateItemsReorder: дубли, чужие, пропуски и не-м�
   assert.equal(validateItemsReorder([1, 2, 3], [1, 2]).ok, false);
   assert.equal(validateItemsReorder([1, 2, 3], "1,2,3").ok, false);
   assert.equal(validateItemsReorder([1, 2, 3], [1, 2, "3"]).ok, false);
+});
+
+test("validateDrawings: корректный набор проходит, мусор — нет", () => {
+  const ok = validateDrawings([{ id: "a", t1: 1, p1: 2, t2: 3, p2: 4 }]);
+  assert.equal(ok.ok, true);
+  assert.equal(validateDrawings("nope").ok, false);
+  assert.equal(validateDrawings([{ id: "", t1: 1, p1: 2, t2: 3, p2: 4 }]).ok, false);
+  assert.equal(validateDrawings([{ id: "a", t1: Infinity, p1: 2, t2: 3, p2: 4 }]).ok, false);
+  assert.equal(validateDrawings([{ id: "a", t1: 1, p1: 2, t2: 3, p2: "4" }]).ok, false);
+  // Дубль id.
+  assert.equal(
+    validateDrawings([
+      { id: "a", t1: 1, p1: 2, t2: 3, p2: 4 },
+      { id: "a", t1: 5, p1: 6, t2: 7, p2: 8 },
+    ]).ok,
+    false,
+  );
+  // Пустой массив валиден — «стереть все линии».
+  assert.equal(validateDrawings([]).ok, true);
 });
