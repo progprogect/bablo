@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/http";
-import { formatPrice, trimTrailingZeros } from "../../lib/format";
 import { getCategories, getJournalTrade, removeEntry, saveEntry } from "../api";
 import { DetailList, DetailRow } from "../components/DetailRow";
 import { StarsInput, StarsView } from "../components/Stars";
@@ -114,7 +113,6 @@ export function TradeDetail() {
 
       <TradeSummaryCard trade={trade} />
       <TradeChart trade={trade} />
-      <AnalysisData trade={trade} />
     </section>
   );
 }
@@ -139,46 +137,6 @@ function TradeSummaryCard({ trade }: { trade: JournalTradeDetail }) {
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <TradeSummary trade={trade} />
-    </div>
-  );
-}
-
-/** Данные для анализа: то, что трекер собирает по каждой сделке (MFE, безубыток) + параметры. */
-function AnalysisData({ trade }: { trade: JournalTradeDetail }) {
-  const openedHour = new Date(trade.openedAt).getHours();
-  return (
-    <div className="mx-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Для анализа</p>
-      <DetailList>
-        <DetailRow
-          align="right"
-          label="Лучший ход (MFE)"
-          value={
-            trade.mfeR !== null
-              ? `${formatRWithSign(trade.mfeR)} (${formatPrice(trade.mfePrice)})`
-              : "—"
-          }
-        />
-        <DetailRow
-          align="right"
-          label="Возврат к безубытку"
-          value={trade.beCrossed ? "Был" : "Не было"}
-          hint={trade.beCrossed ? "цена была в плюсе и вернулась" : undefined}
-        />
-        <DetailRow align="right" label="Длительность" value={formatDuration(trade.openedAt, trade.closedAt)} />
-        <DetailRow align="right" label="Час открытия" value={`${openedHour}ч`} />
-        <DetailRow
-          align="right"
-          label="Объём"
-          value={trade.quantity !== null ? `${trimTrailingZeros(trade.quantity, 4)} монет` : "—"}
-        />
-        <DetailRow align="right" label="Плечо" value={`${trade.leverage}×`} />
-        <DetailRow
-          align="right"
-          label="Маржа"
-          value={trade.marginUsd !== null ? `${formatPrice(trade.marginUsd, 2)} USDT` : "—"}
-        />
-      </DetailList>
     </div>
   );
 }
@@ -492,19 +450,3 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function formatDuration(openedAt: string, closedAt: string | null): string {
-  if (!closedAt) return "—";
-  const ms = new Date(closedAt).getTime() - new Date(openedAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
-}
-
-/** R с одной цифрой после запятой и знаком: 2.07 → "+2.1R", −1 → "−1R". */
-function formatRWithSign(value: number): string {
-  const rounded = Number(value.toFixed(1));
-  const sign = rounded > 0 ? "+" : "";
-  return `${sign}${trimTrailingZeros(rounded, 1)}R`;
-}
