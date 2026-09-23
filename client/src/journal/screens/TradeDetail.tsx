@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/http";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 import { getCategories, getJournalTrade, removeEntry, saveEntry } from "../api";
+import { DetailList, DetailRow } from "../components/DetailRow";
 import { OUTCOME_LABELS, SideBadge } from "../components/TradeCard";
 import type {
   AnswerValue,
@@ -135,36 +136,44 @@ function TradePicture({ trade }: { trade: JournalTradeDetail }) {
     Math.abs(trade.finalSlPrice - trade.initialSlPrice) > Math.abs(trade.initialSlPrice) * 1e-9;
 
   return (
-    <div className="mx-4 flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <Row label="Вход" value={formatPrice(trade.entryPrice)} />
-      <Row
-        label="Стоп при входе"
-        value={formatPrice(trade.initialSlPrice)}
-        hint={trade.riskUsd !== null ? `−${formatPrice(trade.riskUsd, 2)} USDT · 1R` : undefined}
-        hintTone="negative"
-      />
-      <Row
-        label="Тейк (план)"
-        value={formatPrice(trade.plannedTpPrice)}
-        hint={
-          trade.plannedProfitUsd !== null && trade.plannedRR !== null
-            ? `+${formatPrice(trade.plannedProfitUsd, 2)} USDT · R/R 1/${trimTrailingZeros(trade.plannedRR, 1)}`
-            : undefined
-        }
-        hintTone="positive"
-      />
-      {slMoved && (
-        <Row label="Стоп в конце" value={formatPrice(trade.finalSlPrice)} hint="подтянут в ходе сделки" />
-      )}
+    <div className="mx-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <DetailList>
+        <DetailRow label="Вход" value={formatPrice(trade.entryPrice)} />
+        <DetailRow
+          label="Стоп при входе"
+          value={formatPrice(trade.initialSlPrice)}
+          hint={trade.riskUsd !== null ? `−${formatPrice(trade.riskUsd, 2)} USDT · 1R` : undefined}
+          hintTone="negative"
+        />
+        <DetailRow
+          label="Тейк (план)"
+          value={formatPrice(trade.plannedTpPrice)}
+          hint={
+            trade.plannedProfitUsd !== null && trade.plannedRR !== null
+              ? `+${formatPrice(trade.plannedProfitUsd, 2)} USDT · R/R 1/${trimTrailingZeros(trade.plannedRR, 1)}`
+              : undefined
+          }
+          hintTone="positive"
+        />
+        {slMoved && (
+          <DetailRow
+            label="Стоп в конце"
+            value={formatPrice(trade.finalSlPrice)}
+            hint="подтянут в ходе сделки"
+          />
+        )}
+      </DetailList>
 
-      <div className="my-0.5 border-t border-line" />
-
-      <div className="flex items-baseline justify-between">
+      {/* Итог — единственная акцентная строка карточки, сумма справа осознанно:
+          однострочное число с правым краем сравнивать удобно, это не многострочный текст. */}
+      <div className="mt-2 flex items-baseline justify-between border-t border-line pt-3">
         <span className="text-xs text-muted">
-          Закрытие {formatPrice(trade.closePrice)}
+          Закрытие <span className="tabular-nums">{formatPrice(trade.closePrice)}</span>
           {outcomeLabel ? ` · ${outcomeLabel}` : ""}
         </span>
-        <span className={`text-base font-semibold ${isProfit ? "text-positive" : isLoss ? "text-negative" : "text-ink"}`}>
+        <span
+          className={`text-base font-semibold tabular-nums ${isProfit ? "text-positive" : isLoss ? "text-negative" : "text-ink"}`}
+        >
           {formatSignedUsd(trade.resultUsd)}
         </span>
       </div>
@@ -179,52 +188,34 @@ function TradePicture({ trade }: { trade: JournalTradeDetail }) {
 function AnalysisData({ trade }: { trade: JournalTradeDetail }) {
   const openedHour = new Date(trade.openedAt).getHours();
   return (
-    <div className="mx-4 flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">Для анализа</p>
-      <Row
-        label="Лучший ход (MFE)"
-        value={
-          trade.mfeR !== null
-            ? `${formatRWithSign(trade.mfeR)} (${formatPrice(trade.mfePrice)})`
-            : "—"
-        }
-      />
-      <Row label="Возврат к безубытку" value={trade.beCrossed ? "Был" : "Не было"} hint={trade.beCrossed ? "цена сходила в плюс и вернулась к входу" : undefined} />
-      <Row label="Длительность" value={formatDuration(trade.openedAt, trade.closedAt)} />
-      <Row label="Час открытия" value={`${openedHour}ч`} />
-      <Row label="Объём" value={trade.quantity !== null ? `${trimTrailingZeros(trade.quantity, 4)} монет` : "—"} />
-      <Row label="Плечо" value={`${trade.leverage}×`} />
-      <Row label="Маржа" value={trade.marginUsd !== null ? `${formatPrice(trade.marginUsd, 2)} USDT` : "—"} />
-    </div>
-  );
-}
-
-function Row({
-  label,
-  value,
-  hint,
-  hintTone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  hintTone?: "positive" | "negative";
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="shrink-0 text-xs text-muted">{label}</span>
-      <span className="text-right text-sm text-ink">
-        {value}
-        {hint && (
-          <span
-            className={`block text-[11px] ${
-              hintTone === "positive" ? "text-positive" : hintTone === "negative" ? "text-negative" : "text-muted"
-            }`}
-          >
-            {hint}
-          </span>
-        )}
-      </span>
+    <div className="mx-4 rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Для анализа</p>
+      <DetailList>
+        <DetailRow
+          label="Лучший ход (MFE)"
+          value={
+            trade.mfeR !== null
+              ? `${formatRWithSign(trade.mfeR)} (${formatPrice(trade.mfePrice)})`
+              : "—"
+          }
+        />
+        <DetailRow
+          label="Возврат к безубытку"
+          value={trade.beCrossed ? "Был" : "Не было"}
+          hint={trade.beCrossed ? "цена сходила в плюс и вернулась к входу" : undefined}
+        />
+        <DetailRow label="Длительность" value={formatDuration(trade.openedAt, trade.closedAt)} />
+        <DetailRow label="Час открытия" value={`${openedHour}ч`} />
+        <DetailRow
+          label="Объём"
+          value={trade.quantity !== null ? `${trimTrailingZeros(trade.quantity, 4)} монет` : "—"}
+        />
+        <DetailRow label="Плечо" value={`${trade.leverage}×`} />
+        <DetailRow
+          label="Маржа"
+          value={trade.marginUsd !== null ? `${formatPrice(trade.marginUsd, 2)} USDT` : "—"}
+        />
+      </DetailList>
     </div>
   );
 }
@@ -250,20 +241,18 @@ function EntryView({
         </span>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <DetailList>
         {entry.answers.map((answer) => (
-          <div key={answer.itemId} className="flex items-baseline justify-between gap-3">
-            <span className="text-xs text-muted">
-              {answer.label}
-              {answer.itemArchived ? " (архивный пункт)" : ""}
-            </span>
-            <AnswerValueView type={answer.answerType} value={answer.value} />
-          </div>
+          <DetailRow
+            key={answer.itemId}
+            label={answer.label + (answer.itemArchived ? " (архив)" : "")}
+            value={<AnswerValueView type={answer.answerType} value={answer.value} />}
+          />
         ))}
-        {entry.answers.length === 0 && (
-          <p className="text-xs text-muted">У чек-листа категории нет пунктов.</p>
-        )}
-      </div>
+      </DetailList>
+      {entry.answers.length === 0 && (
+        <p className="text-xs text-muted">У чек-листа категории нет пунктов.</p>
+      )}
 
       <div className="mt-1 flex items-center justify-between">
         <button type="button" onClick={onEdit} className="rounded-xl border border-line px-3.5 py-2 text-sm text-ink">
@@ -289,7 +278,7 @@ function AnswerValueView({ type, value }: { type: string; value: AnswerValue | n
   if (type === "scale_0_10") {
     return <span className="text-sm font-medium text-ink">{String(value)} / 10</span>;
   }
-  return <span className="max-w-[60%] text-right text-sm text-ink">{String(value)}</span>;
+  return <span className="text-sm text-ink">{String(value)}</span>;
 }
 
 /**
@@ -447,7 +436,7 @@ function ChecklistField({
         </div>
       )}
       {answerType === "scale_0_10" && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="grid grid-cols-6 gap-1.5">
           {Array.from({ length: 11 }, (_, score) => (
             <ChoiceChip
               key={score}
@@ -487,7 +476,7 @@ function ChoiceChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full py-1.5 text-sm ${narrow ? "w-9" : "px-4"} ${
+      className={`rounded-full py-1.5 text-sm ${narrow ? "w-full px-0 text-center" : "px-4"} ${
         active ? "bg-accent font-medium text-white" : "border border-line bg-card text-muted"
       }`}
     >

@@ -173,15 +173,20 @@ function CategoryCard({
           </form>
         ) : (
           <>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1">
               <span className="truncate text-sm font-medium text-ink">{category.name}</span>
-              <button type="button" onClick={() => setIsRenaming(true)} aria-label="Переименовать" className="text-muted">
+              <button
+                type="button"
+                onClick={() => setIsRenaming(true)}
+                aria-label="Переименовать"
+                className="-my-2 p-2 text-muted"
+              >
                 <PencilIcon />
               </button>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
+            <div className="flex shrink-0 items-center gap-1">
               <span className="text-xs text-muted">{plural(category.entriesCount, "разбор", "разбора", "разборов")}</span>
-              <button type="button" onClick={onDelete} aria-label="Удалить категорию" className="text-negative">
+              <button type="button" onClick={onDelete} aria-label="Удалить категорию" className="-my-2 p-2 text-negative">
                 <CrossIcon />
               </button>
             </div>
@@ -190,7 +195,7 @@ function CategoryCard({
       </div>
 
       {category.items.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="divide-y divide-line/70">
           {category.items.map((item) => (
             <ItemRow
               key={item.id}
@@ -266,7 +271,7 @@ function ItemRow({
   if (isRenaming) {
     return (
       <form
-        className="flex gap-2"
+        className="flex gap-2 py-2 first:pt-0 last:pb-0"
         onSubmit={(event) => {
           event.preventDefault();
           const trimmed = draft.trim();
@@ -288,18 +293,24 @@ function ItemRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-sm text-ink">{label}</span>
         <span className="shrink-0 rounded-full bg-line/60 px-2 py-0.5 text-[11px] text-muted">
           {TYPE_LABELS[answerType]}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button type="button" onClick={() => setIsRenaming(true)} aria-label="Переименовать пункт" className="text-muted">
+      {/* -m/p: иконки 14px, но зона нажатия ~34px — пальцем попадать проще (touch target). */}
+      <div className="flex shrink-0 items-center">
+        <button
+          type="button"
+          onClick={() => setIsRenaming(true)}
+          aria-label="Переименовать пункт"
+          className="-my-2 p-2.5 text-muted"
+        >
           <PencilIcon />
         </button>
-        <button type="button" onClick={onDelete} aria-label="Удалить пункт" className="text-negative">
+        <button type="button" onClick={onDelete} aria-label="Удалить пункт" className="-my-2 p-2.5 text-negative">
           <CrossIcon />
         </button>
       </div>
