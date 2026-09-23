@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/http";
 import {
@@ -9,6 +9,7 @@ import {
   getCategories,
   renameCategory,
   renameItem,
+  reorderItems,
 } from "../api";
 import { plural } from "../plural";
 import type { AnswerType, ConstructorCategory } from "../types";
@@ -16,6 +17,7 @@ import type { AnswerType, ConstructorCategory } from "../types";
 const TYPE_LABELS: Record<AnswerType, string> = {
   yes_no: "Да/Нет",
   scale_0_10: "0–10",
+  stars_0_5: "Звёзды",
   text: "Текст",
 };
 
@@ -87,6 +89,7 @@ export function JournalSettings() {
               if (window.confirm(message)) run(() => deleteCategory(category.id));
             }}
             onAddItem={(label, answerType) => run(() => createItem(category.id, label, answerType))}
+            onReorderItems={(itemIds) => run(() => reorderItems(category.id, itemIds))}
 
             onRenameItem={(itemId, label) => run(() => renameItem(itemId, label))}
             onDeleteItem={(itemId, hasAnswers, label) => {
@@ -135,6 +138,7 @@ function CategoryCard({
   onAddItem,
   onRenameItem,
   onDeleteItem,
+  onReorderItems,
 }: {
   category: ConstructorCategory;
   onRename: (name: string) => void;
@@ -142,11 +146,71 @@ function CategoryCard({
   onAddItem: (label: string, answerType: AnswerType) => Promise<boolean>;
   onRenameItem: (itemId: number, label: string) => void;
   onDeleteItem: (itemId: number, hasAnswers: boolean, label: string) => void;
+  onReorderItems: (itemIds: number[]) => Promise<boolean>;
 }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [name, setName] = useState(category.name);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemType, setNewItemType] = useState<AnswerType>("yes_no");
+
+  /**
+   * Drag-and-drop порядка пунктов (23.09.2026) — на pointer events, без библиотек:
+   * работает и мышью, и пальцем в PWA. Захват — только за ручку-грип (у неё touch-none,
+   * чтобы страница не скроллилась). Пока строку тянут, локальный порядок переставляется
+   * на каждом пересечении границы строки; отпустили — порядок уходит на сервер, при
+   * ошибке refresh вернёт серверный.
+   */
+  const [localItems, setLocalItemsState] = useState(category.items);
+  const localItemsRef = useRef(category.items);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const dragState = useRef<{ pointerId: number; startIndex: number; currentIndex: number; startY: number; rowH: number } | null>(null);
+
+  useEffect(() => {
+    localItemsRef.current = category.items;
+    setLocalItemsState(category.items);
+  }, [category.items]);
+
+  function setLocalItems(next: typeof category.items) {
+    localItemsRef.current = next;
+    setLocalItemsState(next);
+  }
+
+  function handleDragStart(event: ReactPointerEvent, index: number) {
+    if (!event.isPrimary) return;
+    const row = (event.currentTarget as HTMLElement).closest("[data-item-row]");
+    const rowH = row instanceof HTMLElement ? row.offsetHeight : 40;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    dragState.current = { pointerId: event.pointerId, startIndex: index, currentIndex: index, startY: event.clientY, rowH };
+    setDragIndex(index);
+    event.preventDefault();
+  }
+
+  function handleDragMove(event: ReactPointerEvent) {
+    const st = dragState.current;
+    if (!st || event.pointerId !== st.pointerId) return;
+    const shift = Math.round((event.clientY - st.startY) / st.rowH);
+    const target = Math.min(Math.max(st.startIndex + shift, 0), localItemsRef.current.length - 1);
+    if (target === st.currentIndex) return;
+    const next = [...localItemsRef.current];
+    const [moved] = next.splice(st.currentIndex, 1);
+    if (!moved) return;
+    next.splice(target, 0, moved);
+    st.currentIndex = target;
+    setLocalItems(next);
+    setDragIndex(target);
+  }
+
+  function handleDragEnd(event: ReactPointerEvent) {
+    const st = dragState.current;
+    if (!st || event.pointerId !== st.pointerId) return;
+    dragState.current = null;
+    setDragIndex(null);
+    const ids = localItemsRef.current.map((item) => item.id);
+    const original = category.items.map((item) => item.id);
+    if (ids.some((id, index) => id !== original[index])) {
+      void onReorderItems(ids);
+    }
+  }
 
   return (
     <div className="mx-4 flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -194,13 +258,27 @@ function CategoryCard({
         )}
       </div>
 
-      {category.items.length > 0 && (
+      {localItems.length > 0 && (
         <div className="divide-y divide-line/70">
-          {category.items.map((item) => (
+          {localItems.map((item, index) => (
             <ItemRow
               key={item.id}
               label={item.label}
               answerType={item.answerType}
+              isDragging={dragIndex === index}
+              handle={
+                <span
+                  role="button"
+                  aria-label="Перетащить пункт"
+                  className="-my-2 shrink-0 cursor-grab touch-none p-2 pl-0 text-muted active:cursor-grabbing"
+                  onPointerDown={(event) => handleDragStart(event, index)}
+                  onPointerMove={handleDragMove}
+                  onPointerUp={handleDragEnd}
+                  onPointerCancel={handleDragEnd}
+                >
+                  <GripIcon />
+                </span>
+              }
               onRename={(label) => onRenameItem(item.id, label)}
               onDelete={() => onDeleteItem(item.id, item.hasAnswers, item.label)}
             />
@@ -226,8 +304,8 @@ function CategoryCard({
           placeholder="Новый пункт чек-листа…"
           className="w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-1.5">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {(Object.keys(TYPE_LABELS) as AnswerType[]).map((type) => (
               <button
                 key={type}
@@ -244,7 +322,7 @@ function CategoryCard({
           <button
             type="submit"
             disabled={newItemLabel.trim().length === 0}
-            className="text-sm font-medium text-accent disabled:opacity-40"
+            className="shrink-0 text-sm font-medium text-accent disabled:opacity-40"
           >
             Добавить
           </button>
@@ -257,11 +335,15 @@ function CategoryCard({
 function ItemRow({
   label,
   answerType,
+  handle,
+  isDragging,
   onRename,
   onDelete,
 }: {
   label: string;
   answerType: AnswerType;
+  handle: React.ReactNode;
+  isDragging: boolean;
   onRename: (label: string) => void;
   onDelete: () => void;
 }) {
@@ -271,6 +353,7 @@ function ItemRow({
   if (isRenaming) {
     return (
       <form
+        data-item-row
         className="flex gap-2 py-2 first:pt-0 last:pb-0"
         onSubmit={(event) => {
           event.preventDefault();
@@ -293,8 +376,14 @@ function ItemRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 items-center gap-2">
+    <div
+      data-item-row
+      className={`flex items-center justify-between gap-2 py-2 first:pt-0 last:pb-0 ${
+        isDragging ? "relative z-10 rounded-lg bg-accent/5" : ""
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
+        {handle}
         <span className="truncate text-sm text-ink">{label}</span>
         <span className="shrink-0 rounded-full bg-line/60 px-2 py-0.5 text-[11px] text-muted">
           {TYPE_LABELS[answerType]}
@@ -315,6 +404,20 @@ function ItemRow({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Ручка перетаскивания: шесть точек, как принято у драг-хэндлов. */
+function GripIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="9" cy="5.5" r="1.7" />
+      <circle cx="15" cy="5.5" r="1.7" />
+      <circle cx="9" cy="12" r="1.7" />
+      <circle cx="15" cy="12" r="1.7" />
+      <circle cx="9" cy="18.5" r="1.7" />
+      <circle cx="15" cy="18.5" r="1.7" />
+    </svg>
   );
 }
 

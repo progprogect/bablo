@@ -3,7 +3,7 @@
  * по тому же принципу, что risk/limits.ts и history/outcome.ts.
  */
 
-export const ANSWER_TYPES = ["yes_no", "scale_0_10", "text"] as const;
+export const ANSWER_TYPES = ["yes_no", "scale_0_10", "stars_0_5", "text"] as const;
 export type AnswerType = (typeof ANSWER_TYPES)[number];
 
 export function isAnswerType(value: unknown): value is AnswerType {
@@ -12,6 +12,9 @@ export function isAnswerType(value: unknown): value is AnswerType {
 
 export const SCALE_MIN = 0;
 export const SCALE_MAX = 10;
+/** Оценка звёздами: 0–5 (запрос пользователя от 23.09.2026), хранится в value_int. */
+export const STARS_MIN = 0;
+export const STARS_MAX = 5;
 /** Предел текстового ответа — страховка от случайной простыни, а не продуктовый лимит. */
 export const TEXT_ANSWER_MAX_LENGTH = 2000;
 
@@ -81,6 +84,11 @@ function normalizeValue(item: ChecklistItemDef, value: unknown): NormalizedAnswe
     case "scale_0_10": {
       if (typeof value !== "number" || !Number.isInteger(value)) return null;
       if (value < SCALE_MIN || value > SCALE_MAX) return null;
+      return { itemId: item.id, valueBool: null, valueInt: value, valueText: null };
+    }
+    case "stars_0_5": {
+      if (typeof value !== "number" || !Number.isInteger(value)) return null;
+      if (value < STARS_MIN || value > STARS_MAX) return null;
       return { itemId: item.id, valueBool: null, valueInt: value, valueText: null };
     }
     case "text": {
@@ -210,7 +218,8 @@ function aggregateGroup(items: ChecklistItemDef[], rows: AnalysisRowInput[]): Gr
         byItem[item.id] = { kind: "yes_no", yesCount, total };
         break;
       }
-      case "scale_0_10": {
+      case "scale_0_10":
+      case "stars_0_5": {
         let sum = 0;
         let total = 0;
         for (const row of rows) {
@@ -234,4 +243,29 @@ function aggregateGroup(items: ChecklistItemDef[], rows: AnalysisRowInput[]): Gr
     }
   }
   return { tradesCount: rows.length, byItem };
+}
+
+// --- Переупорядочивание пунктов чек-листа (drag-and-drop в конструкторе) -----------------
+
+export type ReorderResult = { ok: true; itemIds: number[] } | { ok: false; error: string };
+
+/**
+ * Проверяет запрошенный порядок пунктов: это должна быть перестановка РОВНО всех активных
+ * пунктов категории — без дублей, чужих и пропущенных id. Иначе частичный список молча
+ * перетасовал бы sort_order относительно невключённых пунктов.
+ */
+export function validateItemsReorder(activeItemIds: number[], requested: unknown): ReorderResult {
+  if (!Array.isArray(requested) || !requested.every((id) => Number.isInteger(id))) {
+    return { ok: false, error: "Порядок пунктов — массив их id" };
+  }
+  const itemIds = requested as number[];
+  const requestedSet = new Set(itemIds);
+  if (requestedSet.size !== itemIds.length) {
+    return { ok: false, error: "В порядке пунктов есть дубли" };
+  }
+  const activeSet = new Set(activeItemIds);
+  if (requestedSet.size !== activeSet.size || itemIds.some((id) => !activeSet.has(id))) {
+    return { ok: false, error: "Порядок должен включать все пункты чек-листа и только их" };
+  }
+  return { ok: true, itemIds };
 }

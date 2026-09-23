@@ -174,6 +174,28 @@ export async function deleteOrArchiveItem(id: number): Promise<{ archived: boole
   });
 }
 
+/**
+ * Переставляет активные пункты категории в заданном порядке (drag-and-drop в конструкторе):
+ * sort_order = позиция в списке. Вызывающий код обязан проверить порядок validateItemsReorder.
+ */
+export async function reorderItems(categoryId: number, itemIds: number[]): Promise<void> {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    for (const [index, itemId] of itemIds.entries()) {
+      await tx
+        .update(journalChecklistItems)
+        .set({ sortOrder: index + 1 })
+        .where(
+          and(
+            eq(journalChecklistItems.id, itemId),
+            eq(journalChecklistItems.categoryId, categoryId),
+            isNull(journalChecklistItems.archivedAt),
+          ),
+        );
+    }
+  });
+}
+
 /** id пунктов, на которые есть хотя бы один ответ, — конструктору для пометки «есть данные». */
 export async function itemIdsWithAnswers(itemIds: number[]): Promise<Set<number>> {
   if (itemIds.length === 0) return new Set();

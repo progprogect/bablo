@@ -60,6 +60,12 @@ export const renameItem = (id: number, label: string) =>
     body: JSON.stringify({ label }),
   });
 
+export const reorderItems = (categoryId: number, itemIds: number[]) =>
+  request<{ ok: boolean }>(`/journal/categories/${categoryId}/items-order`, {
+    method: "PUT",
+    body: JSON.stringify({ itemIds }),
+  });
+
 export const deleteItem = (id: number) =>
   request<{ archived: boolean }>(`/journal/items/${id}`, { method: "DELETE" });
 
