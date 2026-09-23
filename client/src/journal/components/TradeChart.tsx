@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/http";
-import { getTradeChart, saveDrawings } from "../api";
+import { extendTradeChart, getTradeChart, saveDrawings } from "../api";
 import type { ChartCandle, ChartDrawing, JournalTradeDetail, TradeChartResponse } from "../types";
 
 /**
@@ -26,6 +26,9 @@ const MAX_VISIBLE_CANDLES = 500;
 /** Порог «это был тап, а не пан» и радиус попадания по линии, px. */
 const TAP_THRESHOLD_PX = 5;
 const HIT_RADIUS_PX = 8;
+/** Pull-to-load истории: максимум резинового оверскролла влево и порог срабатывания, px. */
+const MAX_OVERSCROLL_PX = 110;
+const EXTEND_TRIGGER_PX = 64;
 
 type Viewport = { t0: number; t1: number };
 
@@ -49,21 +52,51 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   /** Уровни, зоны накопления, BOS и поглощения (просьба пользователя «видеть» их). */
   const [showStructure, setShowStructure] = useState(true);
+  /** Pull-to-load влево: насколько график перетянут за край данных (px, для плашки). */
+  const [overscrollPx, setOverscrollPx] = useState(0);
+  const [isExtending, setIsExtending] = useState(false);
+  /** История на бирже кончилась / упёрлись в потолок глубины — больше не предлагать. */
+  const [exhausted, setExhausted] = useState<Partial<Record<Interval, boolean>>>({});
   const [draft, setDraft] = useState<DraftLine | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // Живые ссылки для обработчиков указателя (не пересоздавать слушатели на каждый кадр).
-  const stateRef = useRef({ viewport, data, drawings, drawMode, draft, selectedId });
-  stateRef.current = { viewport, data, drawings, drawMode, draft, selectedId };
+  const stateRef = useRef({
+    viewport,
+    data,
+    drawings,
+    drawMode,
+    draft,
+    selectedId,
+    overscrollPx,
+    isExtending,
+    exhaustedCurrent: exhausted[interval] ?? false,
+  });
+  stateRef.current = {
+    viewport,
+    data,
+    drawings,
+    drawMode,
+    draft,
+    selectedId,
+    overscrollPx,
+    isExtending,
+    exhaustedCurrent: exhausted[interval] ?? false,
+  };
 
   // --- Загрузка данных ----------------------------------------------------------------------
+
+  useEffect(() => {
+    setExhausted({});
+  }, [trade.id]);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
     setError(null);
+    setOverscrollPx(0);
     getTradeChart(trade.id, interval)
       .then((response) => {
         if (cancelled) return;
@@ -91,6 +124,46 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
       setError(err instanceof ApiError ? err.message : "Не удалось сохранить линии");
     });
   }
+
+  /** Догрузка истории влево: дотянули за порог и отпустили. */
+  async function runExtend() {
+    const current = stateRef.current;
+    if (!current.data || current.isExtending || current.exhaustedCurrent) return;
+    const prevFromMs = current.data.range.fromMs;
+    setIsExtending(true);
+    try {
+      const response = await extendTradeChart(trade.id, interval);
+      if (response.exhausted) {
+        setExhausted((value) => ({ ...value, [interval]: true }));
+      }
+      if (response.added > 0) {
+        setData(response);
+        setDrawings(response.drawings);
+        // Показать стык старого края с догруженным: чуть левее прежнего начала.
+        setViewport((value) => {
+          const span = value ? value.t1 - value.t0 : response.stepMs * 60;
+          const t0 = Math.max(prevFromMs - 12 * response.stepMs, response.range.fromMs);
+          return { t0, t1: t0 + span };
+        });
+      } else {
+        // Ничего не добавилось — прижать вид обратно к краю данных.
+        setViewport((value) => {
+          if (!value || !current.data) return value;
+          const left = current.data.range.fromMs - current.data.stepMs * 20;
+          const span = value.t1 - value.t0;
+          const t0 = Math.max(value.t0, left);
+          return { t0, t1: t0 + span };
+        });
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось догрузить историю");
+    } finally {
+      setIsExtending(false);
+      setOverscrollPx(0);
+    }
+  }
+  const runExtendRef = useRef(runExtend);
+  runExtendRef.current = runExtend;
 
   function deleteSelected() {
     if (!selectedId) return;
@@ -437,11 +510,11 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
       return { x, y, t, p, area };
     }
 
-    function clampViewport(next: Viewport): Viewport {
+    function clampViewport(next: Viewport, leftOverscrollMs = 0): Viewport {
       const { data: d } = stateRef.current;
       if (!d) return next;
       const step = d.stepMs;
-      const dataFrom = d.range.fromMs - step * 20;
+      const dataFrom = d.range.fromMs - step * 20 - leftOverscrollMs;
       const dataTo = d.range.toMs + step * 20;
       let span = next.t1 - next.t0;
       span = Math.min(Math.max(span, step * MIN_VISIBLE_CANDLES), step * MAX_VISIBLE_CANDLES);
@@ -460,7 +533,11 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
     }
 
     function onPointerDown(event: PointerEvent) {
-      (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
+      try {
+        (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
+      } catch {
+        // Указатель мог уже исчезнуть (или событие синтетическое) — жест обработаем и так.
+      }
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       const st = stateRef.current;
       if (pointers.size === 2) {
@@ -470,6 +547,7 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
         panState = null;
         drawStart = null;
         setDraft(null);
+        setOverscrollPx(0);
         const center = toChart((a.x + b.x) / 2, (a.y + b.y) / 2);
         pinchState = {
           startDistance: Math.hypot(a.x - b.x, a.y - b.y),
@@ -517,14 +595,21 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
         return;
       }
 
-      if (panState && st.viewport) {
+      if (panState && st.viewport && st.data) {
         const rect = rectOf();
         const area = plot(rect.width, rect.height);
         const dx = event.clientX - panState.startX;
         if (Math.abs(dx) > TAP_THRESHOLD_PX) panState.moved = true;
         const sv = panState.startViewport;
         const msPerPx = (sv.t1 - sv.t0) / area.width;
-        setViewport(clampViewport({ t0: sv.t0 - dx * msPerPx, t1: sv.t1 - dx * msPerPx }));
+        const raw = { t0: sv.t0 - dx * msPerPx, t1: sv.t1 - dx * msPerPx };
+        // Pull-to-load: за левым краем данных даём резиновый оверскролл — по нему
+        // выезжает плашка догрузки; правый край и зум ограничены как раньше.
+        const leftBound = st.data.range.fromMs - st.data.stepMs * 20;
+        const rawOverPx = (leftBound - raw.t0) / msPerPx;
+        const overPx = Math.max(0, Math.min(rawOverPx * 0.55, MAX_OVERSCROLL_PX)); // резинка
+        setViewport(clampViewport(raw, overPx * msPerPx));
+        setOverscrollPx(Math.round(overPx));
       }
     }
 
@@ -552,6 +637,19 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
       }
 
       if (panState) {
+        const over = stateRef.current.overscrollPx;
+        if (over > 0) {
+          if (over >= EXTEND_TRIGGER_PX && !stateRef.current.exhaustedCurrent && !stateRef.current.isExtending) {
+            void runExtendRef.current();
+          } else {
+            // Не дотянули до порога — вид прижимается обратно к краю данных.
+            const vp = stateRef.current.viewport;
+            if (vp) setViewport(clampViewport(vp, 0));
+            setOverscrollPx(0);
+          }
+          panState = null;
+          return;
+        }
         if (!panState.moved) {
           // Тап в режиме пана — выбор линии под пальцем/курсором (радиус в пикселях).
           const rect = rectOf();
@@ -589,6 +687,7 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
 
     function onWheel(event: WheelEvent) {
       event.preventDefault();
+      setOverscrollPx(0);
       const point = toChart(event.clientX, event.clientY);
       zoomAround(point.t, Math.exp(event.deltaY * 0.0015));
     }
@@ -693,6 +792,24 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
           ref={canvasRef}
           className={drawMode ? "cursor-crosshair touch-none" : "cursor-grab touch-none active:cursor-grabbing"}
         />
+        {/* Плашка pull-to-load: выезжает слева по мере перетягивания за край данных. */}
+        {(overscrollPx > 0 || isExtending) && (
+          <div
+            className="pointer-events-none absolute left-0 top-1/2 z-10 max-w-[150px] rounded-r-xl bg-ink/85 px-3 py-2.5 text-[11px] leading-4 text-white shadow-sm"
+            style={{
+              transform: `translate(${Math.min(overscrollPx, 48) - (isExtending ? 0 : 48)}px, -50%)`,
+              transition: isExtending ? "transform 0.15s ease" : undefined,
+            }}
+          >
+            {isExtending
+              ? "Догружаю свечи…"
+              : (exhausted[interval] ?? false)
+                ? "Истории на бирже больше нет"
+                : overscrollPx >= EXTEND_TRIGGER_PX
+                  ? "Отпусти — догружу свечи"
+                  : "Тяни — догружу историю"}
+          </div>
+        )}
       </div>
 
       {error && <p className="text-xs text-negative">{error}</p>}

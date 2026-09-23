@@ -48,6 +48,27 @@ export const JOURNAL_CANDLE_INTERVALS: CandleIntervalConfig[] = [
   { key: "1h", stepMs: HOUR, beforeMs: 12 * DAY, afterMs: 3 * DAY },
 ];
 
+/**
+ * Догрузка истории влево (pull-to-load на графике, 23.09.2026): за раз окно расширяется
+ * ещё на beforeMs интервала, но не глубже потолка от входа сделки — защита от
+ * бесконечного дотягивания в мегазапросы.
+ */
+export const EXTEND_MAX_DEPTH_MS: Record<CandleIntervalKey, number> = {
+  "15m": 45 * DAY,
+  "1h": 365 * DAY,
+};
+
+/** Новое начало окна после догрузки: ещё beforeMs влево, но не глубже потолка. null — уже упёрлись. */
+export function computeExtendedFromMs(
+  currentFromMs: number,
+  tradeOpenedMs: number,
+  config: CandleIntervalConfig,
+): number | null {
+  const floor = tradeOpenedMs - EXTEND_MAX_DEPTH_MS[config.key];
+  const next = Math.max(currentFromMs - config.beforeMs, floor);
+  return next < currentFromMs ? next : null;
+}
+
 export function intervalConfig(key: string): CandleIntervalConfig | null {
   return JOURNAL_CANDLE_INTERVALS.find((config) => config.key === key) ?? null;
 }
@@ -88,6 +109,42 @@ export async function ensureTradeCandles(trade: Trade, config: CandleIntervalCon
   }
   await upsertCandleSync(trade.id, config.key, fromMs, toMs, fetched);
   return fetched;
+}
+
+export type ExtendResult = { added: number; exhausted: boolean };
+
+/**
+ * Расширяет окно свечей сделки в прошлое на один шаг (см. computeExtendedFromMs).
+ * Новые свечи ложатся в тот же вечный кэш; факт — обновлённый from_time в
+ * journal_candle_syncs. exhausted: упёрлись в потолок глубины ИЛИ биржа не отдала
+ * ни одной свечи (история кончилась) — клиенту больше не предлагать тянуть.
+ */
+export async function extendTradeCandlesBack(trade: Trade, config: CandleIntervalConfig): Promise<ExtendResult> {
+  // Без собранного базового окна расширять нечего — соберём его.
+  await ensureTradeCandles(trade, config);
+  const sync = await getCandleSync(trade.id, config.key);
+  if (!sync) return { added: 0, exhausted: false };
+
+  const currentFromMs = sync.fromTime.getTime();
+  const newFromMs = computeExtendedFromMs(currentFromMs, trade.openedAt.getTime(), config);
+  if (newFromMs === null) return { added: 0, exhausted: true };
+
+  let cursor = newFromMs;
+  let added = 0;
+  const maxPages = Math.ceil((currentFromMs - newFromMs) / config.stepMs / 1000) + 3;
+  for (let page = 0; page < maxPages && cursor < currentFromMs; page += 1) {
+    const batch = await getKlines(trade.symbol, config.key, cursor, currentFromMs, 1440);
+    if (batch.length === 0) break;
+    await insertCandles(trade.symbol, config.key, batch);
+    added += batch.length;
+    const lastTime = batch[batch.length - 1]!.time;
+    if (lastTime + config.stepMs <= cursor) break;
+    cursor = lastTime + config.stepMs;
+    if (batch.length < 1440) break;
+  }
+
+  await upsertCandleSync(trade.id, config.key, newFromMs, sync.toTime.getTime(), sync.candlesFetched + added);
+  return { added, exhausted: added === 0 };
 }
 
 // --- Метрики -------------------------------------------------------------------------------

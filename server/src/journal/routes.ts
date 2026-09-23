@@ -40,10 +40,12 @@ import {
 import { toTradeCard, toTradeDetail } from "./view.js";
 import {
   ensureTradeCandles,
+  extendTradeCandlesBack,
   intervalConfig,
   tradeCandleWindow,
+  type CandleIntervalConfig,
 } from "./marketData.js";
-import { getDrawings, listCandles, saveDrawings } from "./marketRepository.js";
+import { getCandleSync, getDrawings, listCandles, saveDrawings } from "./marketRepository.js";
 import { buildStructure } from "./structure.js";
 
 const DEFAULT_LIMIT = 50;
@@ -401,28 +403,40 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
       } catch (error) {
         request.log.warn({ error, tradeId }, "Журнал: не удалось дособрать свечи (отдаём кэш)");
       }
-      const { fromMs, toMs } = tradeCandleWindow(trade, config);
-      const [candles, drawings] = await Promise.all([
-        listCandles(trade.symbol, config.key, fromMs, toMs),
-        getDrawings(tradeId),
-      ]);
-      return {
-        interval: config.key,
-        stepMs: config.stepMs,
-        range: { fromMs, toMs },
-        candles: candles.map((candle) => ({
-          t: candle.time,
-          o: candle.open,
-          h: candle.high,
-          l: candle.low,
-          c: candle.close,
-          v: candle.volume,
-        })),
-        // Уровни, зоны накопления и сломы структуры — рисуются в рабочей зоне
-        // (переключатель «Структура»); считаются чистыми функциями по свечам окна.
-        structure: buildStructure(candles),
-        drawings,
-      };
+      return buildChartResponse(tradeId, trade.symbol, config, trade);
+    },
+  );
+
+  // Догрузка истории влево: пользователь дотянул график за край данных (pull-to-load).
+  // Событийный REST к публичным klines, свечи — в тот же вечный кэш.
+  app.post<{ Params: { id: string }; Body: { interval?: string } }>(
+    "/journal/trades/:id/chart/extend",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const tradeId = Number(request.params.id);
+      const config = intervalConfig(request.body?.interval ?? "");
+      if (!Number.isInteger(tradeId) || !config) {
+        reply.code(400).send({ error: "Некорректный запрос догрузки" });
+        return;
+      }
+      const trade = await getTradeById(tradeId);
+      if (!trade || trade.status !== "closed") {
+        reply.code(404).send({ error: "Сделка не найдена" });
+        return;
+      }
+      let added = 0;
+      let exhausted = false;
+      try {
+        const result = await extendTradeCandlesBack(trade, config);
+        added = result.added;
+        exhausted = result.exhausted;
+      } catch (error) {
+        request.log.warn({ error, tradeId }, "Журнал: догрузка истории не удалась");
+        reply.code(502).send({ error: "Биржа не ответила — попробуй ещё раз" });
+        return;
+      }
+      const response = await buildChartResponse(tradeId, trade.symbol, config, trade);
+      return { ...response, added, exhausted };
     },
   );
 
@@ -524,6 +538,43 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
       };
     },
   );
+}
+
+/**
+ * Ответ графика: свечи фактического окна (from_time из journal_candle_syncs — окно могло
+ * быть расширено догрузкой), структура и линии. Общий для GET графика и POST догрузки.
+ */
+async function buildChartResponse(
+  tradeId: number,
+  symbol: string,
+  config: CandleIntervalConfig,
+  trade: Parameters<typeof tradeCandleWindow>[0],
+) {
+  const base = tradeCandleWindow(trade, config);
+  const sync = await getCandleSync(tradeId, config.key);
+  const fromMs = sync ? Math.min(sync.fromTime.getTime(), base.fromMs) : base.fromMs;
+  const toMs = sync ? Math.max(sync.toTime.getTime(), base.toMs) : base.toMs;
+  const [candles, drawings] = await Promise.all([
+    listCandles(symbol, config.key, fromMs, toMs),
+    getDrawings(tradeId),
+  ]);
+  return {
+    interval: config.key,
+    stepMs: config.stepMs,
+    range: { fromMs, toMs },
+    candles: candles.map((candle) => ({
+      t: candle.time,
+      o: candle.open,
+      h: candle.high,
+      l: candle.low,
+      c: candle.close,
+      v: candle.volume,
+    })),
+    // Уровни, зоны накопления и сломы структуры — рисуются в рабочей зоне
+    // (переключатель «Структура»); считаются чистыми функциями по свечам окна.
+    structure: buildStructure(candles),
+    drawings,
+  };
 }
 
 /** Блок разбора для детали сделки: категория + ответы с метаданными пунктов. */
