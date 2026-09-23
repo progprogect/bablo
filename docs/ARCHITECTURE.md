@@ -243,8 +243,9 @@ hour_blocks     — история блокировок убыточных ча�
 journal_categories — категории разбора (журнал): name, sort_order, archived_at.
                    Архив вместо удаления, когда по категории уже есть разборы
 journal_checklist_items — пункты чек-листа категории: label, answer_type
-                   ('yes_no' | 'scale_0_10' | 'stars_0_5' | 'text' — фиксируется при
-                   создании), sort_order (drag-and-drop в конструкторе),
+                   ('yes_no' | 'scale_0_10' | 'stars_0_5' | 'choice' | 'text' — фиксируется при
+                   создании), options (jsonb, только у 'choice' — варианты тоже
+                   фиксируются при создании), sort_order (drag-and-drop в конструкторе),
                    archived_at (архив, если на пункт уже отвечали)
 journal_entries — разбор сделки: trade_id (UNIQUE — одна категория на сделку,
                    ON DELETE CASCADE от trades: «Очистить данные для нового аккаунта»
@@ -345,7 +346,9 @@ PUT  /api/journal/categories/:id/items-order — порядок пунктов �
                                    { itemIds } — перестановка РОВНО всех активных пунктов
                                    (validateItemsReorder), sort_order = позиция
 GET  /api/journal/analysis/:id  — таблица категории: columns (активные пункты + архивные
-                                   с ответами), rows, aggregates {plus, minus}
+                                   с ответами, с options у 'choice') и rows; агрегаты
+                                   «В плюсе/В минусе» считает клиент по отфильтрованным
+                                   строкам (фильтры и сортировка таблицы — клиентские)
 GET  /api/push/public-key       — публичный VAPID-ключ для подписки на push
 POST /api/push/subscribe        — { subscription } — регистрация устройства
 POST /api/push/unsubscribe      — { endpoint } — снятие подписки устройства
