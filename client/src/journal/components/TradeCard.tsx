@@ -70,36 +70,13 @@ export function TradeSummary({ trade }: { trade: JournalTradeCard }) {
  * уровни входа и факт закрытия. Геометрия — как у карточек Истории терминала, палитра —
  * токенами темы.
  */
-export function TradeCard({
-  trade,
-  categoryName,
-  showCategory,
-}: {
-  trade: JournalTradeCard;
-  categoryName: string | null;
-  /** Чип категории показывается только в смешанной ленте «Все». */
-  showCategory: boolean;
-}) {
+export function TradeCard({ trade }: { trade: JournalTradeCard }) {
   return (
     <Link
       to={`/trades/${trade.id}`}
       className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm"
     >
       <TradeSummary trade={trade} />
-
-      {showCategory && (
-        <div className="flex items-center justify-between">
-          {trade.categoryId !== null && categoryName ? (
-            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
-              {categoryName}
-            </span>
-          ) : (
-            <span className="rounded-full bg-line/60 px-2 py-0.5 text-[11px] font-medium text-muted">
-              Неразобранная
-            </span>
-          )}
-        </div>
-      )}
     </Link>
   );
 }

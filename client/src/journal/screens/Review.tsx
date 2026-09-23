@@ -7,8 +7,9 @@ import type { JournalOverview, JournalTradeCard } from "../types";
 const PAGE_SIZE = 50;
 
 /**
- * Лента «Разбора»: закрытые сделки с чипами-фильтрами. По умолчанию — «Неразобранные»:
- * это рабочая очередь журнала, новые закрытые сделки попадают в неё сами.
+ * Лента «Разбора»: закрытые сделки с чипами-фильтрами. По умолчанию — «Новые»: это
+ * рабочая очередь журнала, новые закрытые сделки попадают в неё сами. Разобранные сделки
+ * видны по чипу своей категории — отдельной смешанной ленты «Все» нет (правка 23.09.2026).
  */
 export function Review() {
   const [overview, setOverview] = useState<JournalOverview | null>(null);
@@ -65,12 +66,6 @@ export function Review() {
     }
   }
 
-  const categoryNames = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const category of overview?.categories ?? []) map.set(category.id, category.name);
-    return map;
-  }, [overview]);
-
   /** Группировка ленты по локальной дате закрытия — «разбивка по датам». */
   const groups = useMemo(() => {
     const result: { date: string; trades: JournalTradeCard[] }[] = [];
@@ -103,11 +98,10 @@ export function Review() {
       {/* Чипы-фильтры. Горизонтальный скролл: категорий может быть много. */}
       <div className="flex gap-1.5 overflow-x-auto px-4 pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <FilterChip
-          label={`Неразобранные${overview ? ` · ${overview.unsortedCount}` : ""}`}
+          label={`Новые${overview ? ` · ${overview.unsortedCount}` : ""}`}
           active={filter === "unsorted"}
           onClick={() => setFilter("unsorted")}
         />
-        <FilterChip label="Все" active={filter === "all"} onClick={() => setFilter("all")} />
         {(overview?.categories ?? []).map((category) => (
           <FilterChip
             key={category.id}
@@ -121,21 +115,14 @@ export function Review() {
       {isLoading ? (
         <p className="px-6 text-center text-sm text-muted">Загрузка…</p>
       ) : trades.length === 0 ? (
-        <EmptyState filter={filter} onShowAll={() => setFilter("all")} />
+        <EmptyState filter={filter} />
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map((group) => (
             <div key={group.date} className="flex flex-col gap-3">
               <p className="px-4 text-xs font-medium uppercase tracking-wide text-muted">{group.date}</p>
               {group.trades.map((trade) => (
-                <TradeCard
-                  key={trade.id}
-                  trade={trade}
-                  // Чип категории имеет смысл только в смешанной ленте «Все»: в фильтрах
-                  // «Неразобранные» и по категории он одинаков у каждой карточки — шум.
-                  showCategory={filter === "all"}
-                  categoryName={trade.categoryId !== null ? (categoryNames.get(trade.categoryId) ?? null) : null}
-                />
+                <TradeCard key={trade.id} trade={trade} />
               ))}
             </div>
           ))}
@@ -169,15 +156,12 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-function EmptyState({ filter, onShowAll }: { filter: TradesFilter; onShowAll: () => void }) {
+function EmptyState({ filter }: { filter: TradesFilter }) {
   if (filter === "unsorted") {
     return (
       <div className="flex flex-col items-center gap-2 px-6 py-8 text-center">
         <p className="text-sm text-ink">Все сделки разобраны</p>
         <p className="text-xs text-muted">Новые закрытые сделки появятся здесь сами.</p>
-        <button type="button" onClick={onShowAll} className="text-sm font-medium text-accent">
-          Показать все сделки
-        </button>
       </div>
     );
   }

@@ -15,7 +15,9 @@ import type {
 
 /** Типизированный клиент /api/journal/*. Транспорт общий с терминалом (api/http.ts). */
 
-export type TradesFilter = "unsorted" | "all" | number;
+/** Фильтр ленты: очередь разбора или конкретная категория (сервер понимает ещё "all" —
+ *  лента «Все» убрана из UI 23.09.2026, но закэшированный PWA-клиент может её слать). */
+export type TradesFilter = "unsorted" | number;
 
 export const getOverview = () => request<JournalOverview>("/journal/overview");
 
