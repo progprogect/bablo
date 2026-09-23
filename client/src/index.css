@@ -21,14 +21,17 @@
 }
 
 .theme-journal {
-  --surface-rgb: 242 242 247; /* systemGroupedBackground #F2F2F7 */
+  /* Палитра «Небо» (23.09.2026): исходная серая гамма iOS (systemGroupedBackground
+     #F2F2F7 + secondaryLabel) показалась пользователю унылой — фон и вторичные тона
+     сделаны светло-голубыми, акцент и плюс/минус остались системными цветами iOS. */
+  --surface-rgb: 245 249 255; /* #F5F9FF — светло-голубой воздух вместо серого */
   --card-rgb: 255 255 255;
-  --line-rgb: 226 226 231; /* разделители в духе iOS separator */
-  --ink-rgb: 28 28 30; /* label #1C1C1E */
+  --line-rgb: 222 232 246; /* #DEE8F6 — голубоватая светлая граница */
+  --ink-rgb: 23 33 54; /* #172136 — тёмный сине-графитовый текст */
   --accent-rgb: 0 122 255; /* systemBlue #007AFF */
   --positive-rgb: 52 199 89; /* systemGreen #34C759 */
   --negative-rgb: 255 59 48; /* systemRed #FF3B30 */
-  --muted-rgb: 142 142 147; /* secondaryLabel #8E8E93 */
+  --muted-rgb: 123 140 171; /* #7B8CAB — сине-серые подписи вместо чисто серых */
 }
 
 html,
