@@ -145,3 +145,5 @@ export type TradeChartResponse = {
   structure?: PriceStructure;
   drawings: ChartDrawing[];
 };
+
+export type ExtendChartResponse = TradeChartResponse & { added: number; exhausted: boolean };

@@ -2,6 +2,7 @@ import { request } from "../api/http";
 import type {
   AnalysisResponse,
   ChartDrawing,
+  ExtendChartResponse,
   TradeChartResponse,
   AnswerType,
   AnswerValue,
@@ -81,4 +82,10 @@ export const saveDrawings = (tradeId: number, drawings: ChartDrawing[]) =>
   request<{ ok: boolean }>(`/journal/trades/${tradeId}/drawings`, {
     method: "PUT",
     body: JSON.stringify({ drawings }),
+  });
+
+export const extendTradeChart = (tradeId: number, interval: "15m" | "1h") =>
+  request<ExtendChartResponse>(`/journal/trades/${tradeId}/chart/extend`, {
+    method: "POST",
+    body: JSON.stringify({ interval }),
   });

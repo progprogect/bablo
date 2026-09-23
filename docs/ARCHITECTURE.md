@@ -335,6 +335,12 @@ GET  /api/journal/trades/:id/chart — свечи для рабочей зоны
                                    stepMs и линии пользователя
 PUT  /api/journal/trades/:id/drawings — линии рабочей зоны целиком ({ drawings },
                                    validateDrawings: id + четыре конечных числа)
+POST /api/journal/trades/:id/chart/extend — догрузка истории влево (pull-to-load):
+                                   { interval } → окно расширяется на beforeMs интервала
+                                   до потолка EXTEND_MAX_DEPTH_MS (computeExtendedFromMs
+                                   под тестом); свечи — в тот же кэш, новый from_time — в
+                                   journal_candle_syncs; ответ — полный график + added и
+                                   exhausted (потолок или биржа отдала ноль)
 PUT  /api/journal/categories/:id/items-order — порядок пунктов после drag-and-drop:
                                    { itemIds } — перестановка РОВНО всех активных пунктов
                                    (validateItemsReorder), sort_order = позиция
