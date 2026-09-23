@@ -211,8 +211,8 @@ function CellValue({ value, answerType }: { value: AnswerValue | undefined; answ
       <span className="font-medium text-negative">✕</span>
     );
   }
-  if (answerType === "scale_0_10") {
-    return <span className="text-ink">{String(value)}</span>;
+  if (answerType === "scale_0_10" || answerType === "stars_0_5") {
+    return <span className="text-ink tabular-nums">{String(value)}</span>;
   }
   return (
     <span className="inline-block max-w-[9rem] truncate align-bottom text-left text-ink" title={String(value)}>

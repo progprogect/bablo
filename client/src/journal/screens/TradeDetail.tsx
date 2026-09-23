@@ -4,6 +4,7 @@ import { ApiError } from "../../api/http";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 import { getCategories, getJournalTrade, removeEntry, saveEntry } from "../api";
 import { DetailList, DetailRow } from "../components/DetailRow";
+import { StarsInput, StarsView } from "../components/Stars";
 import { OUTCOME_LABELS, SideBadge } from "../components/TradeCard";
 import type {
   AnswerValue,
@@ -278,6 +279,9 @@ function AnswerValueView({ type, value }: { type: string; value: AnswerValue | n
   if (type === "scale_0_10") {
     return <span className="text-sm font-medium text-ink">{String(value)} / 10</span>;
   }
+  if (type === "stars_0_5" && typeof value === "number") {
+    return <StarsView value={value} />;
+  }
   return <span className="text-sm text-ink">{String(value)}</span>;
 }
 
@@ -447,6 +451,9 @@ function ChecklistField({
             />
           ))}
         </div>
+      )}
+      {answerType === "stars_0_5" && (
+        <StarsInput value={typeof value === "number" ? value : undefined} onChange={onChange} />
       )}
       {answerType === "text" && (
         <textarea

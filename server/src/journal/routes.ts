@@ -6,6 +6,7 @@ import {
   buildAnalysisAggregates,
   isAnswerType,
   validateAnswers,
+  validateItemsReorder,
   type AnswerInput,
   type AnswerType,
   type ChecklistItemDef,
@@ -31,6 +32,7 @@ import {
   listJournalTrades,
   renameCategory,
   renameItem,
+  reorderItems,
   upsertEntry,
   type JournalTradesFilter,
 } from "./repository.js";
@@ -297,6 +299,35 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
       }
       const created = await createItem(categoryId, label, answerType);
       return { id: created.id, label: created.label, answerType: created.answerType };
+    },
+  );
+
+  // Порядок пунктов чек-листа — drag-and-drop в конструкторе (23.09.2026).
+  app.put<{ Params: { id: string }; Body: { itemIds?: unknown } }>(
+    "/journal/categories/:id/items-order",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const categoryId = Number(request.params.id);
+      if (!Number.isInteger(categoryId)) {
+        reply.code(400).send({ error: "Некорректный id категории" });
+        return;
+      }
+      const category = await getActiveCategory(categoryId);
+      if (!category) {
+        reply.code(404).send({ error: "Категория не найдена" });
+        return;
+      }
+      const activeItems = await listActiveItems(categoryId);
+      const validated = validateItemsReorder(
+        activeItems.map((item) => item.id),
+        request.body?.itemIds,
+      );
+      if (!validated.ok) {
+        reply.code(400).send({ error: validated.error });
+        return;
+      }
+      await reorderItems(categoryId, validated.itemIds);
+      return { ok: true };
     },
   );
 

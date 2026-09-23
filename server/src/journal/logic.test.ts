@@ -8,6 +8,7 @@ import {
   mfeR,
   plannedRR,
   validateAnswers,
+  validateItemsReorder,
   type AnswerValue,
   type ChecklistItemDef,
 } from "./logic.js";
@@ -197,4 +198,45 @@ test("buildAnalysisAggregates: пустая группа — нули и null-с
   ]);
   assert.equal(minus.tradesCount, 0);
   assert.deepEqual(minus.byItem[2], { kind: "scale", average: null, total: 0 });
+});
+
+// --- Звёзды 0–5 и переупорядочивание пунктов (23.09.2026) ---------------------------------
+
+
+const starsItems: ChecklistItemDef[] = [{ id: 5, answerType: "stars_0_5", label: "Оценка сетапа" }];
+
+test("stars_0_5: целые 0–5 валидны, включая ноль", () => {
+  for (const value of [0, 1, 3, 5]) {
+    assert.equal(validateAnswers(starsItems, [{ itemId: 5, value }]).ok, true, `value=${value}`);
+  }
+});
+
+test("stars_0_5: дробные, вне диапазона и не числа — ошибка", () => {
+  for (const value of [2.5, -1, 6, "3", true, null]) {
+    assert.equal(validateAnswers(starsItems, [{ itemId: 5, value }]).ok, false, `value=${String(value)}`);
+  }
+});
+
+test("stars_0_5: агрегируется как среднее (kind scale)", () => {
+  const rows = [
+    { resultR: 1, answers: answers({ 5: 4 }) },
+    { resultR: 2, answers: answers({ 5: 5 }) },
+    { resultR: -1, answers: answers({ 5: 1 }) },
+  ];
+  const { plus, minus } = buildAnalysisAggregates(starsItems, rows);
+  assert.deepEqual(plus.byItem[5], { kind: "scale", average: 4.5, total: 2 });
+  assert.deepEqual(minus.byItem[5], { kind: "scale", average: 1, total: 1 });
+});
+
+test("validateItemsReorder: перестановка ровно всех активных пунктов", () => {
+  const ok = validateItemsReorder([1, 2, 3], [3, 1, 2]);
+  assert.deepEqual(ok, { ok: true, itemIds: [3, 1, 2] });
+});
+
+test("validateItemsReorder: дубли, чужие, пропуски и не-массив — ошибка", () => {
+  assert.equal(validateItemsReorder([1, 2, 3], [1, 1, 2]).ok, false);
+  assert.equal(validateItemsReorder([1, 2, 3], [1, 2, 4]).ok, false);
+  assert.equal(validateItemsReorder([1, 2, 3], [1, 2]).ok, false);
+  assert.equal(validateItemsReorder([1, 2, 3], "1,2,3").ok, false);
+  assert.equal(validateItemsReorder([1, 2, 3], [1, 2, "3"]).ok, false);
 });

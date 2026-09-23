@@ -2,7 +2,7 @@
 
 export type TradeSide = "long" | "short";
 export type TradeOutcome = "tp" | "sl" | "be" | "other";
-export type AnswerType = "yes_no" | "scale_0_10" | "text";
+export type AnswerType = "yes_no" | "scale_0_10" | "stars_0_5" | "text";
 export type AnswerValue = boolean | number | string;
 
 export type JournalOverview = {
