@@ -44,6 +44,7 @@ import {
   tradeCandleWindow,
 } from "./marketData.js";
 import { getDrawings, listCandles, saveDrawings } from "./marketRepository.js";
+import { buildStructure } from "./structure.js";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -417,6 +418,9 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
           c: candle.close,
           v: candle.volume,
         })),
+        // Уровни, зоны накопления и сломы структуры — рисуются в рабочей зоне
+        // (переключатель «Структура»); считаются чистыми функциями по свечам окна.
+        structure: buildStructure(candles),
         drawings,
       };
     },

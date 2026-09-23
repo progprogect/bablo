@@ -8,7 +8,7 @@
  * старый снапшот, и что пересчитать.
  */
 
-export const METRICS_VERSION = 1;
+export const METRICS_VERSION = 2;
 
 export type Candle = {
   /** Время открытия свечи, ms. */
@@ -97,6 +97,146 @@ export function atrSeries(candles: Candle[], period = 14): (number | null)[] {
   return result;
 }
 
+/** Максимум high и минимум low за последние period свечей на index; null при нехватке. */
+export function donchianAt(
+  candles: Candle[],
+  period: number,
+  index: number,
+): { high: number; low: number } | null {
+  if (index + 1 < period) return null;
+  let high = Number.NEGATIVE_INFINITY;
+  let low = Number.POSITIVE_INFINITY;
+  for (let i = index - period + 1; i <= index; i += 1) {
+    high = Math.max(high, candles[i]!.high);
+    low = Math.min(low, candles[i]!.low);
+  }
+  return { high, low };
+}
+
+/** Stochastic %K (raw) на index: (close − minLow) / (maxHigh − minLow) × 100. */
+function stochKAt(candles: Candle[], period: number, index: number): number | null {
+  const channel = donchianAt(candles, period, index);
+  if (!channel) return null;
+  const span = channel.high - channel.low;
+  if (span === 0) return 50;
+  return ((candles[index]!.close - channel.low) / span) * 100;
+}
+
+/** Stochastic(14, 3): %K и его SMA(3) как %D. */
+export function stochasticAt(
+  candles: Candle[],
+  index: number,
+  period = 14,
+  smooth = 3,
+): { k: number; d: number } | null {
+  const k = stochKAt(candles, period, index);
+  if (k === null) return null;
+  let sum = 0;
+  for (let i = index - smooth + 1; i <= index; i += 1) {
+    const value = i >= 0 ? stochKAt(candles, period, i) : null;
+    if (value === null) return null;
+    sum += value;
+  }
+  return { k, d: sum / smooth };
+}
+
+/** Williams %R(14): −100 × (maxHigh − close) / (maxHigh − minLow). */
+export function williamsRAt(candles: Candle[], index: number, period = 14): number | null {
+  const channel = donchianAt(candles, period, index);
+  if (!channel) return null;
+  const span = channel.high - channel.low;
+  if (span === 0) return -50;
+  return (-100 * (channel.high - candles[index]!.close)) / span;
+}
+
+/** CCI(20): (typicalPrice − SMA) / (0.015 × среднее абсолютное отклонение). */
+export function cciAt(candles: Candle[], index: number, period = 20): number | null {
+  if (index + 1 < period) return null;
+  const typical = (i: number) => (candles[i]!.high + candles[i]!.low + candles[i]!.close) / 3;
+  let sum = 0;
+  for (let i = index - period + 1; i <= index; i += 1) sum += typical(i);
+  const mean = sum / period;
+  let deviation = 0;
+  for (let i = index - period + 1; i <= index; i += 1) deviation += Math.abs(typical(i) - mean);
+  const meanDeviation = deviation / period;
+  if (meanDeviation === 0) return 0;
+  return (typical(index) - mean) / (0.015 * meanDeviation);
+}
+
+/** ADX(14) с DI± по Уайлдеру. Ряды; первые ~2×period значений — null. */
+export function adxSeries(
+  candles: Candle[],
+  period = 14,
+): { adx: number | null; plusDi: number | null; minusDi: number | null }[] {
+  type AdxRow = { adx: number | null; plusDi: number | null; minusDi: number | null };
+  const n = candles.length;
+  const result: AdxRow[] = Array.from({ length: n }, () => ({ adx: null, plusDi: null, minusDi: null }));
+  if (n <= period * 2) return result;
+
+  const tr: number[] = [];
+  const plusDm: number[] = [];
+  const minusDm: number[] = [];
+  for (let i = 1; i < n; i += 1) {
+    const c = candles[i]!;
+    const p = candles[i - 1]!;
+    tr.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+    const upMove = c.high - p.high;
+    const downMove = p.low - c.low;
+    plusDm.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDm.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+
+  let trSum = 0;
+  let plusSum = 0;
+  let minusSum = 0;
+  for (let i = 0; i < period; i += 1) {
+    trSum += tr[i]!;
+    plusSum += plusDm[i]!;
+    minusSum += minusDm[i]!;
+  }
+  const dxs: number[] = [];
+  let adx: number | null = null;
+  for (let i = period; i <= tr.length; i += 1) {
+    const plusDi = trSum === 0 ? 0 : (100 * plusSum) / trSum;
+    const minusDi = trSum === 0 ? 0 : (100 * minusSum) / trSum;
+    const diSum = plusDi + minusDi;
+    const dx = diSum === 0 ? 0 : (100 * Math.abs(plusDi - minusDi)) / diSum;
+    dxs.push(dx);
+    if (dxs.length === period) {
+      adx = dxs.reduce((total, value) => total + value, 0) / period;
+    } else if (dxs.length > period && adx !== null) {
+      adx = (adx * (period - 1) + dx) / period;
+    }
+    // Свеча i (индекс в candles): tr[i-1] — последний учтённый.
+    result[i]!.plusDi = plusDi;
+    result[i]!.minusDi = minusDi;
+    result[i]!.adx = dxs.length >= period ? adx : null;
+    if (i < tr.length) {
+      trSum = trSum - trSum / period + tr[i]!;
+      plusSum = plusSum - plusSum / period + plusDm[i]!;
+      minusSum = minusSum - minusSum / period + minusDm[i]!;
+    }
+  }
+  return result;
+}
+
+/** VWAP от начала UTC-суток свечи index до неё включительно (по typical price). */
+export function dayVwapAt(candles: Candle[], index: number): number | null {
+  const dayStart = new Date(candles[index]!.time);
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const fromMs = dayStart.getTime();
+  let volumeSum = 0;
+  let pvSum = 0;
+  for (let i = index; i >= 0 && candles[i]!.time >= fromMs; i -= 1) {
+    const c = candles[i]!;
+    const typical = (c.high + c.low + c.close) / 3;
+    pvSum += typical * c.volume;
+    volumeSum += c.volume;
+  }
+  if (volumeSum === 0) return null;
+  return pvSum / volumeSum;
+}
+
 // --- Снапшот на момент входа ---------------------------------------------------------------
 
 export type IndicatorSnapshot = {
@@ -127,6 +267,18 @@ export type IndicatorSnapshot = {
   } | null;
   /** Объём свечи к SMA(20) объёма. */
   volumeRatio20: number | null;
+  // --- v2 (23.09.2026) ---
+  stochastic14: { k: number; d: number } | null;
+  williamsR14: number | null;
+  cci20: number | null;
+  adx14: { adx: number | null; plusDi: number | null; minusDi: number | null } | null;
+  /** Канал Дончиана(20) и положение цены в нём (0 — низ, 100 — верх). */
+  donchian20: { high: number; low: number; positionPct: number } | null;
+  /** VWAP текущих UTC-суток и дистанция цены до него в %. */
+  dayVwap: number | null;
+  priceToVwapPct: number | null;
+  /** Анатомия последней закрытой свечи в долях ATR: тело и тени. */
+  candleAnatomy: { bodyAtr: number; upperWickAtr: number; lowerWickAtr: number } | null;
 };
 
 /**
@@ -194,6 +346,30 @@ export function snapshotAt(candles: Candle[], index: number): IndicatorSnapshot 
 
   const pct = (ema: number | null) => (ema === null || ema === 0 ? null : ((close - ema) / ema) * 100);
 
+  const donchianChannel = donchianAt(candles, 20, index);
+  const donchian20 =
+    donchianChannel === null
+      ? null
+      : {
+          high: donchianChannel.high,
+          low: donchianChannel.low,
+          positionPct:
+            donchianChannel.high === donchianChannel.low
+              ? 50
+              : ((close - donchianChannel.low) / (donchianChannel.high - donchianChannel.low)) * 100,
+        };
+  const dayVwap = dayVwapAt(candles, index);
+  const adxRow = adxSeries(candles, 14)[index] ?? null;
+  const current = candles[index]!;
+  const candleAnatomy =
+    atr14 === null || atr14 === 0
+      ? null
+      : {
+          bodyAtr: Math.abs(current.close - current.open) / atr14,
+          upperWickAtr: (current.high - Math.max(current.open, current.close)) / atr14,
+          lowerWickAtr: (Math.min(current.open, current.close) - current.low) / atr14,
+        };
+
   return {
     candleTime: candles[index]!.time,
     close,
@@ -210,6 +386,14 @@ export function snapshotAt(candles: Candle[], index: number): IndicatorSnapshot 
     macd,
     bollinger,
     volumeRatio20: volumeSma === null || volumeSma === 0 ? null : volumes[index]! / volumeSma,
+    stochastic14: stochasticAt(candles, index),
+    williamsR14: williamsRAt(candles, index),
+    cci20: cciAt(candles, index),
+    adx14: adxRow !== null && adxRow.plusDi !== null ? adxRow : null,
+    donchian20,
+    dayVwap,
+    priceToVwapPct: dayVwap === null || dayVwap === 0 ? null : ((close - dayVwap) / dayVwap) * 100,
+    candleAnatomy,
   };
 }
 
