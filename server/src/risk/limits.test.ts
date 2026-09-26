@@ -119,21 +119,36 @@ test("isStrongTakeProfit: 1.85R проходит допуск 0.2, 1.7R — не
 });
 
 test("evaluateCooldownBlock: нет предыдущей сделки — блока нет", () => {
-  assert.equal(evaluateCooldownBlock(new Date(), null, 60), null);
+  assert.equal(evaluateCooldownBlock(new Date(), null, 60, null), null);
 });
 
-test("evaluateCooldownBlock: сделка закрылась 10 минут назад — активен блок до +60 минут", () => {
+test("evaluateCooldownBlock: после стопа 10 минут назад — активен блок до +60 минут", () => {
   const closedAt = new Date("2026-07-13T10:00:00Z");
   const now = new Date("2026-07-13T10:10:00Z");
-  const block = evaluateCooldownBlock(now, closedAt, 60);
+  const block = evaluateCooldownBlock(now, closedAt, 60, "sl");
   assert.ok(block);
   assert.equal(block?.until.toISOString(), "2026-07-13T11:00:00.000Z");
+});
+
+test("evaluateCooldownBlock: после ТЕЙКА паузы нет", () => {
+  const closedAt = new Date("2026-07-13T10:00:00Z");
+  const now = new Date("2026-07-13T10:10:00Z");
+  assert.equal(evaluateCooldownBlock(now, closedAt, 60, "tp"), null);
+});
+
+test("evaluateCooldownBlock: безубыток и ручное закрытие паузу оставляют", () => {
+  const closedAt = new Date("2026-07-13T10:00:00Z");
+  const now = new Date("2026-07-13T10:10:00Z");
+  assert.ok(evaluateCooldownBlock(now, closedAt, 60, "be"));
+  assert.ok(evaluateCooldownBlock(now, closedAt, 60, "other"));
+  // Исход неизвестен (данных нет) — ведём себя как раньше, с паузой.
+  assert.ok(evaluateCooldownBlock(now, closedAt, 60, null));
 });
 
 test("evaluateCooldownBlock: кулдаун истёк — блока нет", () => {
   const closedAt = new Date("2026-07-13T10:00:00Z");
   const now = new Date("2026-07-13T11:01:00Z");
-  assert.equal(evaluateCooldownBlock(now, closedAt, 60), null);
+  assert.equal(evaluateCooldownBlock(now, closedAt, 60, "sl"), null);
 });
 
 test("pickEffectiveBlock: выбирает блокировку с самым поздним until", () => {
@@ -228,7 +243,7 @@ test("buildVoluntaryPauseBlock: пауза 2 часа с понятной при
 
 test("buildVoluntaryPauseBlock: при нескольких глобальных локах действует самый долгий", () => {
   const now = new Date("2026-09-18T10:00:00.000Z");
-  const cooldown = evaluateCooldownBlock(now, new Date("2026-09-18T09:30:00.000Z"), 60);
+  const cooldown = evaluateCooldownBlock(now, new Date("2026-09-18T09:30:00.000Z"), 60, "sl");
   const effective = pickEffectiveBlock([cooldown!, buildVoluntaryPauseBlock(now)]);
   assert.equal(effective?.type, "voluntary_pause");
 });
