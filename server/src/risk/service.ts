@@ -334,6 +334,7 @@ export async function recordTradeClose(input: {
       strongRecoveryAfterSl: dailyStatsRow.strongRecoveryAfterSl,
     },
     lastTradeClosedAt: input.closedAt,
+    lastTradeOutcome: outcome,
     slSymbols,
     settings,
   });
@@ -375,6 +376,8 @@ function buildManagedBlocks(input: {
   now: Date;
   counters: { sumR: number; slCount: number; tpCount: number; strongRecoveryAfterSl: boolean };
   lastTradeClosedAt: Date | null;
+  /** Исход последней закрытой сделки — после тейка кулдауна нет (см. evaluateCooldownBlock). */
+  lastTradeOutcome: TradeOutcome | null;
   slSymbols: string[];
   settings: RiskSettingsLike;
 }): Block[] {
@@ -383,6 +386,7 @@ function buildManagedBlocks(input: {
     input.now,
     input.lastTradeClosedAt,
     input.settings.cooldownMinutes,
+    input.lastTradeOutcome,
   );
   if (cooldownBlock) {
     blocks.push(cooldownBlock);
@@ -490,11 +494,13 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     strongRecoveryAfterSl,
   });
 
-  const lastClosedAt = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]!.closedAt : null;
+  const lastTrade = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]! : null;
+  const lastClosedAt = lastTrade?.closedAt ?? null;
   const blocks = buildManagedBlocks({
     now,
     counters: { sumR, slCount, tpCount, strongRecoveryAfterSl },
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
+    lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
     slSymbols,
     settings,
   });

@@ -62,7 +62,7 @@ export function RiskPlanSection() {
       {settings && (
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-card p-3">
           <SettingRow
-            label="Кулдаун после сделки (мин)"
+            label="Кулдаун, кроме тейка (мин)"
             value={settings.cooldownMinutes}
             onChange={(value) => handleSettingsChange({ cooldownMinutes: value })}
           />

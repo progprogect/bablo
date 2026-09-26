@@ -1,3 +1,4 @@
+import type { TradeOutcome } from "../history/outcome.js";
 import { getNextResetAt } from "./tradingDay.js";
 
 export type BlockType =
@@ -178,13 +179,24 @@ export function buildVoluntaryPauseBlock(now: Date): Block {
   };
 }
 
-/** Кулдаун после ЛЮБОЙ закрытой сделки — антиовертрейдинг, независимо от результата. */
+/**
+ * Кулдаун после закрытой сделки — антиовертрейдинг. После ТЕЙКА паузы нет (правило
+ * пользователя от 26.09.2026): пауза нужна, чтобы не отыгрываться после неудачи, а
+ * сработавший план — не та ситуация, от которой надо остывать. После стопа, безубытка
+ * и ручного/внешнего закрытия пауза прежняя.
+ *
+ * «Тейк» здесь — исход по экономике сделки (history/outcome.ts), тот же, которым
+ * оперируют дневные лимиты и статистика: стоп, уведённый в прибыль, — это тоже тейк.
+ * Иначе история показывала бы «тейк», а движок держал бы паузу как после стопа.
+ */
 export function evaluateCooldownBlock(
   now: Date,
   lastTradeClosedAt: Date | null,
   cooldownMinutes: number,
+  lastTradeOutcome: TradeOutcome | null,
 ): Block | null {
   if (!lastTradeClosedAt) return null;
+  if (lastTradeOutcome === "tp") return null;
   const until = new Date(lastTradeClosedAt.getTime() + cooldownMinutes * 60_000);
   if (until <= now) return null;
   return {
