@@ -34,6 +34,12 @@ import {
   type Block,
   type BlockType,
 } from "./limits.js";
+import {
+  buildStopChainBlock,
+  computeStopChain,
+  type StopChainDay,
+  type StopChainState,
+} from "./stopChain.js";
 import { getTradingDayKey } from "./tradingDay.js";
 import { resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
@@ -325,6 +331,7 @@ export async function recordTradeClose(input: {
   });
 
   const slSymbols = await listDaySlSymbols(dayKey, settings.resetHour, settings.tzOffsetMinutes);
+  const stopChain = await loadStopChainState(input.closedAt, settings);
   const blocks = buildManagedBlocks({
     now: input.closedAt,
     counters: {
@@ -335,6 +342,7 @@ export async function recordTradeClose(input: {
     },
     lastTradeClosedAt: input.closedAt,
     lastTradeOutcome: outcome,
+    stopChain,
     slSymbols,
     settings,
   });
@@ -363,6 +371,54 @@ function resultRForDailyStats(
   return resultR;
 }
 
+/**
+ * История закрытых сделок, сгруппированная по торговым дням, — вход лестницы пауз
+ * (risk/stopChain.ts). Дни по возрастанию, исходы внутри дня — по времени закрытия.
+ */
+function toStopChainDays(
+  trades: {
+    closedAt: Date | string | null;
+    closeReason: string | null;
+    entryPrice: string | null;
+    slPrice: string | null;
+    side: string;
+    resultR: string | null;
+    statsOutcome: string | null;
+  }[],
+  settings: { resetHour: number; tzOffsetMinutes: number },
+): StopChainDay[] {
+  const byDay = new Map<string, { closedAtMs: number; outcome: TradeOutcome }[]>();
+  for (const trade of trades) {
+    if (!trade.closedAt) continue;
+    const closedAt = new Date(trade.closedAt);
+    const closedAtMs = closedAt.getTime();
+    if (!Number.isFinite(closedAtMs)) continue;
+    const dayKey = getTradingDayKey(closedAt, settings.resetHour, settings.tzOffsetMinutes);
+    const list = byDay.get(dayKey) ?? [];
+    list.push({ closedAtMs, outcome: outcomeOfTrade(trade) });
+    byDay.set(dayKey, list);
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([dayKey, items]) => ({
+      dayKey,
+      outcomes: items.sort((a, b) => a.closedAtMs - b.closedAtMs).map((item) => item.outcome),
+    }));
+}
+
+/**
+ * Состояние лестницы пауз на момент `now`. Считается из всей истории закрытых сделок:
+ * хранимого поля нет намеренно — переразметка исхода в админке чинит лестницу сама.
+ */
+async function loadStopChainState(
+  now: Date,
+  settings: { resetHour: number; tzOffsetMinutes: number },
+): Promise<StopChainState> {
+  const allClosed = await listAllClosedTrades();
+  const todayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
+  return computeStopChain(toStopChainDays(allClosed, settings), todayKey);
+}
+
 type RiskSettingsLike = {
   cooldownMinutes: number;
   dailyLossLimitR: number;
@@ -378,10 +434,21 @@ function buildManagedBlocks(input: {
   lastTradeClosedAt: Date | null;
   /** Исход последней закрытой сделки — после тейка кулдауна нет (см. evaluateCooldownBlock). */
   lastTradeOutcome: TradeOutcome | null;
+  /** Лестница пауз после стопов — задаёт лимит стопов дня и паузу на полные дни. */
+  stopChain: StopChainState;
   slSymbols: string[];
   settings: RiskSettingsLike;
 }): Block[] {
-  const blocks: Block[] = evaluateDailyLimitBlocks(input.now, input.counters, input.settings);
+  const blocks: Block[] = evaluateDailyLimitBlocks(
+    input.now,
+    input.counters,
+    input.settings,
+    input.stopChain.todayStopLimit,
+  );
+  const stopChainBlock = buildStopChainBlock(input.now, input.stopChain, input.settings);
+  if (stopChainBlock) {
+    blocks.push(stopChainBlock);
+  }
   const cooldownBlock = evaluateCooldownBlock(
     input.now,
     input.lastTradeClosedAt,
@@ -501,6 +568,7 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     counters: { sumR, slCount, tpCount, strongRecoveryAfterSl },
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
     lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
+    stopChain: computeStopChain(toStopChainDays(allClosed, settings), dayKey),
     slSymbols,
     settings,
   });

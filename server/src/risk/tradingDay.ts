@@ -55,6 +55,32 @@ export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: n
 }
 
 /**
+ * Момент сброса, до которого торговля закрыта, если день `dayKey` закрыт лестницей пауз
+ * (risk/stopChain.ts) плюс `extraFullDays` ПОЛНЫХ дней сверху. День `dayKey` заканчивается
+ * сбросом следующих суток, каждый полный день добавляет ещё сутки.
+ *
+ * `dayKey` — ключ торгового дня (YYYY-MM-DD, как его отдаёт getTradingDayKey). Некорректный
+ * ключ даёт null: риск-движок в этом случае просто не ставит блокировку, а не падает
+ * посреди записи результата закрытой сделки.
+ */
+export function getResetAtAfterTradingDay(
+  dayKey: string,
+  extraFullDays: number,
+  resetHour: number,
+  tzOffsetMinutes: number,
+): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const extra = Number.isFinite(extraFullDays) ? Math.max(0, Math.trunc(extraFullDays)) : 0;
+  const shifted = new Date(Date.UTC(year, month - 1, day + 1 + extra, resetHour, 0, 0, 0));
+  if (Number.isNaN(shifted.getTime())) return null;
+  return fromShifted(shifted, tzOffsetMinutes);
+}
+
+/**
  * Начало «ночи» в локальных часах (по умолчанию 00:00 МСК). Ночь длится до
  * resetHour торгового дня (07:00): в это окно дневные сделки поджимают TP до 1/1
  * (см. trades/nightTp.ts, docs/PROJECT.md).

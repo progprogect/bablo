@@ -19,6 +19,12 @@ export type BlockType =
   | "daily_loss"
   | "daily_profit"
   | "daily_stop_losses"
+  /**
+   * Лестница пауз после стопов (risk/stopChain.ts): закрывает торговлю на ПОЛНЫЕ дни
+   * сверх текущего. Первое срабатывание (два стопа за день) сюда не попадает — оно
+   * закрывает день обычным daily_stop_losses.
+   */
+  | "stop_chain"
   | "daily_take_profits"
   | "daily_recovery_after_sl"
   | "asset_sl_today";
@@ -120,6 +126,11 @@ export function evaluateDailyLimitBlocks(
   now: Date,
   counters: DailyLimitCounters,
   config: RiskLimitsConfig,
+  /**
+   * Сколько стопов за день закрывают торговлю. По умолчанию — обычные два (правило #4);
+   * внутри лестницы пауз (risk/stopChain.ts) хватает одного.
+   */
+  dayStopLimit: number = DAILY_STOP_LOSS_LIMIT,
 ): Block[] {
   const blocks: Block[] = [];
   const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
@@ -138,10 +149,13 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (counters.slCount >= DAILY_STOP_LOSS_LIMIT) {
+  if (counters.slCount >= dayStopLimit) {
     blocks.push({
       type: "daily_stop_losses",
-      reason: `${counters.slCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
+      reason:
+        dayStopLimit <= 1
+          ? "Стоп при активной серии — сегодня хватает одного, торговля возобновится после сброса дня"
+          : `${counters.slCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
       until,
     });
   }
