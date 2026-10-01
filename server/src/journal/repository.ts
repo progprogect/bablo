@@ -347,6 +347,26 @@ export async function countEntriesByCategory(): Promise<Map<number, number>> {
   return new Map(rows.map((row) => [row.categoryId, row.value]));
 }
 
+/**
+ * Разобранные сделки по категориям — сводке на карточках экрана «Анализ» (винрейт и
+ * сумма R, 01.10.2026). Сделки целиком, а не счётчик: исход и фактический R считаются
+ * тем же toTradeCard, что и строки таблицы, — иначе сводка могла бы разойтись с таблицей.
+ */
+export async function listEntryTradesByCategory(): Promise<Map<number, Trade[]>> {
+  const db = getDb();
+  const rows = await db
+    .select({ categoryId: journalEntries.categoryId, trade: trades })
+    .from(journalEntries)
+    .innerJoin(trades, eq(trades.id, journalEntries.tradeId));
+  const byCategory = new Map<number, Trade[]>();
+  for (const row of rows) {
+    const list = byCategory.get(row.categoryId) ?? [];
+    list.push(row.trade);
+    byCategory.set(row.categoryId, list);
+  }
+  return byCategory;
+}
+
 /** Число активных пунктов по категориям — конструктору и экрану «Анализ». */
 export async function countActiveItemsByCategory(): Promise<Map<number, number>> {
   const db = getDb();

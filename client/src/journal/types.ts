@@ -7,7 +7,16 @@ export type AnswerValue = boolean | number | string;
 
 export type JournalOverview = {
   unsortedCount: number;
-  categories: { id: number; name: string; tradesCount: number; itemsCount: number }[];
+  categories: {
+    id: number;
+    name: string;
+    tradesCount: number;
+    itemsCount: number;
+    /** Доля разобранных сделок с R > 0 (0..1), как у карточки месяца; null — сделок нет. */
+    winRate: number | null;
+    /** Сумма фактического R по разобранным сделкам категории. */
+    sumR: number;
+  }[];
 };
 
 export type JournalTradeCard = {
