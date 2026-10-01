@@ -47,7 +47,8 @@ function themeColor(name: string, alpha = 1): string {
 }
 
 export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
-  const [interval, setIntervalKey] = useState<Interval>("15m");
+  /** По умолчанию 5м (просьба пользователя от 01.10.2026; раньше открывался 15м). */
+  const [interval, setIntervalKey] = useState<Interval>("5m");
   const [data, setData] = useState<TradeChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,8 +57,9 @@ export function TradeChart({ trade }: { trade: JournalTradeDetail }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  /** Уровни, зоны накопления, BOS и поглощения (просьба пользователя «видеть» их). */
-  const [showStructure, setShowStructure] = useState(true);
+  /** Уровни, зоны накопления, BOS и поглощения — по умолчанию выключены (01.10.2026),
+   *  включаются тумблером «Структура», когда нужны. */
+  const [showStructure, setShowStructure] = useState(false);
   /** Pull-to-load влево: насколько график перетянут за край данных (px, для плашки). */
   const [overscrollPx, setOverscrollPx] = useState(0);
   const [isExtending, setIsExtending] = useState(false);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/http";
 import { formatSignedR } from "../../lib/format";
+import { SideBadge } from "../components/TradeCard";
 import { getAnalysis } from "../api";
 import type {
   AnalysisColumn,
@@ -20,7 +21,7 @@ import type {
  * фильтрах честные цифры только по видимому набору.
  */
 
-type SortKey = { kind: "trade" } | { kind: "r" } | { kind: "item"; itemId: number };
+type SortKey = { kind: "trade" } | { kind: "side" } | { kind: "r" } | { kind: "item"; itemId: number };
 
 /** Значение фильтра колонки; пустая строка = фильтра нет. Ключи: "trade" | "r" | "i<id>". */
 type Filters = Record<string, string>;
@@ -128,6 +129,14 @@ export function CategoryTable() {
                   desc={sort?.desc ?? false}
                   onClick={() => toggleSort({ kind: "trade" })}
                 />
+                {/* Направление сделки (просьба от 01.10.2026): лонг/шорт в таблице, со
+                    своей сортировкой и фильтром, как у остальных полей. */}
+                <SortableTh
+                  label="Сторона"
+                  active={sort !== null && sort.key.kind === "side"}
+                  desc={sort?.desc ?? false}
+                  onClick={() => toggleSort({ kind: "side" })}
+                />
                 <SortableTh
                   label="R"
                   active={sort !== null && sort.key.kind === "r"}
@@ -153,6 +162,17 @@ export function CategoryTable() {
                     value={filters["trade"] ?? ""}
                     onChange={(value) => setFilter("trade", value)}
                     options={[["", "Все"], ...symbols.map((symbol) => [symbol, symbol] as [string, string])]}
+                  />
+                </th>
+                <th className="border-b border-line bg-card px-2 py-1">
+                  <FilterSelect
+                    value={filters["side"] ?? ""}
+                    onChange={(value) => setFilter("side", value)}
+                    options={[
+                      ["", "Все"],
+                      ["long", "Лонг"],
+                      ["short", "Шорт"],
+                    ]}
                   />
                 </th>
                 <th className="border-b border-line bg-card px-2 py-1">
@@ -190,6 +210,9 @@ export function CategoryTable() {
                       <span className="text-[11px] text-muted">{formatDate(row.closedAt)}</span>
                     </Link>
                   </td>
+                  <td className="border-b border-line bg-card px-3 py-2 text-center">
+                    <SideBadge side={row.side} />
+                  </td>
                   <td className="border-b border-line bg-card px-3 py-2 text-right">
                     <RValue value={row.statsResultR} />
                   </td>
@@ -203,7 +226,7 @@ export function CategoryTable() {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={2 + data.columns.length}
+                    colSpan={3 + data.columns.length}
                     className="border-b border-l border-r border-line bg-card px-3 py-6 text-center text-muted"
                   >
                     Под фильтры не попала ни одна сделка.
@@ -343,6 +366,9 @@ function rowPassesFilters(row: AnalysisRow, columns: AnalysisColumn[], filters: 
   const symbolFilter = filters["trade"] ?? "";
   if (symbolFilter !== "" && row.symbol.replace(/-USDT$/, "") !== symbolFilter) return false;
 
+  const sideFilter = filters["side"] ?? "";
+  if (sideFilter !== "" && row.side !== sideFilter) return false;
+
   const rFilter = filters["r"] ?? "";
   if (rFilter !== "") {
     const r = row.statsResultR ?? 0;
@@ -458,6 +484,8 @@ function AggregateRow({
       >
         {label} · {group.tradesCount}
       </th>
+      {/* Пустые ячейки под «Сторона» и «R» — агрегатов по ним нет, как и раньше у R. */}
+      <th className={`border-b border-line ${bgClass} px-3 py-1.5`} />
       <th className={`border-b border-line ${bgClass} px-3 py-1.5`} />
       {columns.map((column) => (
         <th
@@ -531,6 +559,10 @@ function sameKey(a: SortKey, b: SortKey): boolean {
 function compareRows(a: AnalysisRow, b: AnalysisRow, key: SortKey, columns: AnalysisColumn[]): number {
   if (key.kind === "trade") {
     return (a.closedAt ?? "").localeCompare(b.closedAt ?? "");
+  }
+  if (key.kind === "side") {
+    // Лонги и шорты группируются вместе; направление бинарное, порядок внутри не важен.
+    return (a.side === "long" ? 0 : 1) - (b.side === "long" ? 0 : 1);
   }
   if (key.kind === "r") {
     return (a.statsResultR ?? Number.NEGATIVE_INFINITY) - (b.statsResultR ?? Number.NEGATIVE_INFINITY);

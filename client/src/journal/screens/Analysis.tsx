@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/http";
+import { formatSignedR } from "../../lib/format";
 import { getOverview } from "../api";
 import { plural } from "../plural";
 import type { JournalOverview } from "../types";
@@ -50,7 +51,7 @@ export function Analysis() {
             <Link
               key={category.id}
               to={`/analysis/${category.id}`}
-              className="mx-4 flex items-center justify-between rounded-2xl border border-line bg-card p-4 shadow-sm"
+              className="mx-4 flex items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm"
             >
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium text-ink">{category.name}</span>
@@ -59,7 +60,30 @@ export function Analysis() {
                   {plural(category.itemsCount, "пункт", "пункта", "пунктов")}
                 </span>
               </div>
-              <ChevronIcon />
+              <div className="flex items-center gap-3">
+                {/* Сводка категории (01.10.2026): винрейт (доля сделок в плюсе, как у
+                    карточки месяца) и сумма фактического R — видно, чего стоит сетап,
+                    не открывая таблицу. У пустой категории сводки нет. */}
+                {category.winRate !== null && (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-xs text-muted">
+                      <span className="font-medium text-ink">{Math.round(category.winRate * 100)}%</span> в плюсе
+                    </span>
+                    <span
+                      className={`text-xs font-medium ${
+                        category.sumR > 0
+                          ? "text-positive"
+                          : category.sumR < 0
+                            ? "text-negative"
+                            : "text-muted"
+                      }`}
+                    >
+                      {formatSignedR(category.sumR)}
+                    </span>
+                  </div>
+                )}
+                <ChevronIcon />
+              </div>
             </Link>
           ))}
         </div>

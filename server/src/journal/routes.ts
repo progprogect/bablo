@@ -30,6 +30,7 @@ import {
   listActiveItems,
   listAllItems,
   listAnalysisRows,
+  listEntryTradesByCategory,
   listJournalTrades,
   renameCategory,
   renameItem,
@@ -69,20 +70,35 @@ export async function registerJournalRoutes(app: FastifyInstance): Promise<void>
   // --- Обзор для чипов фильтра и экрана «Анализ» ---------------------------------------
 
   app.get("/journal/overview", { preHandler: requireAuth }, async () => {
-    const [categories, unsortedCount, entriesByCategory, itemsByCategory] = await Promise.all([
+    const [categories, unsortedCount, tradesByCategory, itemsByCategory] = await Promise.all([
       listActiveCategories(),
       countUnsortedTrades(),
-      countEntriesByCategory(),
+      listEntryTradesByCategory(),
       countActiveItemsByCategory(),
     ]);
     return {
       unsortedCount,
-      categories: categories.map((category) => ({
-        id: category.id,
-        name: category.name,
-        tradesCount: entriesByCategory.get(category.id) ?? 0,
-        itemsCount: itemsByCategory.get(category.id) ?? 0,
-      })),
+      categories: categories.map((category) => {
+        // Сводка карточки (01.10.2026): винрейт — доля сделок с R > 0 от всех разобранных
+        // (та же трактовка, что у карточки месяца в «Статистике»), сумма — фактический R.
+        // Оба числа считаются через toTradeCard — ровно те же, что в строках таблицы.
+        const categoryTrades = tradesByCategory.get(category.id) ?? [];
+        let winCount = 0;
+        let sumR = 0;
+        for (const trade of categoryTrades) {
+          const r = toTradeCard(trade, category.id).statsResultR ?? 0;
+          if (r > 0) winCount += 1;
+          sumR += r;
+        }
+        return {
+          id: category.id,
+          name: category.name,
+          tradesCount: categoryTrades.length,
+          itemsCount: itemsByCategory.get(category.id) ?? 0,
+          winRate: categoryTrades.length > 0 ? winCount / categoryTrades.length : null,
+          sumR,
+        };
+      }),
     };
   });
 

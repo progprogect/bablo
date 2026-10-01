@@ -327,7 +327,9 @@ POST /api/trading-blocks/windows — { date, from, to } (таймзона рис
                                    окно, в котором торговля закрыта целиком. Эндпоинта
                                    удаления НЕТ намеренно: блокировку нельзя снять до
                                    истечения срока (см. RISK_ENGINE #10)
-GET  /api/journal/overview      — журнал: счётчик неразобранных + категории с числами
+GET  /api/journal/overview      — журнал: счётчик неразобранных + категории с числами и
+                                   сводкой (winRate — доля сделок с R > 0, sumR — сумма
+                                   фактического R; оба через toTradeCard, как таблица)
 GET  /api/journal/trades        — журнал: лента закрытых сделок (?filter=unsorted|all|<catId>,
                                    limit/offset); карточка считается сервером из trades
                                    (outcome/statsResultR — те же, что в Истории; стоп при
