@@ -194,14 +194,18 @@ export type RiskSettings = {
   dailyProfitLimitR: number;
   resetHour: number;
   tzOffsetMinutes: number;
-  /** Блокировать открытие сделок в убыточные часы (см. docs/RISK_ENGINE.md). */
-  blockLosingHours: boolean;
 };
 
-/** Час, закрытый вручную: `reviewed` — проверка винрейта уже состоялась, час закрыт бессрочно. */
-export type ManualHourBlock = {
-  hour: number;
-  reviewed: boolean;
+/**
+ * Ручные блокировки торговли («История» → «Настройки»): закрытые часы со сроком и
+ * запланированные окна. Снять блокировку до истечения срока нельзя — эндпоинта удаления
+ * нет, UI показывает только таймеры обратного отсчёта.
+ */
+export type TradingBlocks = {
+  /** Таймзона риск-плана: в ней заданы часы и окна, в ней UI показывает время. */
+  tzOffsetMinutes: number;
+  hours: { id: number; hour: number; endsAt: string }[];
+  windows: { id: number; startsAt: string; endsAt: string }[];
 };
 
 export type PagedTrades = {

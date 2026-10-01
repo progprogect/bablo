@@ -14,7 +14,7 @@ import {
 } from "../history/monthlyStats.js";
 import { listLevelWithdrawals } from "../db/repositories/levelWithdrawals.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
-import { listBlockedHours } from "../risk/hourBlocksService.js";
+import { listCurrentlyBlockedHours } from "../risk/manualBlocksService.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
@@ -25,7 +25,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
         getRiskSettings(),
         listEquitySnapshots(),
         listEquityAdjustments(),
-        listBlockedHours(),
+        listCurrentlyBlockedHours(),
         listLevelWithdrawals(),
       ]);
 
@@ -69,9 +69,8 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
 
     // Смещение таймзоны риск-плана — по нему сгруппированы часы в insights, по нему же
     // UI (InsightPanel) подсвечивает текущий час: время устройства может не совпадать.
-    // blockedHours — часы, закрытые правилом убыточных часов (пусто, если оно выключено).
-    // Происхождение блокировки (расчёт или решение пользователя) наружу не отдаётся:
-    // в подсказке у обеих один и тот же замок, отдельное пояснение убрано 23.09.2026.
+    // blockedHours — часы, закрытые вручную в настройках («История» → «Настройки»,
+    // risk/manualBlocks.ts): в подсказке у них замок вместо галочки.
     return { insights, monthly, tzOffsetMinutes: riskSettings.tzOffsetMinutes, blockedHours };
   });
 

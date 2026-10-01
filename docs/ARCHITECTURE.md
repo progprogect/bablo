@@ -51,9 +51,9 @@ bablo/
 │       ├── api/           # HTTP-роуты (Fastify)
 │       ├── bingx/         # REST-клиент + WS-коннектор BingX
 │       ├── trades/        # оркестрация сделок (open/TP) + чистая математика (R/R, риск)
-│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты, убыточные часы
-│       │                 # (чистая логика без I/O: ladder.ts, limits.ts, hourBlocks.ts;
-│       │                 #  I/O-обвязка: service.ts, hourBlocksService.ts)
+│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты, ручные блокировки
+│       │                 # (чистая логика без I/O: ladder.ts, limits.ts, manualBlocks.ts;
+│       │                 #  I/O-обвязка: service.ts, manualBlocksService.ts)
 │       ├── tracker/       # трекинг активной сделки (MFE, безубыток)
 │       ├── security/      # шифрование, PIN, сессии
 │       ├── db/            # схема Drizzle, миграции, репозитории
@@ -232,15 +232,15 @@ level_withdrawals — выводы прибыли по уровням (docs/RISK
                    факт — withdrawn_usd, withdrawn_at, source (manual/bingx), external_id
                    (id вывода на бирже, уникален — один вывод не закрывает два требования),
                    equity_adjustment_id. Незакрытое требование = withdrawn_at IS NULL
-hour_blocks     — история блокировок убыточных часов (hour, blocked_at, unblocked_at,
-                   снимки статистики на момент блокировки/разблокировки). Активная
-                   блокировка — строка с unblocked_at IS NULL, на час не больше одной
-                   (частичный уникальный индекс). Состояние, а не кэш: правило с
-                   гистерезисом (см. docs/RISK_ENGINE.md, правило #10).
-                   source ('auto' | 'manual') задаёт, КАК блокировка снимается: авто —
-                   гистерезисом, ручная — разовой проверкой месячного винрейта по
-                   review_baseline_month / review_from_month; reviewed_at — проверка
-                   состоялась и подтвердила гипотезу, час закрыт бессрочно
+hour_blocks     — ЗАМОРОЖЕННАЯ история правила «убыточные часы» (жило 12.09–01.10.2026):
+                   когда и на какой статистике часы закрывались/открывались. Правило
+                   удалено из кода 01.10.2026, таблица не читается и не пишется; активные
+                   строки закрыты миграцией 0022. Данные оставлены как история решений
+manual_trading_blocks — ручные блокировки торговли («История» → «Настройки», см.
+                   docs/RISK_ENGINE.md, правило #10): kind 'hour' (час суток hour закрыт
+                   каждый день до ends_at) или 'window' (разовое окно starts_at..ends_at).
+                   Активна = ends_at > now; снять блокировку до ends_at нельзя — ни UI,
+                   ни API такого пути не дают. Истёкшие строки остаются историей
 journal_categories — категории разбора (журнал): name, sort_order, archived_at.
                    Архив вместо удаления, когда по категории уже есть разборы
 journal_checklist_items — пункты чек-листа категории: label, answer_type
@@ -294,8 +294,8 @@ GET  /api/stats                 — { insights, monthly, tzOffsetMinutes, blocke
                                    инсайты по часам открытия (history/insights.ts), месячная
                                    статистика (history/monthlyStats.ts), таймзона риск-плана
                                    (в ней сгруппированы часы и в ней же UI считает «сейчас»)
-                                   и часы, закрытые правилом убыточных часов — пусто, если
-                                   правило выключено, см. docs/PROJECT.md
+                                   и часы, закрытые вручную в настройках (замки в подсказке),
+                                   см. docs/PROJECT.md
 GET  /api/stats/equity-history  — [{ date, equity }] по всем снимкам equity_snapshots,
                                    по возрастанию даты — данные для графика роста депозита
 GET  /api/events                — SSE (этап 4)
@@ -319,8 +319,14 @@ GET/POST/DELETE /api/admin/equity-adjustments — пополнения/выво�
 POST /api/admin/reclassify-trades — пересверка "external"-сделок с BingX (см. выше)
 POST /api/admin/trades/:id/stats-outcome — ручной исход сделки для статистики
                                    ('tp' | 'sl' | 'be' | null — авто); closeReason не меняет
-GET  /api/admin/hour-blocks     — часы, закрытые вручную [{ hour, reviewed }]
-DELETE /api/admin/hour-blocks/:hour — открыть закрытый вручную час (см. RISK_ENGINE #10)
+GET  /api/trading-blocks        — ручные блокировки торговли: { tzOffsetMinutes, hours:
+                                   [{id, hour, endsAt}], windows: [{id, startsAt, endsAt}] }
+                                   (действующие и предстоящие; истёкшие не отдаются)
+POST /api/trading-blocks/hours  — { hour, days } — закрыть час суток на срок (1–31 день)
+POST /api/trading-blocks/windows — { date, from, to } (таймзона риск-плана) — запланировать
+                                   окно, в котором торговля закрыта целиком. Эндпоинта
+                                   удаления НЕТ намеренно: блокировку нельзя снять до
+                                   истечения срока (см. RISK_ENGINE #10)
 GET  /api/journal/overview      — журнал: счётчик неразобранных + категории с числами
 GET  /api/journal/trades        — журнал: лента закрытых сделок (?filter=unsorted|all|<catId>,
                                    limit/offset); карточка считается сервером из trades

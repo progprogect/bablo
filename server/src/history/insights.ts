@@ -83,10 +83,7 @@ export type ClosedTradeRowForInsights = {
   statsOutcome: string | null;
 };
 
-/**
- * Приведение строки БД ко входу инсайтов. Общее для подсказки (api/stats.ts) и правила
- * убыточных часов (risk/hourBlocksService.ts) — один разбор numeric, одна трактовка.
- */
+/** Приведение строки БД ко входу инсайтов — один разбор numeric, одна трактовка. */
 export function toInsightInput(row: ClosedTradeRowForInsights): InsightTradeInput {
   return {
     openedAt: row.openedAt,

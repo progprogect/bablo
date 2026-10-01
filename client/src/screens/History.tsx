@@ -9,11 +9,12 @@ import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { ChimeSoundPicker } from "./history/ChimeSoundPicker";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
+import { TradingBlocksSection } from "./history/TradingBlocksSection";
 import { WithdrawalsCard } from "./history/WithdrawalsCard";
 
 const PAGE_SIZE = 20;
 
-type Tab = "trades" | "stats" | "withdrawals" | "notifications";
+type Tab = "trades" | "stats" | "withdrawals" | "settings";
 
 export function History() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -107,18 +108,20 @@ export function History() {
           active={tab === "withdrawals"}
           onClick={() => setTab("withdrawals")}
         />
-        {/* Уведомления — редкая настройка «включил и забыл», поэтому занимают не слово, а
-            иконку (просьба от 23.09.2026): освободившееся место ушло вкладке «Выводы». */}
+        {/* Настройки (бывшие «Уведомления», переименованы 01.10.2026: сюда добавились
+            ручные блокировки торговли) — по-прежнему иконка, а не слово: четыре таба в
+            375px словами не помещаются (замерено 23.09.2026). */}
         <TabButton
-          label="Уведомления"
+          label="Настройки"
           iconOnly
-          active={tab === "notifications"}
-          onClick={() => setTab("notifications")}
+          active={tab === "settings"}
+          onClick={() => setTab("settings")}
         />
       </div>
 
-      {tab === "notifications" && (
+      {tab === "settings" && (
         <div className="mx-4 flex flex-col gap-3">
+          <TradingBlocksSection />
           <NotificationsSection />
           <ChimeSoundPicker />
         </div>
@@ -234,21 +237,22 @@ export function History() {
 }
 
 /**
- * Колокольчик вкладки «Уведомления»: свой SVG в стиле остальных значков приложения
- * (галочка прибыльного часа, замок в подсказке), а не эмодзи — эмодзи выглядит инородно
- * и рисуется по-разному на разных системах. `currentColor` — чтобы активное и неактивное
- * состояние окрашивались тем же правилом, что и текстовые табы.
+ * Шестерёнка вкладки «Настройки» (до 01.10.2026 — колокольчик «Уведомлений»): свой SVG в
+ * стиле остальных значков приложения (галочка прибыльного часа, замок в подсказке), а не
+ * эмодзи — эмодзи выглядит инородно и рисуется по-разному на разных системах.
+ * `currentColor` — чтобы активное и неактивное состояние окрашивались тем же правилом,
+ * что и текстовые табы.
  */
-function BellIcon() {
+function GearIcon() {
   return (
     <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="2.6" stroke="currentColor" strokeWidth="1.5" />
       <path
-        d="M5.5 8.2a4.5 4.5 0 0 1 9 0c0 2.5.5 3.9 1.2 4.8.3.4 0 1-.5 1H4.8c-.5 0-.8-.6-.5-1 .7-.9 1.2-2.3 1.2-4.8Z"
+        d="M10 3.2v2M10 14.8v2M16.8 10h-2M5.2 10h-2M14.8 5.2l-1.4 1.4M6.6 13.4l-1.4 1.4M14.8 14.8l-1.4-1.4M6.6 6.6 5.2 5.2"
         stroke="currentColor"
         strokeWidth="1.5"
-        strokeLinejoin="round"
+        strokeLinecap="round"
       />
-      <path d="M8.3 16a1.8 1.8 0 0 0 3.4 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -281,7 +285,7 @@ function TabButton({
         iconOnly ? "px-2.5" : "px-3.5"
       }`}
     >
-      {iconOnly ? <BellIcon /> : label}
+      {iconOnly ? <GearIcon /> : label}
     </button>
   );
 }
