@@ -67,12 +67,6 @@ export type RiskSettings = {
   resetHour: number;
   /** Смещение локальной таймзоны от UTC в минутах, например 180 для UTC+3. */
   tzOffsetMinutes: number;
-  /**
-   * Блокировать открытие сделок в убыточные часы (правило от 12.09.2026,
-   * см. risk/hourBlocks.ts). Выключатель на случай, если блокировка окажется не к месту:
-   * состояние часов продолжает считаться, но гейт и UI его игнорируют.
-   */
-  blockLosingHours: boolean;
 };
 
 export const DEFAULT_RISK_SETTINGS: RiskSettings = {
@@ -81,7 +75,6 @@ export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   dailyProfitLimitR: 3,
   resetHour: 7,
   tzOffsetMinutes: 180,
-  blockLosingHours: true,
 };
 
 export async function getRiskSettings(): Promise<RiskSettings> {

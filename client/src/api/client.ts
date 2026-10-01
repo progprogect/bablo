@@ -6,7 +6,6 @@ import type {
   DashboardResponse,
   BingXBalance,
   EquitySnapshot,
-  ManualHourBlock,
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
@@ -17,6 +16,7 @@ import type {
   StatsResponse,
   Trade,
   TradeSide,
+  TradingBlocks,
   WithdrawalsState,
 } from "./types";
 
@@ -316,10 +316,22 @@ export const getRiskSettings = () => request<RiskSettings>("/admin/risk-settings
 export const updateRiskSettingsRequest = (patch: Partial<RiskSettings>) =>
   request<RiskSettings>("/admin/risk-settings", { method: "PUT", body: JSON.stringify(patch) });
 
-export const getManualHourBlocks = () => request<ManualHourBlock[]>("/admin/hour-blocks");
+// --- Ручные блокировки торговли («История» → «Настройки») ---
+// Эндпоинта удаления нет намеренно: поставленную блокировку нельзя снять до истечения срока.
 
-export const releaseManualHourBlockRequest = (hour: number) =>
-  request<void>(`/admin/hour-blocks/${hour}`, { method: "DELETE" });
+export const getTradingBlocks = () => request<TradingBlocks>("/trading-blocks");
+
+export const blockHourRequest = (hour: number, days: number) =>
+  request<TradingBlocks>("/trading-blocks/hours", {
+    method: "POST",
+    body: JSON.stringify({ hour, days }),
+  });
+
+export const scheduleWindowRequest = (date: string, from: string, to: string) =>
+  request<TradingBlocks>("/trading-blocks/windows", {
+    method: "POST",
+    body: JSON.stringify({ date, from, to }),
+  });
 
 // --- Уведомления (Web Push) ---
 

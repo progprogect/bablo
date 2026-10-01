@@ -17,6 +17,7 @@ import { registerRiskRoutes } from "./api/risk.js";
 import { registerPushRoutes } from "./api/push.js";
 import { registerWithdrawalRoutes } from "./api/withdrawals.js";
 import { registerPauseRoutes } from "./api/pause.js";
+import { registerTradingBlockRoutes } from "./api/tradingBlocks.js";
 import { registerJournalRoutes } from "./journal/routes.js";
 import { env } from "./config/env.js";
 
@@ -59,6 +60,7 @@ export function buildApp() {
   app.register(registerPushRoutes, { prefix: "/api" });
   app.register(registerWithdrawalRoutes, { prefix: "/api" });
   app.register(registerPauseRoutes, { prefix: "/api" });
+  app.register(registerTradingBlockRoutes, { prefix: "/api" });
   app.register(registerJournalRoutes, { prefix: "/api" });
 
   const clientBuildExists = existsSync(path.join(clientDistPath, "index.html"));
