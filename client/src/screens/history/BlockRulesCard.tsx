@@ -42,7 +42,7 @@ const DAY_SCENARIOS: Scenario[] = [
     note: "и тейк, и стоп",
     blocked: true,
   },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "час паузы, потом цель до 1/2", blocked: false },
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "час паузы, торгуем дальше", blocked: false },
   {
     chips: [
       { outcome: "sl", label: "Стоп" },
@@ -63,8 +63,8 @@ const CHAIN_SCENARIOS: Scenario[] = [
     note: "день закрыт, серия началась",
     blocked: true,
   },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "дальше хватает одного: день и выходной", blocked: true },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "потом — день и два выходных", blocked: true },
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, завтра выходной", blocked: true },
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, два дня выходных", blocked: true },
 ];
 
 function OutcomeChip({ outcome, label }: { outcome: Outcome; label: string }) {
@@ -122,7 +122,7 @@ export function BlockRulesCard() {
           ))}
         </ul>
         <p className="text-[11px] text-slate-400">
-          Любой тейк обнуляет серию — снова хватает двух стопов за день.
+          Любой тейк обнуляет серию — два стопа запускают серию.
         </p>
       </div>
     </section>
