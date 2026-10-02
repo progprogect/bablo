@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TradeInsights } from "../../api/types";
+import { BlockedMark } from "../../components/BlockedMark";
 
 /** Торговый день начинается в 7ч МСК (час сброса дня, см. risk-settings) — список часов идёт 7ч…6ч. */
 const DAY_START_HOUR = 7;
@@ -80,27 +81,6 @@ function StrongHourMark() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-/**
- * Час закрыт вручную в настройках (docs/RISK_ENGINE.md, правило #10): замок вместо
- * галочки — блокировка ставится решением пользователя и от винрейта часа не зависит,
- * поэтому при совпадении замок главнее галочки.
- */
-function BlockedHourMark() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-label="час закрыт для торговли">
-      <circle cx="8" cy="8" r="8" className="fill-slate-200" />
-      <path
-        d="M6 7.2V5.9a2 2 0 0 1 4 0V7.2"
-        className="stroke-slate-500"
-        strokeWidth="1.4"
-        fill="none"
-        strokeLinecap="round"
-      />
-      <rect x="4.9" y="7.2" width="6.2" height="4.6" rx="1.3" className="fill-slate-500" />
     </svg>
   );
 }
@@ -200,8 +180,10 @@ function HourBar({
         >
           {pct !== null ? `${pct}%` : ""}
         </span>
+        {/* Замок (час закрыт вручную, правило #10) главнее галочки сильного часа:
+            блокировка — решение пользователя и от винрейта часа не зависит. */}
         <span className="w-3.5 shrink-0">
-          {isBlocked ? <BlockedHourMark /> : isStrong ? <StrongHourMark /> : null}
+          {isBlocked ? <BlockedMark label="час закрыт для торговли" /> : isStrong ? <StrongHourMark /> : null}
         </span>
       </button>
     </li>
