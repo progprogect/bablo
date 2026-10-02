@@ -339,7 +339,7 @@ export async function recordTradeClose(input: {
       sumR: Number(dailyStatsRow.sumR),
       slCount: dailyStatsRow.slCount,
       tpCount: dailyStatsRow.tpCount,
-      strongRecoveryAfterSl: dailyStatsRow.strongRecoveryAfterSl,
+      strongTakeProfit: dailyStatsRow.strongTakeProfit,
     },
     lastTradeClosedAt: input.closedAt,
     lastTradeOutcome: outcome,
@@ -426,7 +426,7 @@ type RiskSettingsLike = {
 /** Собирает управляемые локи: дневные лимиты + кулдаун + per-asset стопы дня. */
 function buildManagedBlocks(input: {
   now: Date;
-  counters: { sumR: number; slCount: number; tpCount: number; strongRecoveryAfterSl: boolean };
+  counters: { sumR: number; slCount: number; tpCount: number; strongTakeProfit: boolean };
   lastTradeClosedAt: Date | null;
   /** Исход последней закрытой сделки — после тейка кулдауна нет (см. evaluateCooldownBlock). */
   lastTradeOutcome: TradeOutcome | null;
@@ -521,7 +521,7 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   let sumR = 0;
   let slCount = 0;
   let tpCount = 0;
-  let strongRecoveryAfterSl = false;
+  let strongTakeProfit = false;
   const slSymbols: string[] = [];
 
   for (const trade of dayTrades) {
@@ -541,8 +541,8 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     }
     if (outcome === "tp") {
       tpCount += 1;
-      if (isStrongTakeProfit(resultR) && slCount > 0) {
-        strongRecoveryAfterSl = true;
+      if (isStrongTakeProfit(resultR)) {
+        strongTakeProfit = true;
       }
     }
   }
@@ -552,14 +552,14 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     tradesCount: dayTrades.length,
     slCount,
     tpCount,
-    strongRecoveryAfterSl,
+    strongTakeProfit,
   });
 
   const lastTrade = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]! : null;
   const lastClosedAt = lastTrade?.closedAt ?? null;
   const blocks = buildManagedBlocks({
     now,
-    counters: { sumR, slCount, tpCount, strongRecoveryAfterSl },
+    counters: { sumR, slCount, tpCount, strongTakeProfit },
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
     lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
     stopChain: computeStopChain(toStopChainDays(allClosed, settings), dayKey),

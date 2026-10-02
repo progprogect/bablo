@@ -12,9 +12,16 @@ const MANAGED_TYPES: BlockType[] = [
   "daily_stop_losses",
   "stop_chain",
   "daily_take_profits",
-  "daily_recovery_after_sl",
+  "daily_strong_tp",
+  "daily_mixed_outcomes",
   "asset_sl_today",
 ];
+
+/**
+ * Типы, которых в коде больше нет: удаляются вместе с управляемыми, чтобы после
+ * переименования правила старая строка не осталась в таблице навсегда.
+ */
+const RETIRED_TYPES: string[] = ["daily_recovery_after_sl"];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
   const db = getDb();
@@ -43,7 +50,7 @@ export async function createLock(block: Block): Promise<void> {
  */
 export async function replaceManagedLocks(blocks: Block[]): Promise<void> {
   const db = getDb();
-  await db.delete(riskLocks).where(inArray(riskLocks.type, MANAGED_TYPES));
+  await db.delete(riskLocks).where(inArray(riskLocks.type, [...MANAGED_TYPES, ...RETIRED_TYPES]));
   if (blocks.length === 0) {
     return;
   }
