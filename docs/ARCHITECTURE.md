@@ -215,8 +215,8 @@ trades          — вся сделка: symbol, side, qty, leverage, entry_pric
                   result_r, result_pct, mfe_price, be_crossed (bool),
                   bingx_order_ids (jsonb), signals (jsonb)
 daily_stats     — агрегат по дню: sum_r, trades_count, sl_count, tp_count,
-                  strong_recovery_after_sl (для быстрых проверок дневных лимитов:
-                  2 стопа / 2 тейка / сильный откуп ≥2R после стопа)
+                  strong_take_profit (для быстрых проверок дневных лимитов: 2 стопа /
+                  2 тейка / тейк ≥2R / смешанный день «тейк + стоп»)
 equity_snapshots — снимок депозита на календарный день (date, equity, balance), один в день,
                    лениво создаётся при загрузке дашборда (и перезаписывается кнопкой
                    «Обновить баланс» в админке) — якорь для "% к депозиту" и границ

@@ -27,7 +27,10 @@ export type BlockType =
    */
   | "stop_chain"
   | "daily_take_profits"
-  | "daily_recovery_after_sl"
+  /** За день закрыт тейк ≥ 2R — достаточный результат сам по себе (правило #6). */
+  | "daily_strong_tp"
+  /** За день есть и тейк, и стоп — смешанный день закрыт (правило #15). */
+  | "daily_mixed_outcomes"
   | "asset_sl_today";
 
 /** Глобальные блокировки — скрывают форму открытия целиком. */
@@ -64,8 +67,8 @@ export type DailyLimitCounters = {
   sumR: number;
   slCount: number;
   tpCount: number;
-  /** Был стоп, а после него — тейк с результатом ≥ STRONG_TP_MIN_R. */
-  strongRecoveryAfterSl: boolean;
+  /** За день закрыт тейк с результатом ≥ STRONG_TP_MIN_R. */
+  strongTakeProfit: boolean;
 };
 
 /**
@@ -81,8 +84,9 @@ export const DAILY_STOP_LOSS_LIMIT = 2;
 export const DAILY_TAKE_PROFIT_LIMIT = 2;
 
 /**
- * Минимальный результат тейка (в R), который после предшествующего стопа закрывает день.
- * 2R = пресет 1:2 и выше.
+ * Минимальный результат тейка (в R), который закрывает день сам по себе (правило #6).
+ * 2R = пресет 1:2 и выше. До 02.10.2026 правило требовало стопа ДО такого тейка —
+ * теперь не требует: 2R за день достаточно независимо от того, с чего день начался.
  */
 export const STRONG_TP_MIN_R = 2;
 
@@ -182,10 +186,17 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (counters.strongRecoveryAfterSl) {
+  if (counters.strongTakeProfit) {
     blocks.push({
-      type: "daily_recovery_after_sl",
-      reason: `После стопа закрыт тейк ≥ ${STRONG_TP_MIN_R}R — день удался, торговля возобновится после сброса дня`,
+      type: "daily_strong_tp",
+      reason: `За день закрыт тейк ≥ ${STRONG_TP_MIN_R}R — достаточный результат, торговля возобновится после сброса дня`,
+      until,
+    });
+  }
+  if (counters.slCount >= 1 && counters.tpCount >= 1) {
+    blocks.push({
+      type: "daily_mixed_outcomes",
+      reason: "За день есть и тейк, и стоп — торговля возобновится после сброса дня",
       until,
     });
   }

@@ -29,7 +29,7 @@ export type TradeCloseForDailyStats = {
 
 /**
  * Прибавляет результат сделки к дневному агрегату, создавая строку при необходимости.
- * Обновляет счётчики стопов/тейков и флаг «сильный откуп после стопа» — они нужны
+ * Обновляет счётчики стопов/тейков и флаг «за день был тейк ≥ 2R» — они нужны
  * правилам остановки торговли на день (см. risk/limits.ts).
  */
 export async function addTradeResultToDailyStats(
@@ -40,9 +40,8 @@ export async function addTradeResultToDailyStats(
   const existing = await getDailyStats(dateKey);
   const isStopLoss = trade.outcome === "sl";
   const isTakeProfit = trade.outcome === "tp";
-  // Сильный откуп: тейк ≥ 2R, и к этому моменту за день уже был хотя бы один стоп.
-  const strongRecovery =
-    isTakeProfit && isStrongTakeProfit(trade.resultR) && (existing?.slCount ?? 0) > 0;
+  // Тейк ≥ 2R закрывает день сам по себе — стоп до него больше не требуется (02.10.2026).
+  const strongTp = isTakeProfit && isStrongTakeProfit(trade.resultR);
 
   if (!existing) {
     const [created] = await db
@@ -53,7 +52,7 @@ export async function addTradeResultToDailyStats(
         tradesCount: 1,
         slCount: isStopLoss ? 1 : 0,
         tpCount: isTakeProfit ? 1 : 0,
-        strongRecoveryAfterSl: strongRecovery,
+        strongTakeProfit: strongTp,
       })
       .returning();
     if (!created) {
@@ -70,7 +69,7 @@ export async function addTradeResultToDailyStats(
       slCount: existing.slCount + (isStopLoss ? 1 : 0),
       tpCount: existing.tpCount + (isTakeProfit ? 1 : 0),
       // Флаг только включается (никогда не сбрасывается внутри дня).
-      strongRecoveryAfterSl: existing.strongRecoveryAfterSl || strongRecovery,
+      strongTakeProfit: existing.strongTakeProfit || strongTp,
     })
     .where(eq(dailyStats.date, dateKey))
     .returning();
@@ -90,7 +89,7 @@ export async function replaceDailyStats(
     tradesCount: number;
     slCount: number;
     tpCount: number;
-    strongRecoveryAfterSl: boolean;
+    strongTakeProfit: boolean;
   },
 ): Promise<DailyStatsRow> {
   const db = getDb();
@@ -100,7 +99,7 @@ export async function replaceDailyStats(
     tradesCount: values.tradesCount,
     slCount: values.slCount,
     tpCount: values.tpCount,
-    strongRecoveryAfterSl: values.strongRecoveryAfterSl,
+    strongTakeProfit: values.strongTakeProfit,
   };
 
   if (!existing) {
