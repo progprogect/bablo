@@ -1,7 +1,7 @@
 import { BlockedMark } from "../../components/BlockedMark";
 
 /**
- * Шпаргалка «когда закрывается кнопка Открыть сделку» («История» → «Настройки», запрос
+ * Шпаргалка «когда блокируется торговля» («История» → «Настройки», запрос
  * пользователя от 02.10.2026). Правил стало много (docs/RISK_ENGINE.md), и держать их в
  * голове перед входом — лишняя работа: карточка показывает расклады дня так же, как
  * гистограмма часов показывает закрытые часы, — тем же замком.
@@ -99,7 +99,7 @@ export function BlockRulesCard() {
   return (
     <section className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
       <div>
-        <h2 className="text-sm font-medium text-ink">Когда кнопка закрывается</h2>
+        <h2 className="text-sm font-medium text-ink">Когда блокируется торговля</h2>
         <p className="mt-0.5 text-xs text-slate-500">
           Замок — сделку сегодня уже не открыть. Безубытки и ручные закрытия в счёт не идут.
         </p>

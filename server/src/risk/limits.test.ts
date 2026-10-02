@@ -64,16 +64,33 @@ test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по
   assert.equal(blocks[0]?.type, "daily_stop_losses");
 });
 
-test("evaluateDailyLimitBlocks: текст блока по стопам — факт без упоминания серии", () => {
+test("evaluateDailyLimitBlocks: текст блока по стопам — коротко и без упоминания серии", () => {
   const two = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 2 }), CONFIG);
-  assert.match(two[0]?.reason ?? "", /^2 сделки за день закрыты по стопу\. Дадим себе и графику/);
+  assert.equal(two[0]?.reason, "2 стопа за день — дадим себе и графику расторговаться");
 
   // Сниженный лимит (внутри серии хватает одного стопа) текст не меняет: про серию
   // говорит отдельный лок stop_chain, и только когда она закрывает дни сверх сегодняшнего.
   const one = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 1 }), CONFIG, 1);
   assert.equal(one[0]?.type, "daily_stop_losses");
-  assert.match(one[0]?.reason ?? "", /^Сделка дня закрыта по стопу\. Дадим себе и графику/);
+  assert.equal(one[0]?.reason, "Стоп — дадим себе и графику расторговаться");
   assert.doesNotMatch(one[0]?.reason ?? "", /сери/i);
+});
+
+test("evaluateDailyLimitBlocks: причины помещаются в плашку — не длиннее 60 символов", () => {
+  // Под причиной на дашборде идёт крупный таймер: длинный текст уезжает на 3–4 строки
+  // и плашка перестаёт читаться (замечание пользователя 02.10.2026).
+  const all = [
+    ...evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -2, slCount: 2 }), CONFIG),
+    ...evaluateDailyLimitBlocks(
+      new Date("2026-07-13T10:00:00Z"),
+      counters({ sumR: 3, tpCount: 2, slCount: 1, strongTakeProfit: true }),
+      CONFIG,
+    ),
+  ];
+  assert.ok(all.length >= 6, "проверяем все дневные причины разом");
+  for (const block of all) {
+    assert.ok(block.reason.length <= 60, `${block.type}: ${block.reason.length} символов — ${block.reason}`);
+  }
 });
 
 test("evaluateDailyLimitBlocks: 1 сделка по стопу — блока по этому правилу нет", () => {
