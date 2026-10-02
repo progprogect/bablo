@@ -123,6 +123,24 @@ export function isStrongTakeProfit(resultR: number): boolean {
   return resultR >= STRONG_TP_MIN_R - LIMIT_EPSILON;
 }
 
+/**
+ * Текст блокировки по стопам дня — только факт, без упоминания серии стопов. Про серию
+ * говорит отдельный лок `stop_chain`, и только когда она действительно закрывает дни
+ * сверх сегодняшнего.
+ *
+ * Раньше при сниженном лимите (внутри серии хватает одного стопа) текст был отдельный —
+ * «Стоп при активной серии». Он путал (разбор кейса 01–02.10.2026): лимит стопов дня
+ * фиксируется на НАЧАЛО дня, поэтому тейк, случившийся днём, серию уже обнулил, а плашка
+ * всё равно обещала продолжение серии — и было непонятно, будет ли завтра выходной.
+ */
+function dailyStopLossesReason(slCount: number): string {
+  const fact =
+    slCount === 1
+      ? "Сделка дня закрыта по стопу"
+      : `${slCount} сделки за день закрыты по стопу`;
+  return `${fact} — торговля возобновится после сброса дня`;
+}
+
 export function evaluateDailyLimitBlocks(
   now: Date,
   counters: DailyLimitCounters,
@@ -153,10 +171,7 @@ export function evaluateDailyLimitBlocks(
   if (counters.slCount >= dayStopLimit) {
     blocks.push({
       type: "daily_stop_losses",
-      reason:
-        dayStopLimit <= 1
-          ? "Стоп при активной серии — сегодня хватает одного, торговля возобновится после сброса дня"
-          : `${counters.slCount} сделки за день закрыты по стопу — торговля возобновится после сброса дня`,
+      reason: dailyStopLossesReason(counters.slCount),
       until,
     });
   }
