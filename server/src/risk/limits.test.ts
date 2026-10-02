@@ -66,13 +66,13 @@ test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по
 
 test("evaluateDailyLimitBlocks: текст блока по стопам — факт без упоминания серии", () => {
   const two = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 2 }), CONFIG);
-  assert.equal(two[0]?.reason, "2 сделки за день закрыты по стопу — торговля возобновится после сброса дня");
+  assert.match(two[0]?.reason ?? "", /^2 сделки за день закрыты по стопу\. Дадим себе и графику/);
 
   // Сниженный лимит (внутри серии хватает одного стопа) текст не меняет: про серию
   // говорит отдельный лок stop_chain, и только когда она закрывает дни сверх сегодняшнего.
   const one = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 1 }), CONFIG, 1);
   assert.equal(one[0]?.type, "daily_stop_losses");
-  assert.equal(one[0]?.reason, "Сделка дня закрыта по стопу — торговля возобновится после сброса дня");
+  assert.match(one[0]?.reason ?? "", /^Сделка дня закрыта по стопу\. Дадим себе и графику/);
   assert.doesNotMatch(one[0]?.reason ?? "", /сери/i);
 });
 

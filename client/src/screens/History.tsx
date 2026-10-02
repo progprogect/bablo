@@ -6,6 +6,7 @@ import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
 import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
+import { BlockRulesCard } from "./history/BlockRulesCard";
 import { ChimeSoundPicker } from "./history/ChimeSoundPicker";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
@@ -122,6 +123,7 @@ export function History() {
       {tab === "settings" && (
         <div className="mx-4 flex flex-col gap-3">
           <TradingBlocksSection />
+          <BlockRulesCard />
           <NotificationsSection />
           <ChimeSoundPicker />
         </div>
