@@ -38,6 +38,11 @@ export type GlobalBlockType = Exclude<BlockType, "asset_sl_today">;
 
 export type Block = {
   type: BlockType;
+  /**
+   * Причина для плашки на дашборде. Коротко — две строки на iPhone максимум: под причиной
+   * идёт крупный таймер, поэтому «торговля возобновится после сброса дня» дописывать не
+   * надо, на этот вопрос отвечает он (правка 02.10.2026 по просьбе пользователя).
+   */
   reason: string;
   until: Date;
   /** Только для asset_sl_today — символ, по которому сегодня уже был стоп. */
@@ -138,13 +143,11 @@ export function isStrongTakeProfit(resultR: number): boolean {
  *    выходного, которого не будет.
  * 2. Вместо «торговля возобновится после сброса дня» — зачем эта пауза нужна (просьба
  *    пользователя). Когда торговля откроется, и так видно: под причиной идёт таймер.
+ * 3. Укорочено до двух строк на iPhone: первый вариант этой же правки занимал четыре.
  */
 function dailyStopLossesReason(slCount: number): string {
-  const fact =
-    slCount === 1
-      ? "Сделка дня закрыта по стопу"
-      : `${slCount} сделки за день закрыты по стопу`;
-  return `${fact}. Дадим себе и графику время расторговаться до более благоприятного момента`;
+  const fact = slCount === 1 ? "Стоп" : `${slCount} стопа за день`;
+  return `${fact} — дадим себе и графику расторговаться`;
 }
 
 export function evaluateDailyLimitBlocks(
@@ -163,14 +166,14 @@ export function evaluateDailyLimitBlocks(
   if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
       type: "daily_loss",
-      reason: `Дневной лимит убытка (${config.dailyLossLimitR}R) достигнут — торговля возобновится после сброса дня`,
+      reason: `Дневной лимит ${config.dailyLossLimitR}R достигнут`,
       until,
     });
   }
   if (counters.sumR >= config.dailyProfitLimitR - LIMIT_EPSILON) {
     blocks.push({
       type: "daily_profit",
-      reason: `Дневная цель прибыли (+${config.dailyProfitLimitR}R) достигнута — торговля возобновится после сброса дня`,
+      reason: `Дневная цель +${config.dailyProfitLimitR}R достигнута`,
       until,
     });
   }
@@ -184,21 +187,21 @@ export function evaluateDailyLimitBlocks(
   if (counters.tpCount >= DAILY_TAKE_PROFIT_LIMIT) {
     blocks.push({
       type: "daily_take_profits",
-      reason: `${counters.tpCount} сделки за день закрыты по тейку — достаточно на сегодня, торговля возобновится после сброса дня`,
+      reason: `${counters.tpCount} тейка за день — достаточно`,
       until,
     });
   }
   if (counters.strongTakeProfit) {
     blocks.push({
       type: "daily_strong_tp",
-      reason: `За день закрыт тейк ≥ ${STRONG_TP_MIN_R}R — достаточный результат, торговля возобновится после сброса дня`,
+      reason: `Тейк ≥ ${STRONG_TP_MIN_R}R — хватит на сегодня`,
       until,
     });
   }
   if (counters.slCount >= 1 && counters.tpCount >= 1) {
     blocks.push({
       type: "daily_mixed_outcomes",
-      reason: "За день есть и тейк, и стоп — торговля возобновится после сброса дня",
+      reason: "Тейк и стоп за день — хватит",
       until,
     });
   }
@@ -217,7 +220,7 @@ export function buildVoluntaryPauseBlock(now: Date): Block {
   const hours = VOLUNTARY_PAUSE_MINUTES / 60;
   return {
     type: "voluntary_pause",
-    reason: `Бережём депозит до лучшего входа — пауза ${hours} часа. Рынок никуда не денется`,
+    reason: `Бережём депозит — пауза ${hours} часа`,
     until: new Date(now.getTime() + VOLUNTARY_PAUSE_MINUTES * 60_000),
   };
 }
@@ -244,7 +247,7 @@ export function evaluateCooldownBlock(
   if (until <= now) return null;
   return {
     type: "cooldown",
-    reason: "Пауза после сделки — перерыв помогает не пересиживать в рынке",
+    reason: "Пауза после сделки — не отыгрываемся",
     until,
   };
 }

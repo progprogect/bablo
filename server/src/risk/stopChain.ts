@@ -144,7 +144,7 @@ export function buildStopChainBlock(
   const days = state.blockedFullDays;
   return {
     type: "stop_chain",
-    reason: `Серия стопов без тейка — пауза ещё на ${days} ${pluralDays(days)} после сброса дня. Один тейк обнулит серию`,
+    reason: `Серия стопов — пауза ещё на ${days} ${pluralDays(days)}. Тейк обнулит серию`,
     until,
   };
 }
