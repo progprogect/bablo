@@ -5,6 +5,10 @@ import { Link, useLocation } from "react-router-dom";
  * «Разбор» (лента сделок и деталь) и «Анализ» (таблицы по категориям; конструктор
  * категорий — по шестерёнке внутри «Анализа»). Геометрия — как BottomNav терминала,
  * цвета — токенами темы (в журнале это палитра iOS).
+ *
+ * Фон непрозрачный и без backdrop-blur по той же причине, что в BottomNav (04.10.2026):
+ * `backdrop-filter` на `position: fixed` отрывает панель от низа экрана при инерционном
+ * скролле на iPhone.
  */
 export function JournalNav() {
   const { pathname } = useLocation();
@@ -14,7 +18,7 @@ export function JournalNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur"
+      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex h-16 max-w-md items-center justify-around">
