@@ -435,11 +435,15 @@ function buildManagedBlocks(input: {
   slSymbols: string[];
   settings: RiskSettingsLike;
 }): Block[] {
+  // Ключ дня нужен правилу #16 (ПН/ПТ — один стоп): лимит считается от дня недели самого
+  // ТОРГОВОГО дня, а не календарного — ночь до 07:00 ещё относится к вчерашнему.
+  const dayKey = getTradingDayKey(input.now, input.settings.resetHour, input.settings.tzOffsetMinutes);
   const blocks: Block[] = evaluateDailyLimitBlocks(
     input.now,
     input.counters,
     input.settings,
     input.stopChain.todayStopLimit,
+    dayKey,
   );
   const stopChainBlock = buildStopChainBlock(input.now, input.stopChain, input.settings);
   if (stopChainBlock) {

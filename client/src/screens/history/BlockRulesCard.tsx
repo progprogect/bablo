@@ -21,7 +21,8 @@ type Scenario = {
   blocked: boolean;
 };
 
-/** Расклады одного торгового дня (правила #3, #4, #5, #6, #15). */
+/** Расклады одного торгового дня (правила #3, #4, #5, #6, #15). В ПН и ПТ строка про один
+ *  стоп не действует — там день закрывает уже первый стоп, см. WEEKDAY_SCENARIOS. */
 const DAY_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "tp", label: "Тейк 1R" }], note: "торгуем дальше", blocked: false },
   { chips: [{ outcome: "tp", label: "Тейк 2R" }], note: "хватит на сегодня", blocked: true },
@@ -42,7 +43,11 @@ const DAY_SCENARIOS: Scenario[] = [
     note: "и тейк, и стоп",
     blocked: true,
   },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "час паузы, торгуем дальше", blocked: false },
+  {
+    chips: [{ outcome: "sl", label: "Стоп" }],
+    note: "час паузы, торгуем дальше (кроме ПН и ПТН)",
+    blocked: false,
+  },
   {
     chips: [
       { outcome: "sl", label: "Стоп" },
@@ -51,6 +56,15 @@ const DAY_SCENARIOS: Scenario[] = [
     note: "и тейк, и стоп",
     blocked: true,
   },
+];
+
+/**
+ * Правило #16 (10.10.2026): в понедельник и пятницу день закрывает ОДИН стоп — края
+ * недели худшее время для попытки отыграться.
+ */
+const WEEKDAY_SCENARIOS: Scenario[] = [
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "ПН — 1SL, стоп торговля", blocked: true },
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "ПТН — 1SL, стоп торговля", blocked: true },
 ];
 
 /** Лестница пауз после стопов (правило #14): каждое следующее срабатывание дороже. */
@@ -109,6 +123,15 @@ export function BlockRulesCard() {
         <p className="text-xs text-slate-500">За день</p>
         <ul className="flex flex-col">
           {DAY_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Понедельник и пятница</p>
+        <ul className="flex flex-col">
+          {WEEKDAY_SCENARIOS.map((scenario, index) => (
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
