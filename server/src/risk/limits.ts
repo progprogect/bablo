@@ -83,6 +83,42 @@ export type DailyLimitCounters = {
 export const DAILY_STOP_LOSS_LIMIT = 2;
 
 /**
+ * Дни недели, в которые хватает ОДНОГО стопа, чтобы закрыть день (правило #16, запрос
+ * пользователя от 10.10.2026): понедельник и пятница. Края недели — худшее время для
+ * «отыграться»: в понедельник рынок ещё не показал характер недели, в пятницу решения
+ * портит фиксация позиций перед выходными. Номера как у Date#getUTCDay: 1 — ПН, 5 — ПТ.
+ */
+export const SINGLE_STOP_WEEKDAYS = [1, 5] as const;
+
+/** Сколько стопов закрывают такой день. */
+export const SINGLE_STOP_WEEKDAY_LIMIT = 1;
+
+/** Название дня недели для текста блокировки (винительный падеж: «стоп в понедельник»). */
+const WEEKDAY_LABELS: Record<number, string> = { 1: "понедельник", 5: "пятницу" };
+
+/**
+ * День недели ТОРГОВОГО дня по его ключу (YYYY-MM-DD, см. risk/tradingDay.ts): 0 — вс,
+ * 1 — пн … 6 — сб. Ключ уже в локальной таймзоне и сдвинут на час сброса, поэтому сделка,
+ * закрытая в ночь с пятницы на субботу до 07:00, относится к пятнице — как и должна.
+ */
+export function weekdayOfDayKey(dayKey: string): number | null {
+  const ms = Date.parse(`${dayKey}T00:00:00Z`);
+  return Number.isFinite(ms) ? new Date(ms).getUTCDay() : null;
+}
+
+/**
+ * Лимит стопов дня с учётом дня недели. baseLimit — лимит из лестницы пауз
+ * (risk/stopChain.ts); правило дня недели может только УЖЕСТОЧИТЬ его, не ослабить.
+ */
+export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_STOP_LOSS_LIMIT): number {
+  const weekday = weekdayOfDayKey(dayKey);
+  if (weekday !== null && (SINGLE_STOP_WEEKDAYS as readonly number[]).includes(weekday)) {
+    return Math.min(baseLimit, SINGLE_STOP_WEEKDAY_LIMIT);
+  }
+  return baseLimit;
+}
+
+/**
  * Сколько тейков за день достаточно, чтобы зафиксировать результат и остановиться —
  * независимо от суммы R (например, два тейка 1:1 дают только +2R, но день уже «удался»).
  */
@@ -145,7 +181,12 @@ export function isStrongTakeProfit(resultR: number): boolean {
  *    пользователя). Когда торговля откроется, и так видно: под причиной идёт таймер.
  * 3. Укорочено до двух строк на iPhone: первый вариант этой же правки занимал четыре.
  */
-function dailyStopLossesReason(slCount: number): string {
+function dailyStopLossesReason(slCount: number, weekdayLabel: string | null): string {
+  // В ПН и ПТ день закрывает один стоп — называем причину прямо, иначе текст выглядел бы
+  // как обычная пауза после стопа, после которой обычно можно торговать дальше.
+  if (weekdayLabel !== null && slCount === 1) {
+    return `Стоп в ${weekdayLabel} — на сегодня всё`;
+  }
   const fact = slCount === 1 ? "Стоп" : `${slCount} стопа за день`;
   return `${fact} — дадим себе и графику расторговаться`;
 }
@@ -159,9 +200,22 @@ export function evaluateDailyLimitBlocks(
    * внутри лестницы пауз (risk/stopChain.ts) хватает одного.
    */
   dayStopLimit: number = DAILY_STOP_LOSS_LIMIT,
+  /**
+   * Ключ торгового дня (risk/tradingDay.ts). Передан — учитываем правило дня недели
+   * (#16): в ПН и ПТ день закрывает уже один стоп.
+   */
+  dayKey?: string,
 ): Block[] {
   const blocks: Block[] = [];
   const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
+
+  const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey, dayStopLimit) : dayStopLimit;
+  const weekday = dayKey ? weekdayOfDayKey(dayKey) : null;
+  // Подпись дня недели нужна, только когда день закрывает ОДИН стоп именно из-за ПН/ПТ.
+  const weekdayLabel =
+    weekday !== null && effectiveStopLimit === SINGLE_STOP_WEEKDAY_LIMIT
+      ? (WEEKDAY_LABELS[weekday] ?? null)
+      : null;
 
   if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
@@ -177,10 +231,10 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (counters.slCount >= dayStopLimit) {
+  if (counters.slCount >= effectiveStopLimit) {
     blocks.push({
       type: "daily_stop_losses",
-      reason: dailyStopLossesReason(counters.slCount),
+      reason: dailyStopLossesReason(counters.slCount, weekdayLabel),
       until,
     });
   }

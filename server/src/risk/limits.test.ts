@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildVoluntaryPauseBlock,
+  DAILY_STOP_LOSS_LIMIT,
+  dayStopLimitForDayKey,
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
@@ -298,4 +300,88 @@ test("buildVoluntaryPauseBlock: при нескольких глобальных
   const cooldown = evaluateCooldownBlock(now, new Date("2026-09-18T09:30:00.000Z"), 60, "sl");
   const effective = pickEffectiveBlock([cooldown!, buildVoluntaryPauseBlock(now)]);
   assert.equal(effective?.type, "voluntary_pause");
+});
+
+// --- Правило #16 (10.10.2026): в ПН и ПТ день закрывает один стоп ---
+
+test("dayStopLimitForDayKey: понедельник и пятница — один стоп, остальные дни — два", () => {
+  // 2026-10-12 — понедельник, 2026-10-16 — пятница.
+  assert.equal(dayStopLimitForDayKey("2026-10-12"), 1);
+  assert.equal(dayStopLimitForDayKey("2026-10-16"), 1);
+  assert.equal(dayStopLimitForDayKey("2026-10-13"), 2); // вторник
+  assert.equal(dayStopLimitForDayKey("2026-10-15"), 2); // четверг
+  assert.equal(dayStopLimitForDayKey("2026-10-17"), 2); // суббота
+});
+
+test("dayStopLimitForDayKey: лестница пауз только ужесточает лимит, не ослабляет", () => {
+  // Внутри серии лимит и так 1 — день недели его не поднимает обратно до 2.
+  assert.equal(dayStopLimitForDayKey("2026-10-13", 1), 1);
+  assert.equal(dayStopLimitForDayKey("2026-10-12", 1), 1);
+});
+
+test("dayStopLimitForDayKey: битый ключ дня не меняет лимит", () => {
+  assert.equal(dayStopLimitForDayKey("не дата"), 2);
+});
+
+test("evaluateDailyLimitBlocks: один стоп в понедельник закрывает день", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ sumR: -1, slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
+  assert.ok(stopBlock);
+  assert.equal(stopBlock.reason, "Стоп в понедельник — на сегодня всё");
+});
+
+test("evaluateDailyLimitBlocks: один стоп в пятницу закрывает день", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-16T10:00:00Z"),
+    counters({ sumR: -1, slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-16",
+  );
+  const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
+  assert.ok(stopBlock);
+  assert.match(stopBlock.reason, /Стоп в пятницу/);
+});
+
+test("evaluateDailyLimitBlocks: один стоп во вторник день не закрывает", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-13T10:00:00Z"),
+    counters({ sumR: -1, slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-13",
+  );
+  assert.equal(blocks.some((block) => block.type === "daily_stop_losses"), false);
+});
+
+test("evaluateDailyLimitBlocks: два стопа в понедельник — обычный текст, не про день недели", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ slCount: 2 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
+  assert.ok(stopBlock);
+  assert.match(stopBlock.reason, /2 стопа за день/);
+});
+
+test("evaluateDailyLimitBlocks: причина про день недели помещается в плашку", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  for (const block of blocks) {
+    assert.ok(block.reason.length <= 60, `${block.reason} (${block.reason.length})`);
+  }
 });
