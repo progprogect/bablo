@@ -86,24 +86,31 @@ export const DAILY_STOP_LOSS_LIMIT = 2;
  * Дни недели, в которые хватает ОДНОГО стопа, чтобы закрыть день (правило #16, запрос
  * пользователя от 10.10.2026): понедельник и пятница. Края недели — худшее время для
  * «отыграться»: в понедельник рынок ещё не показал характер недели, в пятницу решения
- * портит фиксация позиций перед выходными. Номера как у Date#getUTCDay: 1 — ПН, 5 — ПТ.
+ * портит фиксация позиций перед выходными.
+ *
+ * Ключ — номер дня как у Date#getUTCDay (1 — ПН, 5 — ПТ), значение — название для текста
+ * блокировки в винительном падеже («стоп в понедельник»). Один словарь, а не список
+ * отдельно от подписей: добавить день = добавить строку, рассинхрону взяться негде.
  */
-export const SINGLE_STOP_WEEKDAYS = [1, 5] as const;
+const SINGLE_STOP_WEEKDAYS: Record<number, string> = { 1: "понедельник", 5: "пятницу" };
 
 /** Сколько стопов закрывают такой день. */
 export const SINGLE_STOP_WEEKDAY_LIMIT = 1;
-
-/** Название дня недели для текста блокировки (винительный падеж: «стоп в понедельник»). */
-const WEEKDAY_LABELS: Record<number, string> = { 1: "понедельник", 5: "пятницу" };
 
 /**
  * День недели ТОРГОВОГО дня по его ключу (YYYY-MM-DD, см. risk/tradingDay.ts): 0 — вс,
  * 1 — пн … 6 — сб. Ключ уже в локальной таймзоне и сдвинут на час сброса, поэтому сделка,
  * закрытая в ночь с пятницы на субботу до 07:00, относится к пятнице — как и должна.
  */
-export function weekdayOfDayKey(dayKey: string): number | null {
+function weekdayOfDayKey(dayKey: string): number | null {
   const ms = Date.parse(`${dayKey}T00:00:00Z`);
   return Number.isFinite(ms) ? new Date(ms).getUTCDay() : null;
+}
+
+/** Название дня для текста блокировки; null — в этот день правило #16 не действует. */
+export function singleStopWeekdayLabel(dayKey: string): string | null {
+  const weekday = weekdayOfDayKey(dayKey);
+  return weekday !== null ? (SINGLE_STOP_WEEKDAYS[weekday] ?? null) : null;
 }
 
 /**
@@ -111,11 +118,9 @@ export function weekdayOfDayKey(dayKey: string): number | null {
  * (risk/stopChain.ts); правило дня недели может только УЖЕСТОЧИТЬ его, не ослабить.
  */
 export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_STOP_LOSS_LIMIT): number {
-  const weekday = weekdayOfDayKey(dayKey);
-  if (weekday !== null && (SINGLE_STOP_WEEKDAYS as readonly number[]).includes(weekday)) {
-    return Math.min(baseLimit, SINGLE_STOP_WEEKDAY_LIMIT);
-  }
-  return baseLimit;
+  return singleStopWeekdayLabel(dayKey) !== null
+    ? Math.min(baseLimit, SINGLE_STOP_WEEKDAY_LIMIT)
+    : baseLimit;
 }
 
 /**
@@ -209,13 +214,10 @@ export function evaluateDailyLimitBlocks(
   const blocks: Block[] = [];
   const until = getNextResetAt(now, config.resetHour, config.tzOffsetMinutes);
 
+  // Подпись дня недели заполнена ровно в те дни, где правило #16 и ужесточает лимит,
+  // поэтому отдельная проверка лимита не нужна.
+  const weekdayLabel = dayKey ? singleStopWeekdayLabel(dayKey) : null;
   const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey, dayStopLimit) : dayStopLimit;
-  const weekday = dayKey ? weekdayOfDayKey(dayKey) : null;
-  // Подпись дня недели нужна, только когда день закрывает ОДИН стоп именно из-за ПН/ПТ.
-  const weekdayLabel =
-    weekday !== null && effectiveStopLimit === SINGLE_STOP_WEEKDAY_LIMIT
-      ? (WEEKDAY_LABELS[weekday] ?? null)
-      : null;
 
   if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
