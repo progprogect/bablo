@@ -275,8 +275,11 @@ export function TradeForm({
           <p className="text-sm text-slate-500">
             {symbolLabel} · цена {currentPrice !== null ? currentPrice : "…"}
           </p>
+          {/* Плечо фиксировано в настройках актива и до входа нигде не показывалось —
+              хотя именно от него считается ликвидация ниже по форме. Держим его в паре
+              с планом риска: оба числа задают размер позиции и читаются вместе. */}
           <p className="mt-1 text-xs text-slate-400">
-            План риска: {levelRiskUsd} USDT (±{tolerancePctLabel}%)
+            Плечо {leverage}x · план риска {levelRiskUsd} USDT (±{tolerancePctLabel}%)
           </p>
           {blockedReason ? (
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
