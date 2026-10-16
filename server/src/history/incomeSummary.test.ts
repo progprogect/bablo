@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchIncomeToTrades, summarizeIncome } from "./incomeSummary.js";
+import { matchIncomeToTrades, matchTradeNetPnl, summarizeIncome } from "./incomeSummary.js";
 
 test("summarizeIncome: раскладывает начисления по типам", () => {
   const summary = summarizeIncome([
@@ -124,4 +124,87 @@ test("matchIncomeToTrades: соседние сделки по одному си�
   assert.equal(result.pnlByTradeId.get(1), 10);
   assert.equal(result.pnlByTradeId.get(2), -4);
   assert.equal(result.unmatchedCount, 0);
+});
+
+// --- Полная П/У сделки (правка от 16.10.2026) ---
+
+const MIN = 60_000;
+
+/** Сделка: открыта в `openMin`, закрыта в `closeMin` (минуты от условного нуля). */
+function tradeAt(id: number, openMin: number, closeMin: number, symbol = "TIA-USDT") {
+  return {
+    id,
+    symbol,
+    openedAt: new Date(openMin * MIN),
+    closedAt: new Date(closeMin * MIN),
+  };
+}
+
+test("matchTradeNetPnl: к PnL закрытия прибавляются комиссии и funding, переводы — нет", () => {
+  const trade = tradeAt(1, 100, 140);
+  const net = matchTradeNetPnl(
+    [
+      { incomeType: "TRADING_FEE", income: "-0.42", time: 100 * MIN, symbol: "TIA-USDT" },
+      { incomeType: "FUNDING_FEE", income: "-0.11", time: 120 * MIN, symbol: "TIA-USDT" },
+      { incomeType: "REALIZED_PNL", income: "80", time: 140 * MIN, symbol: "TIA-USDT" },
+      { incomeType: "TRADING_FEE", income: "-0.47", time: 140 * MIN, symbol: "TIA-USDT" },
+      // Перевод внутри интервала сделки — это не её результат, а движение денег.
+      { incomeType: "TRANSFER", income: "500", time: 130 * MIN, symbol: "TIA-USDT" },
+    ],
+    [trade],
+  );
+  assert.ok(Math.abs((net.get(1) ?? 0) - 79) < 1e-9);
+});
+
+test("matchTradeNetPnl: комиссия входа не уезжает на предыдущую сделку", () => {
+  // Регрессия, ради которой правило привязки строже «ближайшей по закрытию»: сделка B
+  // открывается через 2 минуты после закрытия A, и её комиссия входа по прежнему
+  // правилу досталась бы A — у A закрытие рядом (2 мин), у B далеко (её собственные
+  // 40 минут жизни). Запись попадает в интервал B, значит она B.
+  const a = tradeAt(1, 10, 50);
+  const b = tradeAt(2, 52, 92);
+  const net = matchTradeNetPnl(
+    [{ incomeType: "TRADING_FEE", income: "-0.5", time: 52 * MIN, symbol: "TIA-USDT" }],
+    [a, b],
+  );
+  assert.equal(net.get(1), undefined);
+  assert.ok(Math.abs((net.get(2) ?? 0) - -0.5) < 1e-9);
+});
+
+test("matchTradeNetPnl: запись о закрытии с лагом биржи остаётся на своей сделке", () => {
+  // Обратная сторона того же правила: PnL закрытия приходит через 2 минуты после
+  // закрытия — внутрь интервала он уже не попадает, но по краю ближе всего именно к A.
+  const a = tradeAt(1, 10, 50);
+  const b = tradeAt(2, 70, 110);
+  const net = matchTradeNetPnl(
+    [{ incomeType: "REALIZED_PNL", income: "12.5", time: 52 * MIN, symbol: "TIA-USDT" }],
+    [a, b],
+  );
+  assert.ok(Math.abs((net.get(1) ?? 0) - 12.5) < 1e-9);
+  assert.equal(net.get(2), undefined);
+});
+
+test("matchTradeNetPnl: чужой символ и незакрытые сделки не участвуют", () => {
+  const tia = tradeAt(1, 100, 140, "TIA-USDT");
+  const open = { id: 2, symbol: "TAO-USDT", openedAt: new Date(100 * MIN), closedAt: null };
+  const net = matchTradeNetPnl(
+    [
+      { incomeType: "REALIZED_PNL", income: "5", time: 120 * MIN, symbol: "WLD-USDT" },
+      { incomeType: "REALIZED_PNL", income: "7", time: 120 * MIN, symbol: "TAO-USDT" },
+    ],
+    [tia, open],
+  );
+  assert.equal(net.size, 0);
+});
+
+test("matchTradeNetPnl: битая сумма не ломает итог", () => {
+  const trade = tradeAt(1, 100, 140);
+  const net = matchTradeNetPnl(
+    [
+      { incomeType: "REALIZED_PNL", income: "не число", time: 140 * MIN, symbol: "TIA-USDT" },
+      { incomeType: "REALIZED_PNL", income: "3", time: 140 * MIN, symbol: "TIA-USDT" },
+    ],
+    [trade],
+  );
+  assert.equal(net.get(1), 3);
 });

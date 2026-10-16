@@ -12,6 +12,7 @@ import { getBingxCredentials, getRiskSettings } from "../db/repositories/setting
 import { getIncomeHistory, type BingXCredentials, type BingXIncomeRecord } from "../bingx/client.js";
 import {
   matchIncomeToTrades,
+  matchTradeNetPnl,
   summarizeIncome,
   type IncomeSummary,
 } from "../history/incomeSummary.js";
@@ -85,9 +86,10 @@ const INCOME_RANGE_PADDING_MS = 5 * 60_000;
 
 /**
  * Реализованная П/У биржи по каждой сделке страницы — ФАКТ из журнала BingX
- * (`user/income`, записи REALIZED_PNL), тем же сопоставлением, которым считается
- * детализация месяца (GET /api/trades/month). Просьба пользователя от 16.10.2026:
- * видеть на карточке истории не только наш расчёт, но и сумму биржи.
+ * (`user/income`): реализованный PnL ПЛЮС комиссии, funding и прочие начисления за
+ * время жизни сделки, без переводов (`matchTradeNetPnl`). Просьба пользователя от
+ * 16.10.2026: видеть на карточке не только наш расчёт, но и полную сумму биржи —
+ * одного PnL закрытия мало, комиссии входа и выхода его заметно съедают.
  *
  * Best-effort: нет ключей, журнал пуст (кончилась глубина хранения BingX) или
  * пагинация упёрлась в кап — возвращаем `null` у всех сделок, и карточка просто не
@@ -118,8 +120,8 @@ async function attachExchangePnl<T extends Trade>(
     const { records, complete } = await listIncomeForRange(credentials, fromMs, toMs);
     if (records.length === 0 || !complete) return blank;
 
-    const { pnlByTradeId } = matchIncomeToTrades(records, closed);
-    return rows.map((row) => ({ ...row, exchangePnlUsd: pnlByTradeId.get(row.id) ?? null }));
+    const netByTradeId = matchTradeNetPnl(records, closed);
+    return rows.map((row) => ({ ...row, exchangePnlUsd: netByTradeId.get(row.id) ?? null }));
   } catch (error) {
     log.warn({ err: error }, "не удалось получить реализованную П/У BingX для истории");
     return blank;
@@ -237,7 +239,7 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       // границы депозита — по дневным снимкам (см. history/monthlyStats.ts).
       let exchange: (IncomeSummary & { unmatchedPnlUsd: number; unmatchedCount: number }) | null =
         null;
-      let pnlByTradeId = new Map<number, number>();
+      let netPnlByTradeId = new Map<number, number>();
       try {
         const credentials = await getBingxCredentials();
         if (credentials) {
@@ -251,7 +253,11 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
           // пустота при наличии сделок означает конец глубины хранения BingX.
           if (summary.recordCount > 0 && complete) {
             const matched = matchIncomeToTrades(records, rows);
-            pnlByTradeId = matched.pnlByTradeId;
+            // Для карточек сделок — ПОЛНАЯ П/У (с комиссиями и funding), тем же
+            // определением, что и в истории: TradeRow один на оба экрана, и разные
+            // числа в нём означали бы, что одно из них врёт. Диагностика «сколько PnL
+            // не легло ни на одну сделку» ниже остаётся по чистому PnL.
+            netPnlByTradeId = matchTradeNetPnl(records, rows);
             exchange = {
               ...summary,
               unmatchedPnlUsd: matched.unmatchedPnlUsd,
@@ -267,7 +273,7 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       // именно сделки записаны неверно (их чинит «Пересчитать» в админке).
       const trades = rows.map((row) => ({
         ...withOutcome(row),
-        exchangePnlUsd: pnlByTradeId.get(row.id) ?? null,
+        exchangePnlUsd: netPnlByTradeId.get(row.id) ?? null,
       }));
 
       return { trades, exchange };

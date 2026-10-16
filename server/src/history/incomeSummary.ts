@@ -75,6 +75,68 @@ export function matchIncomeToTrades(
   return { pnlByTradeId, unmatchedPnlUsd, unmatchedCount };
 }
 
+/** Насколько запись отстоит от интервала жизни сделки; 0 — попала внутрь. */
+function distanceToTradeInterval(time: number, openedAtMs: number, closedAtMs: number): number {
+  if (time < openedAtMs) return openedAtMs - time;
+  if (time > closedAtMs) return time - closedAtMs;
+  return 0;
+}
+
+/**
+ * ПОЛНАЯ реализованная П/У сделки по данным биржи: реализованный PnL плюс комиссии,
+ * funding и прочие начисления за время её жизни, без переводов. Просьба пользователя от
+ * 16.10.2026: PnL закрытия сам по себе не показывает, сколько сделка реально стоила —
+ * комиссии входа и выхода его заметно съедают, а на карточке нужна полная картина.
+ *
+ * Определение то же, что у итога месяца в детализации (`realizedPnl + commission +
+ * funding + other`), поэтому цифры сделок и цифра месяца говорят об одном и том же.
+ *
+ * Привязка строже, чем в `matchIncomeToTrades`. Та выбирает «ближайшую по закрытию» —
+ * это верно для записи о закрытии, но ломается на комиссии ВХОДА: она приходит в момент
+ * открытия, и у соседней сделки, закрывшейся пару минут назад, закрытие оказывается
+ * ближе, чем закрытие собственной сделки. Поэтому здесь запись относится к сделке, в
+ * чей интервал жизни она попала (приложение держит одну позицию за раз — интервалы не
+ * пересекаются), а запись за пределами всех интервалов — к ближайшей по краю.
+ */
+export function matchTradeNetPnl(
+  records: BingXIncomeRecord[],
+  trades: TradeForIncomeMatch[],
+): Map<number, number> {
+  const byTradeId = new Map<number, number>();
+  const closed = trades.filter((trade) => trade.closedAt !== null);
+  if (closed.length === 0) return byTradeId;
+
+  for (const record of records) {
+    // Переводы — не результат торговли (пополнения/выводы), в П/У сделки им не место.
+    // Тип определяем тем же `classify`, что и суммы месяца: один маппинг на оба места.
+    if (classify(record.incomeType) === "transfersUsd") continue;
+    const amount = Number(record.income);
+    if (!Number.isFinite(amount)) continue;
+
+    const candidates = closed.filter(
+      (trade) =>
+        (!record.symbol || trade.symbol === record.symbol) &&
+        record.time >= trade.openedAt.getTime() - MATCH_BEFORE_OPEN_MS &&
+        record.time <= trade.closedAt!.getTime() + MATCH_AFTER_CLOSE_MS,
+    );
+    if (candidates.length === 0) continue;
+
+    const best = candidates.reduce((closest, trade) =>
+      distanceToTradeInterval(record.time, trade.openedAt.getTime(), trade.closedAt!.getTime()) <
+      distanceToTradeInterval(
+        record.time,
+        closest.openedAt.getTime(),
+        closest.closedAt!.getTime(),
+      )
+        ? trade
+        : closest,
+    );
+    byTradeId.set(best.id, (byTradeId.get(best.id) ?? 0) + amount);
+  }
+
+  return byTradeId;
+}
+
 /**
  * Суммы начислений фьючерсного счёта за период — ФАКТ с биржи для сверки месячной
  * статистики (блок «Депозит» в детализации месяца): не наша оценка «что осталось
