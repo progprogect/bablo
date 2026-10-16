@@ -55,9 +55,26 @@ function realizedPnlUsd(trade: Trade): number | null {
   return Number(trade.resultR) * Number(trade.riskUsd);
 }
 
+/**
+ * Реализованная П/У по данным БИРЖИ: сумма записей REALIZED_PNL из журнала BingX,
+ * привязанных к этой сделке на сервере (`exchangePnlUsd`, см. GET /api/trades).
+ * Приходит не всегда — ключей нет, журнал кончился по глубине хранения или запрос
+ * не добрал страницы; тогда строку просто не показываем, вместо прочерка.
+ *
+ * Это не то же самое, что сумма слева: наша считается от resultR × риск сделки, а
+ * биржевая берётся из начислений. Комиссии и funding в неё НЕ входят — у BingX это
+ * отдельные типы начислений (см. server/src/history/incomeSummary.ts), поэтому с
+ * движением депозита сходится не она, а месячный итог в детализации месяца.
+ */
+function exchangePnlUsd(trade: Trade): number | null {
+  const value = trade.exchangePnlUsd;
+  return value === null || value === undefined || !Number.isFinite(value) ? null : value;
+}
+
 export function TradeRow({ trade }: { trade: Trade }) {
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const pnlUsd = realizedPnlUsd(trade);
+  const exchangePnl = exchangePnlUsd(trade);
   const ratio = factualRatio(trade);
   const isProfit = pnlUsd !== null && pnlUsd > 0;
   const isLoss = pnlUsd !== null && pnlUsd < 0;
@@ -108,6 +125,13 @@ export function TradeRow({ trade }: { trade: Trade }) {
           {formatSignedUsd(pnlUsd)}
         </span>
       </div>
+
+      {exchangePnl !== null && (
+        <div className="flex items-baseline justify-between border-t border-line pt-2 text-[11px] text-slate-400">
+          <span>Реализованная П/У · BingX</span>
+          <span className="tabular-nums">{formatSignedUsd(exchangePnl)}</span>
+        </div>
+      )}
     </div>
   );
 }

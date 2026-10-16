@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { requireAuth } from "./plugins/auth-guard.js";
 import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } from "../trades/service.js";
 import type { TradeSide } from "../trades/math.js";
@@ -74,6 +74,56 @@ async function listIncomeForRange(
     startTime = lastTime + 1;
   }
   return { records: all, complete: false };
+}
+
+/**
+ * Запас по краям запрашиваемого окна: `matchIncomeToTrades` сопоставляет записи с
+ * буфером (минута до открытия, пять минут после закрытия), и без запаса запись о
+ * закрытии последней сделки страницы просто не попала бы в выборку.
+ */
+const INCOME_RANGE_PADDING_MS = 5 * 60_000;
+
+/**
+ * Реализованная П/У биржи по каждой сделке страницы — ФАКТ из журнала BingX
+ * (`user/income`, записи REALIZED_PNL), тем же сопоставлением, которым считается
+ * детализация месяца (GET /api/trades/month). Просьба пользователя от 16.10.2026:
+ * видеть на карточке истории не только наш расчёт, но и сумму биржи.
+ *
+ * Best-effort: нет ключей, журнал пуст (кончилась глубина хранения BingX) или
+ * пагинация упёрлась в кап — возвращаем `null` у всех сделок, и карточка просто не
+ * показывает строку. Врать половиной данных нельзя: `complete: false` означает, что
+ * часть записей не получена, и сумма по сделке вышла бы заниженной.
+ *
+ * Окно запроса — от открытия самой ранней до закрытия самой поздней сделки СТРАНИЦЫ
+ * (20 штук). Поэтому запрос не растёт с глубиной истории: плотный участок — это
+ * недавние сделки на узком окне, а редкий — широкое окно, но мало записей в нём.
+ */
+async function attachExchangePnl<T extends Trade>(
+  rows: T[],
+  log: FastifyBaseLogger,
+): Promise<(T & { exchangePnlUsd: number | null })[]> {
+  const blank = rows.map((row) => ({ ...row, exchangePnlUsd: null as number | null }));
+  const closed = rows.filter((row) => row.closedAt !== null);
+  if (closed.length === 0) return blank;
+
+  try {
+    const credentials = await getBingxCredentials();
+    if (!credentials) return blank;
+
+    const fromMs =
+      Math.min(...closed.map((row) => row.openedAt.getTime())) - INCOME_RANGE_PADDING_MS;
+    const toMs =
+      Math.max(...closed.map((row) => row.closedAt!.getTime())) + INCOME_RANGE_PADDING_MS;
+
+    const { records, complete } = await listIncomeForRange(credentials, fromMs, toMs);
+    if (records.length === 0 || !complete) return blank;
+
+    const { pnlByTradeId } = matchIncomeToTrades(records, closed);
+    return rows.map((row) => ({ ...row, exchangePnlUsd: pnlByTradeId.get(row.id) ?? null }));
+  } catch (error) {
+    log.warn({ err: error }, "не удалось получить реализованную П/У BingX для истории");
+    return blank;
+  }
 }
 
 /**
@@ -156,7 +206,8 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       const page = await listClosedTradesPage(limit, offset, hour);
       // Исход считает сервер (history/outcome.ts), а не клиент: та же трактовка, что в
       // статистике и дневных лимитах — иначе подпись в истории разошлась бы с цифрами.
-      return { ...page, trades: page.trades.map(withOutcome) };
+      const trades = await attachExchangePnl(page.trades.map(withOutcome), request.log);
+      return { ...page, trades };
     },
   );
 

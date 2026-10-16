@@ -7,6 +7,7 @@ import { InsightPanel } from "./history/InsightPanel";
 import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { BlockRulesCard } from "./history/BlockRulesCard";
+import { AssetsLeverageCard } from "./history/AssetsLeverageCard";
 import { ChimeSoundPicker } from "./history/ChimeSoundPicker";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
@@ -124,6 +125,10 @@ export function History() {
         <div className="mx-4 flex flex-col gap-3">
           <TradingBlocksSection />
           <BlockRulesCard />
+          {/* Плечо — рабочий параметр входа, его меняют по ходу торговли, поэтому оно
+              здесь, а не только в админке. Набор активов (добавить/выключить/удалить)
+              остаётся в админке: это разовая настройка. */}
+          <AssetsLeverageCard />
           <NotificationsSection />
           <ChimeSoundPicker />
         </div>
