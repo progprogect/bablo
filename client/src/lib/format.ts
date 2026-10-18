@@ -45,6 +45,17 @@ export function formatSignedR(value: number): string {
   return `${formatSignedRValue(value)}R`;
 }
 
+/**
+ * Процент до сотых, с запятой: 0.8 → "0,80". Запятая — потому что так же выглядит число
+ * в TradingView, откуда взята база расчёта расстояния до стопа.
+ *
+ * Держим в синхроне с `formatPct` в `server/src/risk/stopDistance.ts`: один и тот же
+ * процент пользователь видит и в живой проверке формы, и в ответе сервера.
+ */
+export function formatPct(value: number): string {
+  return value.toFixed(2).replace(".", ",");
+}
+
 /** "+12.30 USDT" / "-4.50 USDT" — со знаком, для наглядности прибыли/убытка. */
 export function formatSignedUsd(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";

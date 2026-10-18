@@ -8,6 +8,7 @@ import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
 import { BlockRulesCard } from "./history/BlockRulesCard";
 import { AssetsCard } from "../components/AssetsCard";
+import { StopDistanceCard } from "./history/StopDistanceCard";
 import { ChimeSoundPicker } from "./history/ChimeSoundPicker";
 import { NotificationsSection } from "./history/NotificationsSection";
 import { TradeRow } from "./history/TradeRow";
@@ -129,6 +130,8 @@ export function History() {
               компонент стоит в админке с `manage`: правка плеча там и тут одна и та же,
               разойтись поведением они больше не могут. */}
           <AssetsCard />
+          {/* Рядом с плечом: оба параметра про вход и оба проверяются при открытии. */}
+          <StopDistanceCard />
           <NotificationsSection />
           <ChimeSoundPicker />
         </div>

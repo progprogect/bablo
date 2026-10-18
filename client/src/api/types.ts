@@ -121,6 +121,19 @@ export type RiskSnapshot = {
   maxTpRatio: number | null;
   /** Незакрытые выводы прибыли по уровням (правило #12) — пока не пусто, торговля закрыта. */
   pendingWithdrawals?: PendingWithdrawal[];
+  /**
+   * Границы расстояния до стопа (правило от 18.10.2026). Необязательное поле: ответ
+   * сервера, выкаченного до появления правила, его не содержит, и форма тогда просто не
+   * проверяет расстояние.
+   */
+  stopDistance?: StopDistanceLimits;
+};
+
+/** Границы расстояния «вход → SL». `null` — без ограничения с этой стороны. */
+export type StopDistanceLimits = {
+  enabled: boolean;
+  minPct: number | null;
+  maxPct: number | null;
 };
 
 /** Требование вывода прибыли за пройденный уровень. */
@@ -187,6 +200,12 @@ export type RiskSettings = {
   dailyProfitLimitR: number;
   resetHour: number;
   tzOffsetMinutes: number;
+  /** Проверка расстояния до стопа при входе: включена ли (правило от 18.10.2026). */
+  stopDistanceCheckEnabled: boolean;
+  /** Минимальный разрыв «вход → SL» в % от цены входа; null — без ограничения. */
+  minStopDistancePct: number | null;
+  /** Максимальный разрыв «вход → SL» в % от цены входа; null — без ограничения. */
+  maxStopDistancePct: number | null;
 };
 
 /**

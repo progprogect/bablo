@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getPrice, openTradeRequest } from "../../api/client";
-import type { OpenTradeResult, TradeSide } from "../../api/types";
+import { formatPct } from "../../lib/format";
+import type { OpenTradeResult, StopDistanceLimits, TradeSide } from "../../api/types";
 
 type Phase = "idle" | "side" | "details";
 
@@ -14,6 +15,54 @@ function riskSizeToleranceRatio(_level: number): number {
 
 function isValidStopLossDirection(currentPrice: number, slPrice: number, side: TradeSide): boolean {
   return side === "long" ? slPrice < currentPrice : slPrice > currentPrice;
+}
+
+/**
+ * Расстояние до стопа в % от цены входа, до сотых. Держим в синхроне с
+ * server/src/risk/stopDistance.ts — пользователь должен видеть то же число и ту же
+ * формулировку до отправки, что и в ответе сервера.
+ *
+ * Модуль разницы, поэтому лонг и шорт считаются одной формулой; направление стопа
+ * проверяется отдельно выше.
+ */
+function stopDistancePct(entryPrice: number, slPrice: number): number | null {
+  if (!Number.isFinite(entryPrice) || !Number.isFinite(slPrice)) return null;
+  if (!(entryPrice > 0) || !(slPrice > 0)) return null;
+  return Math.round((Math.abs(entryPrice - slPrice) / entryPrice) * 100 * 100) / 100;
+}
+
+/** Цена стопа ровно на заданном проценте: у лонга ниже входа, у шорта выше. */
+function slPriceAtPct(entryPrice: number, side: TradeSide, pct: number): number {
+  const offset = entryPrice * (pct / 100);
+  return side === "long" ? entryPrice - offset : entryPrice + offset;
+}
+
+/**
+ * Отказ по расстоянию до стопа или null, если всё в порядке. Сравнение — по округлённому
+ * проценту, тому же, что показан пользователю (иначе 0.7996% читалось бы как «0,80%» и
+ * при этом блокировалось минимумом 0,80%).
+ */
+function stopDistanceRejection(params: {
+  side: TradeSide;
+  entryPrice: number;
+  slPrice: number;
+  limits: StopDistanceLimits | null;
+}): string | null {
+  const { side, entryPrice, slPrice, limits } = params;
+  if (!limits || !limits.enabled) return null;
+  const pct = stopDistancePct(entryPrice, slPrice);
+  if (pct === null) return null;
+
+  const { minPct, maxPct } = limits;
+  if (minPct !== null && pct < minPct) {
+    const target = slPriceAtPct(entryPrice, side, minPct).toFixed(4);
+    return `Стоп в ${formatPct(pct)}% от входа — ближе минимума ${formatPct(minPct)}%. Отодвиньте SL до ≈${target} или дальше.`;
+  }
+  if (maxPct !== null && pct > maxPct) {
+    const target = slPriceAtPct(entryPrice, side, maxPct).toFixed(4);
+    return `Стоп в ${formatPct(pct)}% от входа — дальше максимума ${formatPct(maxPct)}%. Приблизьте SL до ≈${target} или ближе.`;
+  }
+  return null;
 }
 
 function computeRiskUsd(currentPrice: number, slPrice: number, quantity: number): number {
@@ -38,7 +87,13 @@ function estimateLiquidationPrice(currentPrice: number, leverage: number, side: 
 type Validation =
   | { status: "empty" }
   | { status: "invalid"; message: string }
-  | { status: "ok"; riskUsd: number; estimatedLiquidation: number };
+  | {
+      status: "ok";
+      riskUsd: number;
+      estimatedLiquidation: number;
+      /** null — проверка расстояния выключена или границы не заданы: строку не рисуем. */
+      stopDistancePct: number | null;
+    };
 
 function evaluateTrade(params: {
   currentPrice: number | null;
@@ -51,6 +106,7 @@ function evaluateTrade(params: {
   minQuantity: number | null;
   minNotionalUsdt: number | null;
   symbolLabel: string;
+  stopDistance: StopDistanceLimits | null;
 }): Validation {
   const {
     currentPrice,
@@ -63,6 +119,7 @@ function evaluateTrade(params: {
     minQuantity,
     minNotionalUsdt,
     symbolLabel,
+    stopDistance,
   } = params;
 
   if (!quantity || !slPrice || currentPrice === null) {
@@ -83,6 +140,19 @@ function evaluateTrade(params: {
       status: "invalid",
       message: side === "long" ? "SL должен быть ниже текущей цены" : "SL должен быть выше текущей цены",
     };
+  }
+
+  // Расстояние до стопа — до проверок размера: правило про сам стоп, и при неудачном
+  // стопе полезнее прочитать «стоп слишком близко», чем «уменьшите объём». Тот же
+  // порядок на сервере (trades/service.ts).
+  const stopDistanceError = stopDistanceRejection({
+    side,
+    entryPrice: currentPrice,
+    slPrice: parsedSl,
+    limits: stopDistance,
+  });
+  if (stopDistanceError !== null) {
+    return { status: "invalid", message: stopDistanceError };
   }
 
   if (minQuantity !== null && minNotionalUsdt !== null) {
@@ -142,7 +212,15 @@ function evaluateTrade(params: {
     };
   }
 
-  return { status: "ok", riskUsd, estimatedLiquidation };
+  return {
+    status: "ok",
+    riskUsd,
+    estimatedLiquidation,
+    stopDistancePct:
+      stopDistance?.enabled && (stopDistance.minPct !== null || stopDistance.maxPct !== null)
+        ? stopDistancePct(currentPrice, parsedSl)
+        : null,
+  };
 }
 
 /**
@@ -157,6 +235,7 @@ export function TradeForm({
   levelRiskUsd,
   currentLevel,
   livePrice,
+  stopDistance,
   blockedReason = null,
   onOpened,
 }: {
@@ -165,6 +244,8 @@ export function TradeForm({
   levelRiskUsd: number;
   currentLevel: number;
   livePrice?: number;
+  /** Границы расстояния до стопа из риск-снимка; null — сервер без этого правила. */
+  stopDistance: StopDistanceLimits | null;
   /** Если задан — вход в этот актив запрещён (правило #9: стоп по активу сегодня). */
   blockedReason?: string | null;
   onOpened: (result: OpenTradeResult) => void;
@@ -180,6 +261,15 @@ export function TradeForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const tolerancePctLabel = Math.round(riskSizeToleranceRatio(currentLevel) * 100);
+
+  const stopDistanceRangeLabel = (() => {
+    const min = stopDistance?.minPct ?? null;
+    const max = stopDistance?.maxPct ?? null;
+    if (min !== null && max !== null) return `в границах ${formatPct(min)}–${formatPct(max)}%`;
+    if (min !== null) return `не ближе минимума ${formatPct(min)}%`;
+    if (max !== null) return `не дальше максимума ${formatPct(max)}%`;
+    return "";
+  })();
 
   useEffect(() => {
     setRestPrice(null);
@@ -219,6 +309,7 @@ export function TradeForm({
             minQuantity,
             minNotionalUsdt,
             symbolLabel,
+            stopDistance,
           })
         : { status: "empty" as const },
     [
@@ -232,6 +323,7 @@ export function TradeForm({
       minQuantity,
       minNotionalUsdt,
       symbolLabel,
+      stopDistance,
     ],
   );
 
@@ -404,6 +496,7 @@ export function TradeForm({
         validation={validation}
         levelRiskUsd={levelRiskUsd}
         tolerancePctLabel={tolerancePctLabel}
+        stopDistanceRangeLabel={stopDistanceRangeLabel}
       />
 
       {error && <p className="text-center text-sm text-red-600">{error}</p>}
@@ -426,10 +519,13 @@ function ValidationPanel({
   validation,
   levelRiskUsd,
   tolerancePctLabel,
+  stopDistanceRangeLabel,
 }: {
   validation: Validation;
   levelRiskUsd: number;
   tolerancePctLabel: number;
+  /** Готовая формулировка границ: при одной границе «в границах …» звучит криво. */
+  stopDistanceRangeLabel: string;
 }) {
   if (validation.status === "empty") {
     return (
@@ -457,6 +553,12 @@ function ValidationPanel({
         <span aria-hidden>✓</span>
         Ликвидация (≈{validation.estimatedLiquidation.toFixed(4)}) дальше стопа
       </p>
+      {validation.stopDistancePct !== null && (
+        <p className="flex items-center gap-1.5">
+          <span aria-hidden>✓</span>
+          Стоп в {formatPct(validation.stopDistancePct)}% от входа — {stopDistanceRangeLabel}
+        </p>
+      )}
     </div>
   );
 }

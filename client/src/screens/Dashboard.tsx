@@ -151,6 +151,7 @@ export function Dashboard() {
                 levelRiskUsd={data.risk.levelRiskUsd}
                 currentLevel={data.risk.currentLevel}
                 livePrice={livePrices[selectedSymbol]}
+                stopDistance={data.risk.stopDistance ?? null}
                 blockedReason={selectedAssetSlLock?.reason ?? null}
                 onOpened={(result) => {
                   setNotice(result.slWarning);

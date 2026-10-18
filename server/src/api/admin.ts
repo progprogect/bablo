@@ -8,7 +8,13 @@ import {
   type CreateAssetInput,
   type UpdateAssetInput,
 } from "../db/repositories/assets.js";
-import { getBingxCredentials, setBingxCredentials, getRiskSettings, setRiskSettings } from "../db/repositories/settings.js";
+import {
+  getBingxCredentials,
+  setBingxCredentials,
+  getRiskSettings,
+  setRiskSettings,
+  type RiskSettings,
+} from "../db/repositories/settings.js";
 import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
@@ -455,23 +461,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     return getRiskSettings();
   });
 
-  app.put<{
-    Body: Partial<{
-      cooldownMinutes: number;
-      dailyLossLimitR: number;
-      dailyProfitLimitR: number;
-      resetHour: number;
-      tzOffsetMinutes: number;
-    }>;
-  }>("/admin/risk-settings", async (request, reply) => {
+  app.put<{ Body: Partial<RiskSettings> }>("/admin/risk-settings", async (request, reply) => {
     const body = request.body ?? {};
-    const patch: Partial<{
-      cooldownMinutes: number;
-      dailyLossLimitR: number;
-      dailyProfitLimitR: number;
-      resetHour: number;
-      tzOffsetMinutes: number;
-    }> = {};
+    const patch: Partial<RiskSettings> = {};
 
     if (body.cooldownMinutes !== undefined) {
       if (!(Number.isFinite(body.cooldownMinutes) && body.cooldownMinutes >= 0)) {
@@ -507,6 +499,39 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         return;
       }
       patch.tzOffsetMinutes = body.tzOffsetMinutes;
+    }
+    if (body.stopDistanceCheckEnabled !== undefined) {
+      if (typeof body.stopDistanceCheckEnabled !== "boolean") {
+        reply.code(400).send({ error: "stopDistanceCheckEnabled должен быть true или false" });
+        return;
+      }
+      patch.stopDistanceCheckEnabled = body.stopDistanceCheckEnabled;
+    }
+    for (const key of ["minStopDistancePct", "maxStopDistancePct"] as const) {
+      const value = body[key];
+      if (value === undefined) continue;
+      // null — осознанное «без ограничения», поэтому отдельная ветка, а не провал в число.
+      if (value === null) {
+        patch[key] = null;
+        continue;
+      }
+      if (!(Number.isFinite(value) && value >= 0.01 && value <= 100)) {
+        reply.code(400).send({ error: `${key} должен быть числом от 0.01 до 100 либо null` });
+        return;
+      }
+      patch[key] = value;
+    }
+    // Границы проверяем ПОСЛЕ слияния с текущими: патч может менять только одну из них,
+    // и «минимум больше максимума» получилось бы незаметно, из двух корректных запросов.
+    const current = await getRiskSettings();
+    const merged = { ...current, ...patch };
+    if (
+      merged.minStopDistancePct !== null &&
+      merged.maxStopDistancePct !== null &&
+      merged.minStopDistancePct > merged.maxStopDistancePct
+    ) {
+      reply.code(400).send({ error: "Минимум не может быть больше максимума" });
+      return;
     }
     return setRiskSettings(patch);
   });

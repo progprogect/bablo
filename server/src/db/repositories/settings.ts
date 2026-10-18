@@ -67,6 +67,17 @@ export type RiskSettings = {
   resetHour: number;
   /** Смещение локальной таймзоны от UTC в минутах, например 180 для UTC+3. */
   tzOffsetMinutes: number;
+  /**
+   * Проверка расстояния между ценой входа и стопом при открытии сделки (правило
+   * пользователя от 18.10.2026, логика — в `server/src/risk/stopDistance.ts`).
+   * Выключена по умолчанию: границы пользователь задаёт сам, и до этого момента правило
+   * ничего не должно блокировать.
+   */
+  stopDistanceCheckEnabled: boolean;
+  /** Минимальный допустимый разрыв в % от цены входа; null — без ограничения снизу. */
+  minStopDistancePct: number | null;
+  /** Максимальный допустимый разрыв в % от цены входа; null — без ограничения сверху. */
+  maxStopDistancePct: number | null;
 };
 
 export const DEFAULT_RISK_SETTINGS: RiskSettings = {
@@ -75,6 +86,9 @@ export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   dailyProfitLimitR: 3,
   resetHour: 7,
   tzOffsetMinutes: 180,
+  stopDistanceCheckEnabled: false,
+  minStopDistancePct: null,
+  maxStopDistancePct: null,
 };
 
 export async function getRiskSettings(): Promise<RiskSettings> {

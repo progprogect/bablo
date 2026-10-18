@@ -36,6 +36,11 @@ import {
   RiskBlockedError,
 } from "../risk/service.js";
 import { isTpRatioAllowed, MAX_RR_AFTER_STOP } from "../risk/limits.js";
+import {
+  checkStopDistance,
+  stopDistanceLimitsFrom,
+  stopDistanceRejectMessage,
+} from "../risk/stopDistance.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
   computeAdjustedOrders,
@@ -163,6 +168,20 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
     throw new TradeError(
       input.side === "long" ? "Цена SL должна быть ниже текущей цены" : "Цена SL должна быть выше текущей цены",
     );
+  }
+
+  // Расстояние до стопа (правило от 18.10.2026) — сразу после направления и ДО проверок
+  // размера: правило про сам стоп, и при неудачном стопе пользователь должен прочитать
+  // «стоп слишком близко», а не «уменьшите объём». База процента — текущая цена: по ней
+  // уходит рыночный ордер, она же база у проверки риска ниже.
+  const stopDistance = checkStopDistance({
+    side: input.side,
+    entryPrice: currentPrice,
+    slPrice: input.slPrice,
+    limits: stopDistanceLimitsFrom(await getRiskSettings()),
+  });
+  if (stopDistance.status === "too_close" || stopDistance.status === "too_far") {
+    throw new TradeError(stopDistanceRejectMessage(stopDistance));
   }
 
   try {

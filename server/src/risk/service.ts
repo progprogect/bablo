@@ -18,6 +18,7 @@ import { computeRiskUsd, parseRRRatio } from "../trades/math.js";
 import { computeResult } from "../trades/result.js";
 import { applyTradeResult, computeMaxQuantity, getLevelDef, riskSizeToleranceRatio } from "./ladder.js";
 import { evaluateManualTradingBlock } from "./manualBlocksService.js";
+import { stopDistanceLimitsFrom, type StopDistanceLimits } from "./stopDistance.js";
 import {
   createRequirementsForLevelUp,
   listPendingWithdrawalRequirements,
@@ -107,6 +108,11 @@ export type RiskSnapshot = {
    * сделок запрещено — UI показывает отдельную панель с суммой и подтверждением вывода.
    */
   pendingWithdrawals: { id: number; level: number; requiredUsd: number }[];
+  /**
+   * Границы расстояния до стопа (правило от 18.10.2026): форма проверяет их живьём, пока
+   * пользователь вводит SL, а сервер — ещё раз перед отправкой ордера.
+   */
+  stopDistance: StopDistanceLimits;
 };
 
 function toLockView(lock: {
@@ -170,6 +176,7 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     assetSlLocks: assetSlLocks.map(toLockView),
     maxTpRatio: lastWasStop ? MAX_RR_AFTER_STOP : null,
     pendingWithdrawals,
+    stopDistance: stopDistanceLimitsFrom(settings),
   };
 }
 
