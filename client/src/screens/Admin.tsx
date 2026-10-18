@@ -1,5 +1,5 @@
 import { BingxKeysSection } from "./admin/BingxKeysSection";
-import { AssetsSection } from "./admin/AssetsSection";
+import { AssetsCard } from "../components/AssetsCard";
 import { RiskPlanSection } from "./admin/RiskPlanSection";
 import { EquityAdjustmentsSection } from "./admin/EquityAdjustmentsSection";
 import { TradeCloseReasonSection } from "./admin/TradeCloseReasonSection";
@@ -12,7 +12,10 @@ export function Admin() {
       <BingxKeysSection />
       <TradeCloseReasonSection />
       <TradeStatsRrSection />
-      <AssetsSection />
+      {/* Тот же компонент, что в «Настройках» (просьба от 18.10.2026: плечо правится
+          в обоих местах). `manage` добавляет состав набора — добавление, включение,
+          удаление; правка плеча одинаковая здесь и там. */}
+      <AssetsCard manage />
       <RiskPlanSection />
       <EquityAdjustmentsSection />
     </section>
