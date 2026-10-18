@@ -149,13 +149,6 @@ export type WithdrawalsState = {
   history: WithdrawalView[];
 };
 
-export type BingxWithdrawalCheck = {
-  found: number;
-  matched: number;
-  error: string | null;
-  state: WithdrawalsState;
-};
-
 export type DashboardResponse = {
   balance: BingXBalance | null;
   balanceError: string | null;

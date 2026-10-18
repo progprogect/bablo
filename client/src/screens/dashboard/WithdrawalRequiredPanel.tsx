@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, checkBingxWithdrawalsRequest, confirmWithdrawalRequest } from "../../api/client";
+import { ApiError, confirmWithdrawalRequest } from "../../api/client";
 import type { PendingWithdrawal } from "../../api/types";
 
 function formatUsd(value: number): string {
@@ -9,8 +9,13 @@ function formatUsd(value: number): string {
 /**
  * Блокировка «выведи прибыль за пройденный уровень» (docs/RISK_ENGINE.md, правило #12).
  * В отличие от остальных блокировок, она снимается не по таймеру, а действием: выводом
- * денег с биржи. Поэтому здесь не обратный отсчёт, а два пути подтверждения —
- * автоматическая сверка с историей выводов BingX и ручная отметка.
+ * денег с биржи. Поэтому здесь не обратный отсчёт, а подтверждение вывода.
+ *
+ * Путь подтверждения ОДИН — ручная отметка (просьба пользователя от 18.10.2026). Кнопка
+ * автоматической сверки с историей выводов BingX убрана: историю выводов видит только ключ
+ * с правами на кошелёк, таких прав у ключа нет, и на практике сверка не срабатывала
+ * никогда — кнопка лишь занимала место и обещала то, чего не умеет. Серверная ручка
+ * `POST /api/withdrawals/check-bingx` оставлена на случай, если права когда-нибудь выдадут.
  */
 export function WithdrawalRequiredPanel({
   pending,
@@ -19,44 +24,15 @@ export function WithdrawalRequiredPanel({
   pending: PendingWithdrawal[];
   onResolved: () => void;
 }) {
-  const [isChecking, setIsChecking] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [manualFor, setManualFor] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const total = pending.reduce((sum, entry) => sum + entry.requiredUsd, 0);
 
-  async function handleCheck() {
-    setError(null);
-    setNotice(null);
-    setIsChecking(true);
-    try {
-      const result = await checkBingxWithdrawalsRequest();
-      if (result.error) {
-        setError(
-          `${result.error}. Историю выводов видит только ключ с правами на кошелёк — ` +
-            "либо выдай их ключу в BingX, либо отметь вывод вручную.",
-        );
-      } else if (result.matched > 0) {
-        onResolved();
-      } else {
-        setNotice(
-          `Подходящего вывода не нашлось (проверено записей: ${result.found}). ` +
-            "Вывод должен быть на точную сумму и сделан после прохождения уровня.",
-        );
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Не удалось проверить выводы на BingX");
-    } finally {
-      setIsChecking(false);
-    }
-  }
-
   async function handleConfirm(entry: PendingWithdrawal) {
     setError(null);
-    setNotice(null);
     setIsConfirming(true);
     try {
       await confirmWithdrawalRequest(entry.id, Number(amount));
@@ -72,7 +48,6 @@ export function WithdrawalRequiredPanel({
     setManualFor(entry.id);
     setAmount(formatUsd(entry.requiredUsd));
     setError(null);
-    setNotice(null);
   }
 
   return (
@@ -140,16 +115,6 @@ export function WithdrawalRequiredPanel({
         ))}
       </ul>
 
-      <button
-        type="button"
-        disabled={isChecking}
-        onClick={handleCheck}
-        className="rounded-xl border border-amber-300 bg-card py-2.5 text-sm font-medium text-amber-800 disabled:opacity-50"
-      >
-        {isChecking ? "Проверяю на BingX…" : "Проверить вывод на BingX"}
-      </button>
-
-      {notice && <p className="text-xs text-amber-700">{notice}</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

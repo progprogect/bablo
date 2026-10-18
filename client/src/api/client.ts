@@ -9,7 +9,6 @@ import type {
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
-  BingxWithdrawalCheck,
   RiskLevel,
   RiskSettings,
   SetTakeProfitResult,
@@ -135,13 +134,6 @@ export const confirmWithdrawalRequest = (id: number, amountUsd: number) =>
   request<WithdrawalsState>("/withdrawals/confirm", {
     method: "POST",
     body: JSON.stringify({ id, amountUsd }),
-  });
-
-/** Разовая сверка с историей выводов BingX — закрывает требования автоматически. */
-export const checkBingxWithdrawalsRequest = () =>
-  request<BingxWithdrawalCheck>("/withdrawals/check-bingx", {
-    method: "POST",
-    body: JSON.stringify({}),
   });
 
 /** Сделки без SL/TP (external/manual) — для ручной атрибуции в админке. */
