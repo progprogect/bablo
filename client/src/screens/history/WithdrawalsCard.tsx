@@ -21,24 +21,31 @@ function pluralWithdrawals(count: number): string {
 }
 
 /**
- * Строка одного вывода. Сумма «требовалось» отдельно не показывается: она сверяется до
- * цента (docs/RISK_ENGINE.md, правило #12), поэтому у выполненного вывода всегда равна
+ * Строка одного ВЫПОЛНЕННОГО вывода — уровень, дата и сумма в одну строку (просьба
+ * пользователя от 18.10.2026; до этого было две строки, с подписью про способ отметки).
+ *
+ * Способ подтверждения («отмечено вручную» / «сверено с BingX») в строке больше не
+ * пишется. Ручная отметка — обычный случай, повторять её у каждой строки незачем, а
+ * «сверено с BingX» в одну строку на 375px не влезает: замерено 18.10.2026, строка
+ * обрывалась на «сверено с Bi…». Факт сверки остаётся в данных (`entry.source`) — если
+ * он понадобится в интерфейсе, его место не в строке суммы, а отдельным знаком.
+ *
+ * Сумма «требовалось» отдельно не показывается: она сверяется до цента
+ * (docs/RISK_ENGINE.md, правило #12), поэтому у выполненного вывода всегда равна
  * фактической — вторая одинаковая цифра только шумела бы.
+ *
+ * Невыполненные требования сюда не попадают (карточка рендерит только `done`) — они живут
+ * отдельной янтарной плашкой выше, потому что блокируют торговлю.
  */
 function WithdrawalRow({ entry }: { entry: WithdrawalView }) {
-  const done = entry.withdrawnAt !== null;
   return (
     <li className="flex items-baseline justify-between gap-2 py-1.5 text-xs">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-slate-600">Уровень {entry.level}</span>
-        <span className="text-[11px] text-slate-400">
-          {done && entry.withdrawnAt
-            ? `${formatDate(entry.withdrawnAt)}${entry.source === "bingx" ? " · сверено с BingX" : " · отмечено вручную"}`
-            : "ждёт вывода"}
-        </span>
+      <span className="min-w-0 truncate text-slate-600">
+        Уровень {entry.level}
+        {entry.withdrawnAt && <> · {formatDate(entry.withdrawnAt)}</>}
       </span>
-      <span className={`shrink-0 tabular-nums ${done ? "font-medium text-ink" : "text-amber-700"}`}>
-        {formatUsd(done ? (entry.withdrawnUsd ?? entry.requiredUsd) : entry.requiredUsd)} USDT
+      <span className="shrink-0 font-medium tabular-nums text-ink">
+        {formatUsd(entry.withdrawnUsd ?? entry.requiredUsd)} USDT
       </span>
     </li>
   );
