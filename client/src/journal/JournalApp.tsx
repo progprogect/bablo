@@ -15,10 +15,16 @@ import { JournalSettings } from "./screens/JournalSettings";
  */
 export function JournalApp() {
   return (
-    <div className="min-h-screen bg-surface">
+    /* Оболочка и прокрутка — как в терминале (App.tsx, правка 18.10.2026): высота ровно
+       в экран, скроллится внутренний контейнер, панель внизу — обычный элемент потока.
+       Баг со скроллом на iPhone был общий: разметка у двух приложений одинаковая. */
+    <div
+      className="flex h-[100dvh] flex-col overflow-hidden bg-surface"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       <AuthGate>
-        <div className="mx-auto flex min-h-screen w-full max-w-5xl md:items-start md:justify-center">
-          <div className="flex w-full flex-1 flex-col pb-bottom-nav md:mx-auto md:max-w-md">
+        <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 md:justify-center">
+          <div className="flex w-full min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-3 md:mx-auto md:max-w-md">
             <Routes>
               <Route path="/" element={<Review />} />
               <Route path="/trades/:id" element={<TradeDetail />} />

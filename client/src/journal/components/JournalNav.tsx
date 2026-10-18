@@ -6,9 +6,10 @@ import { Link, useLocation } from "react-router-dom";
  * категорий — по шестерёнке внутри «Анализа»). Геометрия — как BottomNav терминала,
  * цвета — токенами темы (в журнале это палитра iOS).
  *
- * Фон непрозрачный и без backdrop-blur по той же причине, что в BottomNav (04.10.2026):
- * `backdrop-filter` на `position: fixed` отрывает панель от низа экрана при инерционном
- * скролле на iPhone.
+ * Не `position: fixed`, а обычный элемент потока — по той же причине и той же правкой,
+ * что BottomNav терминала (18.10.2026): `fixed`-панель над скроллящимся документом на
+ * iPhone отрывается от низа экрана при инерционном скролле. Фон непрозрачный, без
+ * backdrop-blur (04.10.2026) — первая попытка лечить тот же баг.
  */
 export function JournalNav() {
   const { pathname } = useLocation();
@@ -18,7 +19,7 @@ export function JournalNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface"
+      className="shrink-0 border-t border-line bg-surface"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex h-16 max-w-md items-center justify-around">

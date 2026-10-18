@@ -1,10 +1,16 @@
 import { NavLink } from "react-router-dom";
 import { navTabs } from "./navTabs";
 
-/** Вертикальная навигация для десктопа — на мобильных экранах скрыта (см. BottomNav). */
+/**
+ * Вертикальная навигация для десктопа — на мобильных экранах скрыта (см. BottomNav).
+ *
+ * Без `sticky top-0` и `h-screen` (правка 18.10.2026): документ больше не скроллится,
+ * липнуть не к чему, а `100vh` теперь выше оболочки на высоту safe-area — колонка
+ * просто растягивается флекс-контейнером на всю её высоту.
+ */
 export function SideNav() {
   return (
-    <nav className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col gap-1 border-r border-line px-3 py-8 md:flex">
+    <nav className="hidden w-56 shrink-0 flex-col gap-1 border-r border-line px-3 py-8 md:flex">
       <div className="mb-6 px-3 text-lg font-semibold text-ink">Bablo</div>
       {navTabs.map((tab) => (
         <NavLink

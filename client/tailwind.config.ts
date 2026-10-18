@@ -23,13 +23,6 @@ export default {
         negative: "rgb(var(--negative-rgb) / <alpha-value>)",
         muted: "rgb(var(--muted-rgb) / <alpha-value>)",
       },
-      spacing: {
-        // Нижний отступ контента под фиксированной мобильной навигацией (BottomNav):
-        // её высота (h-16) + safe-area iPhone (home indicator) + небольшой запас, чтобы
-        // последняя карточка и кнопка "Показать ещё" не липли к панели и не уходили
-        // под неё (тап иначе перехватывает nav). Единый источник правды для отступа.
-        "bottom-nav": "calc(4rem + env(safe-area-inset-bottom) + 0.75rem)",
-      },
     },
   },
   plugins: [],
