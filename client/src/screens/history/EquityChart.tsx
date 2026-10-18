@@ -12,11 +12,37 @@ const PADDING = { top: 16, right: 12, bottom: 12, left: 12 };
 
 /**
  * Золото для отметок вывода (просьба пользователя от 18.10.2026) — литералом, а не
- * токеном темы: в палитре золота нет, а заводить ради одной точки пятый смысловой цвет
- * незачем. Металлическое #D4AF37, а не #FFD700: чистый жёлтый на белой карточке
- * выглядит кислотным и спорит с акцентной линией.
+ * токеном темы: в палитре золота нет, а заводить ради отметок на одном графике пятый
+ * смысловой цвет незачем. Металлическое #D4AF37, а не #FFD700: чистый жёлтый на белой
+ * карточке выглядит кислотным и спорит с акцентной линией.
  */
 const GOLD = "#D4AF37";
+
+/**
+ * Путь пятиконечной звезды с центром в (0,0): 10 вершин, через одну — внутренние.
+ * Первая смотрит строго вверх (угол −90°), дальше шаг 36°.
+ *
+ * Отношение внутреннего радиуса к внешнему — 0.5, то есть звезда намеренно «полная», а не
+ * тонкая пентаграмма (у той было бы ≈0.38): на десяти пикселях тонкие лучи сливаются в
+ * пятно и читаются хуже обычного кружка.
+ */
+function starPath(outerRadius: number, points = 5): string {
+  const innerRadius = outerRadius * 0.5;
+  const step = Math.PI / points;
+  const coords: string[] = [];
+  for (let index = 0; index < points * 2; index += 1) {
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+    const angle = -Math.PI / 2 + index * step;
+    coords.push(
+      `${(Math.cos(angle) * radius).toFixed(2)},${(Math.sin(angle) * radius).toFixed(2)}`,
+    );
+  }
+  return `M${coords.join("L")}Z`;
+}
+
+/** Звезда отметки на графике (координаты viewBox) и её уменьшенная копия для легенды. */
+const STAR_PATH = starPath(5.5);
+const LEGEND_STAR_PATH = starPath(4.8);
 
 export type WithdrawalMark = {
   /** ISO-таймстемп подтверждённого вывода. */
@@ -146,18 +172,25 @@ export function EquityChart({
         {marks.map((mark) => {
           const point = points[mark.index]!;
           return (
-            <circle
-              key={mark.index}
-              cx={point.x}
-              cy={point.y}
-              r={4}
-              fill={GOLD}
-              stroke="white"
-              strokeWidth={1.5}
-            >
+            <g key={mark.index} transform={`translate(${point.x.toFixed(1)},${point.y.toFixed(1)})`}>
+              {/*
+                `paintOrder="stroke"` кладёт белую обводку ПОД заливку: иначе она съедает
+                лучи изнутри и звезда на десяти пикселях становится пятном. Сама обводка
+                нужна, чтобы отметка не терялась на синей линии и заливке под ней.
+                `strokeLinejoin="round"` — без него miter вытягивает на острых концах
+                длинные белые шипы.
+              */}
+              <path
+                d={STAR_PATH}
+                fill={GOLD}
+                stroke="white"
+                strokeWidth={1.6}
+                strokeLinejoin="round"
+                paintOrder="stroke"
+              />
               {/* Нативная подсказка — бесплатно на десктопе, на телефоне просто не мешает. */}
               <title>{`Вывод ${formatWithdrawalUsd(mark.amountUsd)} USDT · ${formatShortDate(mark.dateKey)}`}</title>
-            </circle>
+            </g>
           );
         })}
       </svg>
@@ -171,8 +204,8 @@ export function EquityChart({
           строка «выводов нет» ничего не сообщает. */}
       {marks.length > 0 && (
         <div className="flex items-center gap-1.5 text-xs text-slate-500">
-          <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 shrink-0" aria-hidden="true">
-            <circle cx="5" cy="5" r="4" fill={GOLD} />
+          <svg viewBox="0 0 10 10" className="h-3 w-3 shrink-0" aria-hidden="true">
+            <path d={LEGEND_STAR_PATH} fill={GOLD} transform="translate(5,5)" />
           </svg>
           <span>Вывод прибыли</span>
         </div>
