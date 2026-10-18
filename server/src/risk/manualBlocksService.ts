@@ -46,8 +46,12 @@ export async function listCurrentlyBlockedHours(now: Date = new Date()): Promise
 export type ManualBlocksView = {
   /** Таймзона риск-плана: в ней заданы часы и окна, в ней UI показывает время. */
   tzOffsetMinutes: number;
-  /** Закрытые часы, по возрастанию часа. */
-  hours: { id: number; hour: number; endsAt: string }[];
+  /**
+   * Закрытые часы, по возрастанию часа. `startsAt` — когда час закрыли: карточка настроек
+   * показывает «закрыто 12.10 · откроется 19.10» вместо обратного отсчёта
+   * (просьба пользователя от 18.10.2026).
+   */
+  hours: { id: number; hour: number; startsAt: string; endsAt: string }[];
   /** Активные и предстоящие окна, по времени начала. */
   windows: { id: number; startsAt: string; endsAt: string }[];
 };
@@ -57,7 +61,12 @@ export async function listManualBlocksView(now: Date = new Date()): Promise<Manu
   const [rows, settings] = await Promise.all([listRelevantManualBlocks(now), getRiskSettings()]);
   const hours = rows
     .filter((row) => row.kind === "hour")
-    .map((row) => ({ id: row.id, hour: row.hour ?? 0, endsAt: row.endsAt.toISOString() }))
+    .map((row) => ({
+      id: row.id,
+      hour: row.hour ?? 0,
+      startsAt: row.startsAt.toISOString(),
+      endsAt: row.endsAt.toISOString(),
+    }))
     .sort((a, b) => a.hour - b.hour);
   const windows = rows
     .filter((row) => row.kind === "window")

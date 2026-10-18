@@ -204,7 +204,8 @@ export type RiskSettings = {
 export type TradingBlocks = {
   /** Таймзона риск-плана: в ней заданы часы и окна, в ней UI показывает время. */
   tzOffsetMinutes: number;
-  hours: { id: number; hour: number; endsAt: string }[];
+  /** `startsAt` — когда час закрыли; карточка настроек показывает обе даты, а не таймер. */
+  hours: { id: number; hour: number; startsAt: string; endsAt: string }[];
   windows: { id: number; startsAt: string; endsAt: string }[];
 };
 

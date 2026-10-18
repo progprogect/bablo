@@ -8,8 +8,9 @@ import type { TradingBlocks } from "../../api/types";
  * час суток на срок или планирует окно «дата + с … до» (таймзона риск-плана, МСК).
  *
  * Главное свойство: СНЯТЬ блокировку до истечения срока нельзя — ни здесь, ни в API.
- * Поэтому постановка идёт через явное подтверждение, а у каждой активной блокировки
- * показывается только таймер обратного отсчёта до её окончания.
+ * Поэтому постановка идёт через явное подтверждение. У закрытого часа показываются даты
+ * («закрыто 12.10 · откроется 19.10»), у окна — обратный отсчёт: окно живёт часы, там
+ * важны минуты, а час закрыт днями, и для планирования нужна дата.
  */
 
 /** Сроки блокировки часа на выбор — в днях. Произвольный срок не нужен: это решение-дисциплина, а не планировщик. */
@@ -44,6 +45,12 @@ function formatCountdown(ms: number): string {
 function formatLocal(iso: string, tzOffsetMinutes: number): string {
   const shifted = new Date(new Date(iso).getTime() + tzOffsetMinutes * MINUTE_MS);
   return `${shifted.getUTCDate()}.${pad2(shifted.getUTCMonth() + 1)} ${shifted.getUTCHours()}:${pad2(shifted.getUTCMinutes())}`;
+}
+
+/** Только дата ISO-момента в таймзоне риск-плана: «12.10». */
+function formatLocalDate(iso: string, tzOffsetMinutes: number): string {
+  const shifted = new Date(new Date(iso).getTime() + tzOffsetMinutes * MINUTE_MS);
+  return `${shifted.getUTCDate()}.${pad2(shifted.getUTCMonth() + 1)}`;
 }
 
 /** Только время ISO-момента в таймзоне риск-плана: «14:00». */
@@ -133,7 +140,8 @@ export function TradingBlocksSection() {
   const [to, setTo] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
-  const hasTimers = (blocks?.hours.length ?? 0) > 0 || (blocks?.windows.length ?? 0) > 0;
+  // Посекундный тикер нужен только окнам: у закрытых часов теперь даты, а не отсчёт.
+  const hasTimers = (blocks?.windows.length ?? 0) > 0;
   const now = useNow(hasTimers);
 
   useEffect(() => {
@@ -164,7 +172,7 @@ export function TradingBlocksSection() {
         <div>
           <h2 className="text-sm font-medium text-ink">Закрытые часы</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Час закрывается на срок и открыть его раньше нельзя — только дождаться таймера.
+            Час закрывается на срок, и открыть его раньше нельзя — только дождаться даты.
             Время по МСК.
           </p>
         </div>
@@ -177,11 +185,15 @@ export function TradingBlocksSection() {
                 className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5"
               >
                 <span className="text-sm text-ink">{entry.hour}:00</span>
+                {/* Даты вместо обратного отсчёта (просьба пользователя от 18.10.2026):
+                    «через 6д 03:12:45» надо пересчитывать в уме, чтобы понять, можно ли
+                    планировать торговлю на конкретный день. Час открывается в ту же
+                    минуту суток, в которую его закрыли, то есть в течение указанного дня. */}
                 <span className="text-xs tabular-nums text-slate-500">
-                  откроется через{" "}
-                  <span className="font-medium text-ink">
-                    {formatCountdown(new Date(entry.endsAt).getTime() - now)}
-                  </span>
+                  закрыто{" "}
+                  <span className="font-medium text-ink">{formatLocalDate(entry.startsAt, tz)}</span>
+                  {" · откроется "}
+                  <span className="font-medium text-ink">{formatLocalDate(entry.endsAt, tz)}</span>
                 </span>
               </li>
             ))}
