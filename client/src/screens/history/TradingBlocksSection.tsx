@@ -47,10 +47,18 @@ function formatLocal(iso: string, tzOffsetMinutes: number): string {
   return `${shifted.getUTCDate()}.${pad2(shifted.getUTCMonth() + 1)} ${shifted.getUTCHours()}:${pad2(shifted.getUTCMinutes())}`;
 }
 
-/** Только дата ISO-момента в таймзоне риск-плана: «12.10». */
+/**
+ * Только дата ISO-момента в таймзоне риск-плана, полным форматом: «01.10.26».
+ *
+ * С годом и с ведущим нулём у дня (просьба пользователя от 19.10.2026): час закрывается
+ * на срок до 30 дней, и у блокировки, поставленной в декабре, «05.01» без года читается
+ * двусмысленно. Короткий формат «1.10» остался только у окон расписания — они живут
+ * часами, и год там лишний.
+ */
 function formatLocalDate(iso: string, tzOffsetMinutes: number): string {
   const shifted = new Date(new Date(iso).getTime() + tzOffsetMinutes * MINUTE_MS);
-  return `${shifted.getUTCDate()}.${pad2(shifted.getUTCMonth() + 1)}`;
+  const year = String(shifted.getUTCFullYear()).slice(-2);
+  return `${pad2(shifted.getUTCDate())}.${pad2(shifted.getUTCMonth() + 1)}.${year}`;
 }
 
 /** Только время ISO-момента в таймзоне риск-плана: «14:00». */
