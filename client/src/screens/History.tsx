@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ApiError, getStats, getTradeHistory } from "../api/client";
 import { formatSignedR } from "../lib/format";
 import type { MonthlyStat, StatsResponse, Trade } from "../api/types";
@@ -6,6 +6,7 @@ import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
 import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
+import { aggregateYear, YearlyStatCard } from "./history/YearlyStatCard";
 import { BlockRulesCard } from "./history/BlockRulesCard";
 import { AssetsCard } from "../components/AssetsCard";
 import { StopDistanceCard } from "./history/StopDistanceCard";
@@ -223,18 +224,38 @@ export function History() {
           {stats.monthly.length === 0 ? (
             <p className="px-2 text-center text-sm text-slate-500">Пока нет ни одного закрытого месяца.</p>
           ) : (
-            stats.monthly.map((stat) => (
-              // Карточка сама не меняется — только становится кликабельной: нажатие
-              // открывает детализацию месяца (все сделки + диаграмма плюс/минус).
-              <button
-                key={`${stat.year}-${stat.month}`}
-                type="button"
-                onClick={() => setMonthDetail(stat)}
-                className="w-full text-left"
-              >
-                <MonthlyStatCard stat={stat} />
-              </button>
-            ))
+            stats.monthly.map((stat, index) => {
+              /*
+               * Перед первым месяцем каждого года — карточка «Итоги года» (просьба от
+               * 23.10.2026): сумма всех его месяцев. Список отсортирован по убыванию
+               * (год, месяц), поэтому «первый месяц года в списке» — самый поздний, и
+               * итоги каждого года автоматически встают НАД его месяцами; появится
+               * январь 2027 — над ним появятся «Итоги 2027». Годовая карточка
+               * некликабельна: детализация есть только у месяца.
+               */
+              const isFirstOfYear = index === 0 || stats.monthly[index - 1]!.year !== stat.year;
+              return (
+                <Fragment key={`${stat.year}-${stat.month}`}>
+                  {isFirstOfYear && (
+                    <YearlyStatCard
+                      stat={aggregateYear(
+                        stat.year,
+                        stats.monthly.filter((m) => m.year === stat.year),
+                      )}
+                    />
+                  )}
+                  {/* Карточка месяца кликабельна: нажатие открывает детализацию
+                      (все сделки + диаграмма плюс/минус). */}
+                  <button
+                    type="button"
+                    onClick={() => setMonthDetail(stat)}
+                    className="w-full text-left"
+                  >
+                    <MonthlyStatCard stat={stat} />
+                  </button>
+                </Fragment>
+              );
+            })
           )}
         </div>
       )}

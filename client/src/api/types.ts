@@ -248,6 +248,8 @@ export type MonthlyStat = {
   beCount: number;
   otherCount: number;
   winRate: number;
+  /** Сделки с resultR > 0 — числитель винрейта. Optional: ответ сервера до 23.10.2026. */
+  winCount?: number;
   sumR: number;
   sumPositiveR: number;
   sumNegativeR: number;

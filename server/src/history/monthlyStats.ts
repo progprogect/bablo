@@ -106,6 +106,12 @@ export type MonthlyStat = {
   beCount: number;
   otherCount: number;
   winRate: number; // 0..1
+  /**
+   * Числитель винрейта: сделки с resultR > 0 (НЕ tpCount — стоп, уведённый в прибыль,
+   * тоже победа). Наружу отдаётся ради годовой карточки: винрейт года = Σ winCount /
+   * Σ totalTrades, а не среднее месячных процентов.
+   */
+  winCount: number;
   sumR: number;
   /** Сумма resultR только по прибыльным сделкам (resultR > 0) — "сколько R заработано". */
   sumPositiveR: number;
@@ -604,6 +610,7 @@ export function computeMonthlyStats(
       beCount,
       otherCount,
       winRate: totalTrades > 0 ? winCount / totalTrades : 0,
+      winCount,
       sumR,
       sumPositiveR,
       sumNegativeR,
