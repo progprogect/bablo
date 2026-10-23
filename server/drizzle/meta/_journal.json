@@ -169,6 +169,13 @@
       "when": 1790906400000,
       "tag": "0023_strong_take_profit",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790992800000,
+      "tag": "0024_withdrawal_high_level_10",
+      "breakpoints": true
     }
   ]
 }

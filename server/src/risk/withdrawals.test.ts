@@ -143,16 +143,19 @@ test("matchWithdrawals: два требования и два подходящи
 
 // --- Множитель вывода (19.09.2026): 2R, а с 22-го уровня 3R ---
 
-test("withdrawalMultiplierForLevel: до 22 уровня — 2R, с 22-го — 3R", () => {
+test("withdrawalMultiplierForLevel: до 10 уровня — 2R, с 10-го — 3R", () => {
+  // Порог опущен с 22 до 10 (просьба от 23.10.2026) — проверяем обе стороны границы.
   assert.equal(withdrawalMultiplierForLevel(1), 2);
-  assert.equal(withdrawalMultiplierForLevel(21), 2);
+  assert.equal(withdrawalMultiplierForLevel(9), 2);
+  assert.equal(withdrawalMultiplierForLevel(10), 3);
   assert.equal(withdrawalMultiplierForLevel(22), 3);
   assert.equal(withdrawalMultiplierForLevel(50), 3);
 });
 
 test("requiredWithdrawalUsd: сумма = 1R уровня × множитель", () => {
   assert.equal(requiredWithdrawalUsd(6, 60), 120); // прошла 6-й уровень (1R = 60$) → 120$
-  assert.equal(requiredWithdrawalUsd(21, 280), 560);
-  assert.equal(requiredWithdrawalUsd(22, 300), 900); // с 22-го — уже 3R
+  assert.equal(requiredWithdrawalUsd(9, 100), 200); // 9-й — ещё 2R
+  assert.equal(requiredWithdrawalUsd(10, 120), 360); // с 10-го — уже 3R
+  assert.equal(requiredWithdrawalUsd(22, 300), 900);
   assert.equal(requiredWithdrawalUsd(50, 1000), 3000);
 });
