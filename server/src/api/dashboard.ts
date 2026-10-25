@@ -3,6 +3,7 @@ import { BingXApiError, getBalance } from "../bingx/client.js";
 import { listActiveAssets } from "../db/repositories/assets.js";
 import { captureEquitySnapshotIfMissing } from "../db/repositories/equitySnapshots.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
+import { listDayNotices } from "../risk/dayNoticesService.js";
 import { getRiskSnapshot } from "../risk/service.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
 import { reconcileActiveTradeIfExchangeFlat } from "../realtime/manager.js";
@@ -39,11 +40,12 @@ async function captureTodaysEquity(
 
 export async function registerDashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get("/dashboard", { preHandler: requireAuth }, async () => {
-    const [credentials, assets, activeTrade, risk] = await Promise.all([
+    const [credentials, assets, activeTrade, risk, notices] = await Promise.all([
       getBingxCredentials(),
       listActiveAssets(),
       getActiveTradeView(),
       getRiskSnapshot(),
+      listDayNotices(),
     ]);
     const externalPositions = await getExternalPositions(activeTrade?.symbol);
 
@@ -64,17 +66,18 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         activeTrade,
         externalPositions,
         risk,
+        notices,
       };
     }
 
     try {
       const balance = await getBalance(credentials);
       void captureTodaysEquity(balance.equity, balance.balance);
-      return { balance, balanceError: null, assets, activeTrade, externalPositions, risk };
+      return { balance, balanceError: null, assets, activeTrade, externalPositions, risk, notices };
     } catch (error) {
       const message =
         error instanceof BingXApiError ? error.message : "Не удалось получить баланс BingX";
-      return { balance: null, balanceError: message, assets, activeTrade, externalPositions, risk };
+      return { balance: null, balanceError: message, assets, activeTrade, externalPositions, risk, notices };
     }
   });
 }

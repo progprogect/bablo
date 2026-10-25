@@ -162,6 +162,17 @@ export type WithdrawalsState = {
   history: WithdrawalView[];
 };
 
+/**
+ * Уведомление сегодняшнего дня на главной (risk/dayNotices.ts): день недели с одним
+ * стопом, открывающийся час. Текст приходит с сервера — там же, где живут сами правила.
+ */
+export type DayNotice = {
+  id: string;
+  tone: "warn" | "info";
+  title: string;
+  detail: string;
+};
+
 export type DashboardResponse = {
   balance: BingXBalance | null;
   balanceError: string | null;
@@ -169,6 +180,8 @@ export type DashboardResponse = {
   activeTrade: ActiveTradeView | null;
   externalPositions: ExternalPosition[];
   risk: RiskSnapshot;
+  /** Необязательное поле: ответ сервера, выкаченного до появления уведомлений, его не содержит. */
+  notices?: DayNotice[];
 };
 
 export type BingxKeyStatus = {

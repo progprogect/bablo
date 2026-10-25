@@ -7,6 +7,7 @@ import { TradeForm } from "./dashboard/TradeForm";
 import { ActiveTradeCard } from "./dashboard/ActiveTradeCard";
 import { ExternalPositionsPanel } from "./dashboard/ExternalPositionsPanel";
 import { BlockedPanel } from "./dashboard/BlockedPanel";
+import { DayNotices } from "./dashboard/DayNotices";
 import { AssetSlBlockedPanel } from "./dashboard/AssetSlBlockedPanel";
 import { LevelIndicator } from "./dashboard/LevelIndicator";
 import { ProtectDepositButton } from "./dashboard/ProtectDepositButton";
@@ -104,6 +105,9 @@ export function Dashboard() {
         justLeveledUp={justLeveledUp}
         onOpen={() => setTreeOpen(true)}
       />
+
+      {/* Условия сегодняшнего дня — над всем, что касается входа: их читают до решения. */}
+      <DayNotices notices={data.notices ?? []} />
 
       {treeOpen && (
         <RiskTreeSheet

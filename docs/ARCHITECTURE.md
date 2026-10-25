@@ -51,9 +51,10 @@ bablo/
 │       ├── api/           # HTTP-роуты (Fastify)
 │       ├── bingx/         # REST-клиент + WS-коннектор BingX
 │       ├── trades/        # оркестрация сделок (open/TP) + чистая математика (R/R, риск)
-│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты, ручные блокировки
-│       │                 # (чистая логика без I/O: ladder.ts, limits.ts, manualBlocks.ts;
-│       │                 #  I/O-обвязка: service.ts, manualBlocksService.ts)
+│       ├── risk/          # риск-движок: лестница уровней, дневные лимиты, ручные блокировки,
+│       │                 # уведомления дня (чистая логика без I/O: ladder.ts, limits.ts,
+│       │                 #  manualBlocks.ts, dayNotices.ts; I/O-обвязка: service.ts,
+│       │                 #  manualBlocksService.ts, dayNoticesService.ts)
 │       ├── tracker/       # трекинг активной сделки (MFE, безубыток)
 │       ├── security/      # шифрование, PIN, сессии
 │       ├── db/            # схема Drizzle, миграции, репозитории
@@ -270,7 +271,7 @@ journal_answers — ответ на пункт: entry_id, item_id, значен�
 
 ```
 POST /api/auth/pin              — вход по PIN → сессионная кука
-GET  /api/dashboard             — баланс, активы, активная сделка, внешние позиции BingX (risk_state/блокировки — этап 3)
+GET  /api/dashboard             — баланс, активы, активная сделка, внешние позиции BingX, уведомления дня (risk_state/блокировки — этап 3)
 GET  /api/price/:symbol         — текущая цена символа (REST по действию, без поллинга)
 POST /api/trades                — открыть { symbol, side, quantity, slPrice } → market + SL
 GET  /api/trades/active         — активная сделка + живые данные позиции (ликвидация, PnL)

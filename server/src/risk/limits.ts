@@ -88,11 +88,15 @@ export const DAILY_STOP_LOSS_LIMIT = 2;
  * «отыграться»: в понедельник рынок ещё не показал характер недели, в пятницу решения
  * портит фиксация позиций перед выходными.
  *
- * Ключ — номер дня как у Date#getUTCDay (1 — ПН, 5 — ПТ), значение — название для текста
- * блокировки в винительном падеже («стоп в понедельник»). Один словарь, а не список
- * отдельно от подписей: добавить день = добавить строку, рассинхрону взяться негде.
+ * Ключ — номер дня как у Date#getUTCDay (1 — ПН, 5 — ПТ), значение — название дня в двух
+ * падежах: винительный для текста блокировки («стоп в понедельник»), именительный — для
+ * уведомления на главной («Сегодня пятница», risk/dayNotices.ts). Один словарь, а не
+ * список отдельно от подписей: добавить день = добавить строку, рассинхрону взяться негде.
  */
-const SINGLE_STOP_WEEKDAYS: Record<number, string> = { 1: "понедельник", 5: "пятницу" };
+const SINGLE_STOP_WEEKDAYS: Record<number, { nominative: string; accusative: string }> = {
+  1: { nominative: "понедельник", accusative: "понедельник" },
+  5: { nominative: "пятница", accusative: "пятницу" },
+};
 
 /** Сколько стопов закрывают такой день. */
 export const SINGLE_STOP_WEEKDAY_LIMIT = 1;
@@ -107,10 +111,19 @@ function weekdayOfDayKey(dayKey: string): number | null {
   return Number.isFinite(ms) ? new Date(ms).getUTCDay() : null;
 }
 
-/** Название дня для текста блокировки; null — в этот день правило #16 не действует. */
-export function singleStopWeekdayLabel(dayKey: string): string | null {
+function singleStopWeekday(dayKey: string): { nominative: string; accusative: string } | null {
   const weekday = weekdayOfDayKey(dayKey);
   return weekday !== null ? (SINGLE_STOP_WEEKDAYS[weekday] ?? null) : null;
+}
+
+/** Название дня для текста блокировки; null — в этот день правило #16 не действует. */
+export function singleStopWeekdayLabel(dayKey: string): string | null {
+  return singleStopWeekday(dayKey)?.accusative ?? null;
+}
+
+/** Название дня в именительном падеже («Сегодня пятница»); null — обычный день. */
+export function singleStopWeekdayName(dayKey: string): string | null {
+  return singleStopWeekday(dayKey)?.nominative ?? null;
 }
 
 /**
