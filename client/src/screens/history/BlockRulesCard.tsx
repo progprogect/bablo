@@ -41,8 +41,9 @@ const DAY_SCENARIOS: Scenario[] = [
     blocked: true,
   },
   {
+    // Размер тейка здесь не важен: стоп после любого тейка закрывает день (правило #15).
     chips: [
-      { outcome: "tp", label: "Тейк 1R" },
+      { outcome: "tp", label: "Тейк" },
       { outcome: "sl", label: "Стоп" },
     ],
     note: "и тейк, и стоп",
