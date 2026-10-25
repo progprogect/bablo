@@ -15,6 +15,9 @@ export default {
         line: "rgb(var(--line-rgb) / <alpha-value>)",
         ink: "rgb(var(--ink-rgb) / <alpha-value>)",
         accent: "rgb(var(--accent-rgb) / <alpha-value>)",
+        // Подсвеченная карточка и её граница — см. index.css.
+        highlight: "rgb(var(--highlight-rgb) / <alpha-value>)",
+        "highlight-line": "rgb(var(--highlight-line-rgb) / <alpha-value>)",
         // Смысловые цвета результата (прибыль/убыток) и вторичного текста. Терминал
         // исторически использует готовые классы Tailwind (emerald-600/red-600/slate-500)
         // напрямую — их не трогаем; токены нужны журналу, где эти же роли исполняют
