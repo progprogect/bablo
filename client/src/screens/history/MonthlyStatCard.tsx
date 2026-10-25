@@ -43,26 +43,43 @@ export type StatCardData = {
 };
 
 /**
+ * Оттенок карточки. «Итоги года» стоят в одном списке с месяцами, и белая карточка
+ * терялась среди одинаковых белых (просьба пользователя от 25.10.2026): годовая слегка
+ * подсвечена акцентом — другой уровень обобщения видно до чтения заголовка. Подсветка
+ * тихая, на уровне фона: цвет в этом приложении значит исход сделки (зелёный/красный)
+ * или блокировку (янтарный), и занимать его ради «это год» нельзя.
+ */
+const TONES = {
+  card: { card: "border-line bg-card", divider: "border-line" },
+  accent: { card: "border-accent/25 bg-accent/[0.06]", divider: "border-accent/20" },
+} as const;
+
+export type StatCardTone = keyof typeof TONES;
+
+/**
  * Общее тело карточки статистики за период — месяц (MonthlyStatCard) и год
- * (YearlyStatCard, 23.10.2026) различаются только заголовком, данными и сноской,
- * поэтому вёрстка одна: разъехаться карточки не могут.
+ * (YearlyStatCard, 23.10.2026) различаются только заголовком, данными, сноской и
+ * оттенком, поэтому вёрстка одна: разъехаться карточки не могут.
  */
 export function StatCardBody({
   title,
   data,
   footnote,
+  tone = "card",
 }: {
   title: string;
   data: StatCardData;
   /** Пояснение внизу карточки — например, почему нет % или с какого месяца он считается. */
   footnote?: string | null;
+  tone?: StatCardTone;
 }) {
+  const toneClasses = TONES[tone];
   const isProfit = data.resultPct !== null ? data.resultPct > 0 : data.sumR > 0;
   const isLoss = data.resultPct !== null ? data.resultPct < 0 : data.sumR < 0;
   const resultColorClass = isProfit ? "text-emerald-600" : isLoss ? "text-red-600" : "text-slate-600";
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-4 shadow-sm">
+    <div className={`flex flex-col gap-3 rounded-2xl border p-4 shadow-sm ${toneClasses.card}`}>
       <div className="flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-ink">{title}</h3>
         <div className="flex items-baseline gap-2">
@@ -82,7 +99,7 @@ export function StatCardBody({
       </dl>
 
       {data.byRRPreset.length > 0 && (
-        <div className="flex items-start justify-between gap-3 border-t border-line pt-2.5">
+        <div className={`flex items-start justify-between gap-3 border-t pt-2.5 ${toneClasses.divider}`}>
           <div className="flex flex-1 flex-wrap gap-x-2.5 gap-y-1.5">
             {data.byRRPreset.map((entry) => (
               <div key={entry.preset} className="flex min-w-[26px] flex-col items-center">
@@ -91,7 +108,7 @@ export function StatCardBody({
               </div>
             ))}
           </div>
-          <div className="flex shrink-0 flex-col items-center border-l border-line pl-2.5">
+          <div className={`flex shrink-0 flex-col items-center border-l pl-2.5 ${toneClasses.divider}`}>
             <span className="text-[10px] text-slate-400">+R / −R</span>
             <span className="text-xs font-medium">
               <span className="text-emerald-600">{formatSignedRValue(data.sumPositiveR)}</span>

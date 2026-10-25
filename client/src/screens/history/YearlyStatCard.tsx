@@ -127,5 +127,6 @@ export function YearlyStatCard({ stat }: { stat: YearlyStat }) {
     footnote = `% считается с ${MONTH_FROM_LABELS[stat.pctFromMonth - 1]} — раньше снимков депозита не было`;
   }
 
-  return <StatCardBody title={`Итоги ${stat.year}`} data={stat} footnote={footnote} />;
+  // tone="accent" — годовая карточка слегка подсвечена, чтобы не теряться среди месяцев.
+  return <StatCardBody title={`Итоги ${stat.year}`} data={stat} footnote={footnote} tone="accent" />;
 }
