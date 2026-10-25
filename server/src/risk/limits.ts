@@ -83,23 +83,25 @@ export type DailyLimitCounters = {
 export const DAILY_STOP_LOSS_LIMIT = 2;
 
 /**
- * Дни недели, в которые хватает ОДНОГО стопа, чтобы закрыть день (правило #16, запрос
- * пользователя от 10.10.2026): понедельник и пятница. Края недели — худшее время для
- * «отыграться»: в понедельник рынок ещё не показал характер недели, в пятницу решения
- * портит фиксация позиций перед выходными.
+ * Дни недели, в которые день закрывает ОДНА закрытая сделка — всё равно, стопом или
+ * тейком (правило #16, запрос пользователя от 10.10.2026, расширено 25.10.2026):
+ * понедельник и пятница. Края недели — худшее время настаивать: в понедельник рынок ещё
+ * не показал характер недели, в пятницу решения портит фиксация позиций перед выходными.
+ * Поэтому и прибыль здесь забирают сразу: один тейк — результат дня, второго входа не
+ * будет.
  *
  * Ключ — номер дня как у Date#getUTCDay (1 — ПН, 5 — ПТ), значение — название дня в двух
  * падежах: винительный для текста блокировки («стоп в понедельник»), именительный — для
  * уведомления на главной («Сегодня пятница», risk/dayNotices.ts). Один словарь, а не
  * список отдельно от подписей: добавить день = добавить строку, рассинхрону взяться негде.
  */
-const SINGLE_STOP_WEEKDAYS: Record<number, { nominative: string; accusative: string }> = {
+const SINGLE_RESULT_WEEKDAYS: Record<number, { nominative: string; accusative: string }> = {
   1: { nominative: "понедельник", accusative: "понедельник" },
   5: { nominative: "пятница", accusative: "пятницу" },
 };
 
-/** Сколько стопов закрывают такой день. */
-export const SINGLE_STOP_WEEKDAY_LIMIT = 1;
+/** Сколько стопов — и сколько тейков — закрывают такой день. */
+export const SINGLE_RESULT_WEEKDAY_LIMIT = 1;
 
 /**
  * День недели ТОРГОВОГО дня по его ключу (YYYY-MM-DD, см. risk/tradingDay.ts): 0 — вс,
@@ -111,19 +113,19 @@ function weekdayOfDayKey(dayKey: string): number | null {
   return Number.isFinite(ms) ? new Date(ms).getUTCDay() : null;
 }
 
-function singleStopWeekday(dayKey: string): { nominative: string; accusative: string } | null {
+function singleResultWeekday(dayKey: string): { nominative: string; accusative: string } | null {
   const weekday = weekdayOfDayKey(dayKey);
-  return weekday !== null ? (SINGLE_STOP_WEEKDAYS[weekday] ?? null) : null;
+  return weekday !== null ? (SINGLE_RESULT_WEEKDAYS[weekday] ?? null) : null;
 }
 
 /** Название дня для текста блокировки; null — в этот день правило #16 не действует. */
-export function singleStopWeekdayLabel(dayKey: string): string | null {
-  return singleStopWeekday(dayKey)?.accusative ?? null;
+export function singleResultWeekdayLabel(dayKey: string): string | null {
+  return singleResultWeekday(dayKey)?.accusative ?? null;
 }
 
 /** Название дня в именительном падеже («Сегодня пятница»); null — обычный день. */
-export function singleStopWeekdayName(dayKey: string): string | null {
-  return singleStopWeekday(dayKey)?.nominative ?? null;
+export function singleResultWeekdayName(dayKey: string): string | null {
+  return singleResultWeekday(dayKey)?.nominative ?? null;
 }
 
 /**
@@ -131,8 +133,8 @@ export function singleStopWeekdayName(dayKey: string): string | null {
  * (risk/stopChain.ts); правило дня недели может только УЖЕСТОЧИТЬ его, не ослабить.
  */
 export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_STOP_LOSS_LIMIT): number {
-  return singleStopWeekdayLabel(dayKey) !== null
-    ? Math.min(baseLimit, SINGLE_STOP_WEEKDAY_LIMIT)
+  return singleResultWeekdayLabel(dayKey) !== null
+    ? Math.min(baseLimit, SINGLE_RESULT_WEEKDAY_LIMIT)
     : baseLimit;
 }
 
@@ -141,6 +143,19 @@ export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_
  * независимо от суммы R (например, два тейка 1:1 дают только +2R, но день уже «удался»).
  */
 export const DAILY_TAKE_PROFIT_LIMIT = 2;
+
+/**
+ * Лимит тейков дня с учётом дня недели: в ПН и ПТ хватает одного (правило #16, часть от
+ * 25.10.2026). Как и у стопов, день недели может только УЖЕСТОЧИТЬ лимит.
+ */
+export function dayTakeLimitForDayKey(
+  dayKey: string,
+  baseLimit: number = DAILY_TAKE_PROFIT_LIMIT,
+): number {
+  return singleResultWeekdayLabel(dayKey) !== null
+    ? Math.min(baseLimit, SINGLE_RESULT_WEEKDAY_LIMIT)
+    : baseLimit;
+}
 
 /**
  * Минимальный результат тейка (в R), который закрывает день сам по себе (правило #6).
@@ -209,6 +224,17 @@ function dailyStopLossesReason(slCount: number, weekdayLabel: string | null): st
   return `${fact} — дадим себе и графику расторговаться`;
 }
 
+/**
+ * Текст блокировки по тейкам дня. В ПН и ПТ день закрывает первый же тейк (правило #16),
+ * и причина называет день прямо — иначе «1 тейк за день» читался бы как опечатка.
+ */
+function dailyTakeProfitsReason(tpCount: number, weekdayLabel: string | null): string {
+  if (weekdayLabel !== null && tpCount === 1) {
+    return `Тейк в ${weekdayLabel} — на сегодня достаточно`;
+  }
+  return `${tpCount} тейка за день — достаточно`;
+}
+
 export function evaluateDailyLimitBlocks(
   now: Date,
   counters: DailyLimitCounters,
@@ -220,7 +246,7 @@ export function evaluateDailyLimitBlocks(
   dayStopLimit: number = DAILY_STOP_LOSS_LIMIT,
   /**
    * Ключ торгового дня (risk/tradingDay.ts). Передан — учитываем правило дня недели
-   * (#16): в ПН и ПТ день закрывает уже один стоп.
+   * (#16): в ПН и ПТ день закрывает уже один стоп — и один тейк.
    */
   dayKey?: string,
 ): Block[] {
@@ -229,8 +255,9 @@ export function evaluateDailyLimitBlocks(
 
   // Подпись дня недели заполнена ровно в те дни, где правило #16 и ужесточает лимит,
   // поэтому отдельная проверка лимита не нужна.
-  const weekdayLabel = dayKey ? singleStopWeekdayLabel(dayKey) : null;
+  const weekdayLabel = dayKey ? singleResultWeekdayLabel(dayKey) : null;
   const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey, dayStopLimit) : dayStopLimit;
+  const effectiveTakeLimit = dayKey ? dayTakeLimitForDayKey(dayKey) : DAILY_TAKE_PROFIT_LIMIT;
 
   if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
@@ -253,10 +280,10 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (counters.tpCount >= DAILY_TAKE_PROFIT_LIMIT) {
+  if (counters.tpCount >= effectiveTakeLimit) {
     blocks.push({
       type: "daily_take_profits",
-      reason: `${counters.tpCount} тейка за день — достаточно`,
+      reason: dailyTakeProfitsReason(counters.tpCount, weekdayLabel),
       until,
     });
   }

@@ -1,4 +1,4 @@
-import { singleStopWeekdayName } from "./limits.js";
+import { singleResultWeekdayName } from "./limits.js";
 import { getTradingDayKey } from "./tradingDay.js";
 
 /**
@@ -13,8 +13,9 @@ import { getTradingDayKey } from "./tradingDay.js";
  *   показывается дважды: в последний день блокировки («завтра час снова открыт») и в
  *   первый день после неё («открыт с сегодня»). Второй показ нужен, потому что продлить
  *   блокировку можно ТОЛЬКО после её истечения — раньше validateHourBlockInput откажет.
- * - ПН И ПТ. В эти дни день закрывает один стоп (правило #16, limits.ts): напоминание
- *   выбирать вход придирчивее, пока попытка ещё не потрачена.
+ * - ПН И ПТ. В эти дни день закрывает одна закрытая сделка — хоть стоп, хоть тейк
+ *   (правило #16, limits.ts): напоминание выбирать вход придирчивее, пока единственная
+ *   попытка ещё не потрачена.
  *
  * Сутки здесь — ТОРГОВЫЙ день (сброс в resetHour, а не в полночь): уведомление живёт
  * ровно столько же, сколько дневные лимиты, к которым относится.
@@ -97,13 +98,13 @@ export function buildDayNotices(input: DayNoticesInput): DayNotice[] {
   const todayKey = getTradingDayKey(input.now, input.resetHour, input.tzOffsetMinutes);
   const notices: DayNotice[] = [];
 
-  const weekday = singleStopWeekdayName(todayKey);
+  const weekday = singleResultWeekdayName(todayKey);
   if (weekday !== null) {
     notices.push({
       id: "weekday",
       tone: "warn",
       title: `Сегодня ${weekday}`,
-      detail: "Один стоп закрывает день — выбирай вход придирчивее",
+      detail: "Стоп или тейк — и день закрыт. Выбирай вход придирчивее",
     });
   }
 

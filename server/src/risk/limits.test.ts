@@ -4,6 +4,7 @@ import {
   buildVoluntaryPauseBlock,
   DAILY_STOP_LOSS_LIMIT,
   dayStopLimitForDayKey,
+  dayTakeLimitForDayKey,
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
@@ -302,7 +303,8 @@ test("buildVoluntaryPauseBlock: при нескольких глобальных
   assert.equal(effective?.type, "voluntary_pause");
 });
 
-// --- Правило #16 (10.10.2026): в ПН и ПТ день закрывает один стоп ---
+// --- Правило #16 (10.10.2026, расширено 25.10.2026): в ПН и ПТ день закрывает
+// одна закрытая сделка — хоть стоп, хоть тейк ---
 
 test("dayStopLimitForDayKey: понедельник и пятница — один стоп, остальные дни — два", () => {
   // 2026-10-12 — понедельник, 2026-10-16 — пятница.
@@ -377,6 +379,92 @@ test("evaluateDailyLimitBlocks: причина про день недели по
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-10-12T10:00:00Z"),
     counters({ slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  for (const block of blocks) {
+    assert.ok(block.reason.length <= 60, `${block.reason} (${block.reason.length})`);
+  }
+});
+
+test("dayTakeLimitForDayKey: понедельник и пятница — один тейк, остальные дни — два", () => {
+  assert.equal(dayTakeLimitForDayKey("2026-10-12"), 1); // понедельник
+  assert.equal(dayTakeLimitForDayKey("2026-10-16"), 1); // пятница
+  assert.equal(dayTakeLimitForDayKey("2026-10-13"), 2); // вторник
+  assert.equal(dayTakeLimitForDayKey("2026-10-18"), 2); // воскресенье
+  assert.equal(dayTakeLimitForDayKey("не дата"), 2);
+});
+
+test("evaluateDailyLimitBlocks: один тейк в понедельник закрывает день", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ sumR: 1, tpCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
+  assert.ok(takeBlock);
+  assert.equal(takeBlock.reason, "Тейк в понедельник — на сегодня достаточно");
+  // Именно эта причина и покажется на дашборде: блоки дня истекают одновременно,
+  // а pickEffectiveBlock при равенстве оставляет первый.
+  assert.equal(pickEffectiveBlock(blocks)?.type, "daily_take_profits");
+});
+
+test("evaluateDailyLimitBlocks: тейк в пятницу закрывает день при любом R", () => {
+  // Слабый тейк 0.9R: правило #6 (тейк ≥ 2R) тут не при чём — хватает самого факта тейка.
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-16T10:00:00Z"),
+    counters({ sumR: 0.9, tpCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-16",
+  );
+  const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
+  assert.ok(takeBlock);
+  assert.match(takeBlock.reason, /Тейк в пятницу/);
+  assert.equal(blocks.some((block) => block.type === "daily_strong_tp"), false);
+});
+
+test("evaluateDailyLimitBlocks: один тейк во вторник день не закрывает", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-13T10:00:00Z"),
+    counters({ sumR: 1, tpCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-13",
+  );
+  assert.equal(blocks.some((block) => block.type === "daily_take_profits"), false);
+});
+
+test("evaluateDailyLimitBlocks: два тейка в понедельник — обычный текст, не про день недели", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ sumR: 2, tpCount: 2 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-12",
+  );
+  const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
+  assert.ok(takeBlock);
+  assert.match(takeBlock.reason, /2 тейка за день/);
+});
+
+test("evaluateDailyLimitBlocks: без ключа дня правило дня недели не действует", () => {
+  // Дата та же (понедельник), но ключ не передан: старые вызовы работают как раньше.
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ sumR: 1, tpCount: 1 }),
+    CONFIG,
+  );
+  assert.deepEqual(blocks, []);
+});
+
+test("evaluateDailyLimitBlocks: причина про тейк в ПН/ПТ помещается в плашку", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-12T10:00:00Z"),
+    counters({ sumR: 1, tpCount: 1 }),
     CONFIG,
     DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
