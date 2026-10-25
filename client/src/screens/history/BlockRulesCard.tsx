@@ -39,7 +39,7 @@ const DAY_SCENARIOS: Scenario[] = [
       { outcome: "tp", label: "Тейк" },
       { outcome: "sl", label: "Стоп" },
     ],
-    note: "и тейк, и стоп",
+    note: "стоп торговля",
     blocked: true,
   },
   {
@@ -47,7 +47,7 @@ const DAY_SCENARIOS: Scenario[] = [
       { outcome: "sl", label: "Стоп" },
       { outcome: "tp", label: "Тейк" },
     ],
-    note: "и тейк, и стоп",
+    note: "стоп торговля",
     blocked: true,
   },
 ];
