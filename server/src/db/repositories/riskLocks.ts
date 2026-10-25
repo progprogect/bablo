@@ -8,20 +8,20 @@ export type RiskLockRow = typeof riskLocks.$inferSelect;
 const MANAGED_TYPES: BlockType[] = [
   "cooldown",
   "daily_loss",
-  "daily_profit",
   "daily_stop_losses",
   "stop_chain",
   "daily_take_profits",
-  "daily_strong_tp",
   "daily_mixed_outcomes",
   "asset_sl_today",
 ];
 
 /**
  * Типы, которых в коде больше нет: удаляются вместе с управляемыми, чтобы после
- * переименования правила старая строка не осталась в таблице навсегда.
+ * переименования или отмены правила старая строка не осталась в таблице навсегда.
+ * `daily_profit` (+3R за день) и `daily_strong_tp` (тейк ≥ 2R) отменены 25.10.2026:
+ * прибыль день больше не закрывает — но лок, поставленный до выката, надо снять.
  */
-const RETIRED_TYPES: string[] = ["daily_recovery_after_sl"];
+const RETIRED_TYPES: string[] = ["daily_recovery_after_sl", "daily_profit", "daily_strong_tp"];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
   const db = getDb();

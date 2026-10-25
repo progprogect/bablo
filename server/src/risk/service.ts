@@ -346,7 +346,6 @@ export async function recordTradeClose(input: {
       sumR: Number(dailyStatsRow.sumR),
       slCount: dailyStatsRow.slCount,
       tpCount: dailyStatsRow.tpCount,
-      strongTakeProfit: dailyStatsRow.strongTakeProfit,
     },
     lastTradeClosedAt: input.closedAt,
     lastTradeOutcome: outcome,
@@ -433,7 +432,7 @@ type RiskSettingsLike = {
 /** Собирает управляемые локи: дневные лимиты + кулдаун + per-asset стопы дня. */
 function buildManagedBlocks(input: {
   now: Date;
-  counters: { sumR: number; slCount: number; tpCount: number; strongTakeProfit: boolean };
+  counters: { sumR: number; slCount: number; tpCount: number };
   lastTradeClosedAt: Date | null;
   /** Исход последней закрытой сделки — после тейка кулдауна нет (см. evaluateCooldownBlock). */
   lastTradeOutcome: TradeOutcome | null;
@@ -532,6 +531,8 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   let sumR = 0;
   let slCount = 0;
   let tpCount = 0;
+  // Признак «полного тейка» на блокировки больше не влияет (правило #6 убрано
+  // 25.10.2026) — считается только для колонки daily_stats.strong_take_profit.
   let strongTakeProfit = false;
   const slSymbols: string[] = [];
 
@@ -570,7 +571,7 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
   const lastClosedAt = lastTrade?.closedAt ?? null;
   const blocks = buildManagedBlocks({
     now,
-    counters: { sumR, slCount, tpCount, strongTakeProfit },
+    counters: { sumR, slCount, tpCount },
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
     lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
     stopChain: computeStopChain(toStopChainDays(allClosed, settings), dayKey),

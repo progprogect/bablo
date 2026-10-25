@@ -18,7 +18,6 @@ export type BlockType =
    */
   | "voluntary_pause"
   | "daily_loss"
-  | "daily_profit"
   | "daily_stop_losses"
   /**
    * Лестница пауз после стопов (risk/stopChain.ts): закрывает торговлю на ПОЛНЫЕ дни
@@ -26,9 +25,11 @@ export type BlockType =
    * закрывает день обычным daily_stop_losses.
    */
   | "stop_chain"
+  /**
+   * Лимит тейков дня исчерпан. С 25.10.2026 бывает только в ПН и ПТ (правило #16):
+   * в обычные дни тейки день не закрывают вовсе.
+   */
   | "daily_take_profits"
-  /** За день закрыт тейк ≥ 2R — достаточный результат сам по себе (правило #6). */
-  | "daily_strong_tp"
   /** За день есть и тейк, и стоп — смешанный день закрыт (правило #15). */
   | "daily_mixed_outcomes"
   | "asset_sl_today";
@@ -72,8 +73,6 @@ export type DailyLimitCounters = {
   sumR: number;
   slCount: number;
   tpCount: number;
-  /** За день закрыт тейк с результатом ≥ STRONG_TP_MIN_R. */
-  strongTakeProfit: boolean;
 };
 
 /**
@@ -139,30 +138,34 @@ export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_
 }
 
 /**
- * Сколько тейков за день достаточно, чтобы зафиксировать результат и остановиться —
- * независимо от суммы R (например, два тейка 1:1 дают только +2R, но день уже «удался»).
+ * Лимит тейков дня: `null` — тейки день не закрывают. Так теперь в обычные дни
+ * (просьба пользователя от 25.10.2026): пока идут тейки, торговать можно сколько
+ * хочется — день заканчивает стоп, а не прибыль. Вместе с этим ушли правило #5
+ * (два тейка за день), правило #6 (тейк ≥ 2R) и правило #3 (+3R за день).
+ *
+ * В ПН и ПТ остаётся 1 (правило #16): на краях недели прибыль забирают сразу.
  */
-export const DAILY_TAKE_PROFIT_LIMIT = 2;
-
-/**
- * Лимит тейков дня с учётом дня недели: в ПН и ПТ хватает одного (правило #16, часть от
- * 25.10.2026). Как и у стопов, день недели может только УЖЕСТОЧИТЬ лимит.
- */
-export function dayTakeLimitForDayKey(
-  dayKey: string,
-  baseLimit: number = DAILY_TAKE_PROFIT_LIMIT,
-): number {
-  return singleResultWeekdayLabel(dayKey) !== null
-    ? Math.min(baseLimit, SINGLE_RESULT_WEEKDAY_LIMIT)
-    : baseLimit;
+export function dayTakeLimitForDayKey(dayKey: string): number | null {
+  return singleResultWeekdayLabel(dayKey) !== null ? SINGLE_RESULT_WEEKDAY_LIMIT : null;
 }
 
 /**
- * Минимальный результат тейка (в R), который закрывает день сам по себе (правило #6).
- * 2R = пресет 1:2 и выше. До 02.10.2026 правило требовало стопа ДО такого тейка —
- * теперь не требует: 2R за день достаточно независимо от того, с чего день начался.
+ * «Полный» тейк — 2R и выше (пресет 1:2+). До 25.10.2026 такой тейк сам закрывал день
+ * (правило #6); теперь прибыль день не закрывает, и признак остался только историей в
+ * `daily_stats.strong_take_profit` — на блокировки он больше не влияет.
  */
 export const STRONG_TP_MIN_R = 2;
+
+/**
+ * Допуск при сравнении с порогом: комиссии BingX и слиппаж fill съедают 0.05–0.15R, и
+ * фактические 1.85R — это всё тот же тейк 1:2.
+ */
+const STRONG_TP_TOLERANCE = 0.2;
+
+/** Тейк считается «полным» (1:2+), если resultR почти достиг STRONG_TP_MIN_R. */
+export function isStrongTakeProfit(resultR: number): boolean {
+  return resultR >= STRONG_TP_MIN_R - STRONG_TP_TOLERANCE;
+}
 
 /**
  * Правило #11 (15.09.2026): если ПРЕДЫДУЩАЯ закрытая сделка — стоп, следующую нельзя
@@ -188,18 +191,10 @@ export function isTpRatioAllowed(ratio: number | null, previousWasStop: boolean)
 }
 
 /**
- * Дневные лимиты считаются по сумме результатов всех закрытых сделок дня (−2R/+3R), а
- * также по отдельным счётчикам исходов (стопы, тейки, сильный откуп после стопа).
- *
- * Допуск 0.2R на стороне прибыли: комиссии BingX + слиппаж fill могут съесть
- * 0.05–0.15R у тейка 1:3, из-за чего sumR≈2.85 не дотягивал до порога 3.0.
+ * Дневные лимиты считаются по сумме результатов закрытых сделок дня (−2R) и по
+ * счётчикам исходов (стопы, тейки). Порога на стороне прибыли больше нет: с 25.10.2026
+ * прибыль день не закрывает (кроме ПН и ПТ, правило #16).
  */
-const LIMIT_EPSILON = 0.2;
-
-/** Тейк считается «сильным» (1:2+), если resultR почти достиг STRONG_TP_MIN_R. */
-export function isStrongTakeProfit(resultR: number): boolean {
-  return resultR >= STRONG_TP_MIN_R - LIMIT_EPSILON;
-}
 
 /**
  * Текст блокировки по стопам дня — факт и зачем пауза, без упоминания серии стопов. Про
@@ -224,17 +219,6 @@ function dailyStopLossesReason(slCount: number, weekdayLabel: string | null): st
   return `${fact} — дадим себе и графику расторговаться`;
 }
 
-/**
- * Текст блокировки по тейкам дня. В ПН и ПТ день закрывает первый же тейк (правило #16),
- * и причина называет день прямо — иначе «1 тейк за день» читался бы как опечатка.
- */
-function dailyTakeProfitsReason(tpCount: number, weekdayLabel: string | null): string {
-  if (weekdayLabel !== null && tpCount === 1) {
-    return `Тейк в ${weekdayLabel} — на сегодня достаточно`;
-  }
-  return `${tpCount} тейка за день — достаточно`;
-}
-
 export function evaluateDailyLimitBlocks(
   now: Date,
   counters: DailyLimitCounters,
@@ -257,19 +241,12 @@ export function evaluateDailyLimitBlocks(
   // поэтому отдельная проверка лимита не нужна.
   const weekdayLabel = dayKey ? singleResultWeekdayLabel(dayKey) : null;
   const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey, dayStopLimit) : dayStopLimit;
-  const effectiveTakeLimit = dayKey ? dayTakeLimitForDayKey(dayKey) : DAILY_TAKE_PROFIT_LIMIT;
+  const takeLimit = dayKey ? dayTakeLimitForDayKey(dayKey) : null;
 
   if (counters.sumR <= config.dailyLossLimitR) {
     blocks.push({
       type: "daily_loss",
       reason: `Дневной лимит ${config.dailyLossLimitR}R достигнут`,
-      until,
-    });
-  }
-  if (counters.sumR >= config.dailyProfitLimitR - LIMIT_EPSILON) {
-    blocks.push({
-      type: "daily_profit",
-      reason: `Дневная цель +${config.dailyProfitLimitR}R достигнута`,
       until,
     });
   }
@@ -280,17 +257,11 @@ export function evaluateDailyLimitBlocks(
       until,
     });
   }
-  if (counters.tpCount >= effectiveTakeLimit) {
+  // Лимит тейков непустой только в ПН и ПТ, поэтому и подпись дня недели тут всегда есть.
+  if (takeLimit !== null && counters.tpCount >= takeLimit) {
     blocks.push({
       type: "daily_take_profits",
-      reason: dailyTakeProfitsReason(counters.tpCount, weekdayLabel),
-      until,
-    });
-  }
-  if (counters.strongTakeProfit) {
-    blocks.push({
-      type: "daily_strong_tp",
-      reason: `Тейк ≥ ${STRONG_TP_MIN_R}R — хватит на сегодня`,
+      reason: `Тейк в ${weekdayLabel} — на сегодня достаточно`,
       until,
     });
   }

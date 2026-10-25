@@ -21,24 +21,17 @@ type Scenario = {
   blocked: boolean;
 };
 
-/** Расклады одного торгового дня (правила #3, #4, #5, #6, #15). В ПН и ПТ строки про
- *  один тейк и один стоп не действуют — там день закрывает первый же результат,
- *  см. WEEKDAY_SCENARIOS. */
+/**
+ * Расклады одного торгового дня (правила #4, #15). Строки про тейки убраны 25.10.2026
+ * вместе с самими правилами (#3 +3R, #5 два тейка, #6 тейк ≥ 2R): пока идут тейки,
+ * торговать можно дальше — день заканчивает стоп. В ПН и ПТ строка про один стоп не
+ * действует, там день закрывает первый же результат, см. WEEKDAY_SCENARIOS.
+ */
 const DAY_SCENARIOS: Scenario[] = [
   {
-    chips: [{ outcome: "tp", label: "Тейк 1R" }],
-    note: "торгуем дальше (кроме ПН и ПТН)",
+    chips: [{ outcome: "sl", label: "Стоп" }],
+    note: "час паузы, торгуем дальше (кроме ПН и ПТН)",
     blocked: false,
-  },
-  { chips: [{ outcome: "tp", label: "Тейк 2R" }], note: "хватит на сегодня", blocked: true },
-  { chips: [{ outcome: "tp", label: "Тейк 3R" }], note: "дневная цель", blocked: true },
-  {
-    chips: [
-      { outcome: "tp", label: "Тейк 1R" },
-      { outcome: "tp", label: "Тейк" },
-    ],
-    note: "два тейка за день",
-    blocked: true,
   },
   {
     // Размер тейка здесь не важен: стоп после любого тейка закрывает день (правило #15).
@@ -48,11 +41,6 @@ const DAY_SCENARIOS: Scenario[] = [
     ],
     note: "и тейк, и стоп",
     blocked: true,
-  },
-  {
-    chips: [{ outcome: "sl", label: "Стоп" }],
-    note: "час паузы, торгуем дальше (кроме ПН и ПТН)",
-    blocked: false,
   },
   {
     chips: [
@@ -137,6 +125,9 @@ export function BlockRulesCard() {
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
+        <p className="text-[11px] text-slate-400">
+          Тейки день не закрывают — пока идут тейки, торгуем дальше.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

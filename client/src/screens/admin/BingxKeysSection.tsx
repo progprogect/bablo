@@ -254,7 +254,7 @@ export function BingxKeysSection() {
 
       <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-3">
         <p className="text-xs text-slate-500">
-          Пересчитать дневные лимиты за сегодня (сумма R, блокировки +3R / 2 стопа / 2 тейка) —
+          Пересчитать дневные лимиты за сегодня (сумма R, блокировки по стопам и смешанному дню) —
           после исправления расчёта с частичной фиксацией.
         </p>
         <button

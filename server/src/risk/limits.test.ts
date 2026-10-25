@@ -22,25 +22,25 @@ function counters(partial: Partial<DailyLimitCounters> = {}): DailyLimitCounters
     sumR: 0,
     slCount: 0,
     tpCount: 0,
-    strongTakeProfit: false,
     ...partial,
   };
 }
 
-test("evaluateDailyLimitBlocks: сумма выше -2R и ниже +3R, одна закрытая сделка — блоков нет", () => {
+test("evaluateDailyLimitBlocks: сумма выше -2R, одна закрытая сделка — блоков нет", () => {
   const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -1, slCount: 1 }), CONFIG);
   assert.deepEqual(blocks, []);
 });
 
-test("evaluateDailyLimitBlocks: сумма 2.85R — выше порога с допуском (3 - 0.2 = 2.8R), daily_profit срабатывает", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.85 }), CONFIG);
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0]?.type, "daily_profit");
-});
-
-test("evaluateDailyLimitBlocks: сумма 2.7R — ниже порога с допуском, блока нет", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2.7 }), CONFIG);
-  assert.deepEqual(blocks, []);
+// Правило #3 (+3R за день) отменено 25.10.2026: прибыль день не закрывает.
+test("evaluateDailyLimitBlocks: прибыль за день блока не даёт, сколько бы её ни было", () => {
+  const now = new Date("2026-07-13T10:00:00Z");
+  for (const sumR of [2.85, 3, 5, 12]) {
+    assert.deepEqual(
+      evaluateDailyLimitBlocks(now, counters({ sumR, tpCount: 3 }), CONFIG),
+      [],
+      `${sumR}R`,
+    );
+  }
 });
 
 test("evaluateDailyLimitBlocks: сумма достигла -2R — блок до следующего сброса", () => {
@@ -53,12 +53,6 @@ test("evaluateDailyLimitBlocks: сумма превысила -2R (наприм�
   const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -3, slCount: 1 }), CONFIG);
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0]?.type, "daily_loss");
-});
-
-test("evaluateDailyLimitBlocks: сумма достигла +3R — блок до следующего сброса", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 3 }), CONFIG);
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0]?.type, "daily_profit");
 });
 
 test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по стопу — блок независимо от суммы R", () => {
@@ -86,11 +80,11 @@ test("evaluateDailyLimitBlocks: причины помещаются в плаш�
     ...evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: -2, slCount: 2 }), CONFIG),
     ...evaluateDailyLimitBlocks(
       new Date("2026-07-13T10:00:00Z"),
-      counters({ sumR: 3, tpCount: 2, slCount: 1, strongTakeProfit: true }),
+      counters({ sumR: 1, tpCount: 1, slCount: 1 }),
       CONFIG,
     ),
   ];
-  assert.ok(all.length >= 6, "проверяем все дневные причины разом");
+  assert.ok(all.length >= 3, "проверяем все дневные причины разом");
   for (const block of all) {
     assert.ok(block.reason.length <= 60, `${block.type}: ${block.reason.length} символов — ${block.reason}`);
   }
@@ -101,25 +95,13 @@ test("evaluateDailyLimitBlocks: 1 сделка по стопу — блока п
   assert.deepEqual(blocks, []);
 });
 
-test("evaluateDailyLimitBlocks: 2 тейка за день — блок даже если сумма < +3R", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2, tpCount: 2 }), CONFIG);
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0]?.type, "daily_take_profits");
-});
-
-test("evaluateDailyLimitBlocks: 1 тейк — блока по числу тейков нет", () => {
-  const blocks = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ sumR: 2, tpCount: 1 }), CONFIG);
-  assert.deepEqual(blocks, []);
-});
-
-test("evaluateDailyLimitBlocks: первая сделка дня — тейк 2R, блок независимо от суммы R", () => {
-  const blocks = evaluateDailyLimitBlocks(
-    new Date("2026-07-13T10:00:00Z"),
-    counters({ sumR: 2, tpCount: 1, strongTakeProfit: true }),
-    CONFIG,
-  );
-  assert.equal(blocks.length, 1);
-  assert.equal(blocks[0]?.type, "daily_strong_tp");
+// Правила #5 (два тейка) и #6 (тейк ≥ 2R) отменены 25.10.2026: пока идут тейки,
+// торговать можно дальше — день заканчивает стоп, а не прибыль.
+test("evaluateDailyLimitBlocks: тейки день не закрывают — ни числом, ни размером", () => {
+  const now = new Date("2026-07-13T10:00:00Z");
+  assert.deepEqual(evaluateDailyLimitBlocks(now, counters({ sumR: 2, tpCount: 1 }), CONFIG), []);
+  assert.deepEqual(evaluateDailyLimitBlocks(now, counters({ sumR: 2, tpCount: 2 }), CONFIG), []);
+  assert.deepEqual(evaluateDailyLimitBlocks(now, counters({ sumR: 6, tpCount: 4 }), CONFIG), []);
 });
 
 test("evaluateDailyLimitBlocks: за день есть и тейк, и стоп — блок в любом порядке", () => {
@@ -134,18 +116,17 @@ test("evaluateDailyLimitBlocks: за день есть и тейк, и стоп 
   assert.equal(blocks[0]?.type, "daily_mixed_outcomes");
 });
 
-test("evaluateDailyLimitBlocks: стоп, потом тейк 2R — срабатывают оба правила, показывается тейк", () => {
+test("evaluateDailyLimitBlocks: стоп, потом тейк 2R — день закрыт смешанным исходом", () => {
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-07-13T10:00:00Z"),
-    counters({ sumR: 1, slCount: 1, tpCount: 1, strongTakeProfit: true }),
+    counters({ sumR: 1, slCount: 1, tpCount: 1 }),
     CONFIG,
   );
-  assert.deepEqual(blocks.map((b) => b.type), ["daily_strong_tp", "daily_mixed_outcomes"]);
-  // Все дневные блоки заканчиваются одним сбросом — при равных until берётся первый.
-  assert.equal(pickEffectiveBlock(blocks)?.type, "daily_strong_tp");
+  assert.deepEqual(blocks.map((b) => b.type), ["daily_mixed_outcomes"]);
+  assert.equal(pickEffectiveBlock(blocks)?.type, "daily_mixed_outcomes");
 });
 
-test("evaluateDailyLimitBlocks: один тейк меньше 2R — день продолжается", () => {
+test("evaluateDailyLimitBlocks: один тейк — день продолжается", () => {
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-07-13T10:00:00Z"),
     counters({ sumR: 1, tpCount: 1 }),
@@ -160,13 +141,14 @@ test("evaluateDailyLimitBlocks: несколько условий одновре
     counters({ sumR: -2, slCount: 2, tpCount: 2 }),
     CONFIG,
   );
-  assert.equal(blocks.length, 4);
+  assert.equal(blocks.length, 3);
   assert.deepEqual(
     blocks.map((b) => b.type).sort(),
-    ["daily_loss", "daily_mixed_outcomes", "daily_stop_losses", "daily_take_profits"],
+    ["daily_loss", "daily_mixed_outcomes", "daily_stop_losses"],
   );
 });
 
+// Признак «полного тейка» на блокировки больше не влияет — остался историей в daily_stats.
 test("isStrongTakeProfit: 1.85R проходит допуск 0.2, 1.7R — нет", () => {
   assert.equal(isStrongTakeProfit(1.85), true);
   assert.equal(isStrongTakeProfit(2), true);
@@ -388,12 +370,12 @@ test("evaluateDailyLimitBlocks: причина про день недели по
   }
 });
 
-test("dayTakeLimitForDayKey: понедельник и пятница — один тейк, остальные дни — два", () => {
+test("dayTakeLimitForDayKey: лимит тейков есть только в ПН и ПТ", () => {
   assert.equal(dayTakeLimitForDayKey("2026-10-12"), 1); // понедельник
   assert.equal(dayTakeLimitForDayKey("2026-10-16"), 1); // пятница
-  assert.equal(dayTakeLimitForDayKey("2026-10-13"), 2); // вторник
-  assert.equal(dayTakeLimitForDayKey("2026-10-18"), 2); // воскресенье
-  assert.equal(dayTakeLimitForDayKey("не дата"), 2);
+  assert.equal(dayTakeLimitForDayKey("2026-10-13"), null); // вторник
+  assert.equal(dayTakeLimitForDayKey("2026-10-18"), null); // воскресенье
+  assert.equal(dayTakeLimitForDayKey("не дата"), null);
 });
 
 test("evaluateDailyLimitBlocks: один тейк в понедельник закрывает день", () => {
@@ -413,7 +395,7 @@ test("evaluateDailyLimitBlocks: один тейк в понедельник за
 });
 
 test("evaluateDailyLimitBlocks: тейк в пятницу закрывает день при любом R", () => {
-  // Слабый тейк 0.9R: правило #6 (тейк ≥ 2R) тут не при чём — хватает самого факта тейка.
+  // Слабый тейк 0.9R: в обычный день он день не закрывает, в пятницу — закрывает.
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-10-16T10:00:00Z"),
     counters({ sumR: 0.9, tpCount: 1 }),
@@ -424,7 +406,6 @@ test("evaluateDailyLimitBlocks: тейк в пятницу закрывает д
   const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
   assert.ok(takeBlock);
   assert.match(takeBlock.reason, /Тейк в пятницу/);
-  assert.equal(blocks.some((block) => block.type === "daily_strong_tp"), false);
 });
 
 test("evaluateDailyLimitBlocks: один тейк во вторник день не закрывает", () => {
@@ -438,7 +419,9 @@ test("evaluateDailyLimitBlocks: один тейк во вторник день �
   assert.equal(blocks.some((block) => block.type === "daily_take_profits"), false);
 });
 
-test("evaluateDailyLimitBlocks: два тейка в понедельник — обычный текст, не про день недели", () => {
+test("evaluateDailyLimitBlocks: второй тейк в понедельник ничего не меняет — день уже закрыт", () => {
+  // Второго тейка в ПН быть не должно, но исход можно переразметить в админке —
+  // причина остаётся той же, про день недели.
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-10-12T10:00:00Z"),
     counters({ sumR: 2, tpCount: 2 }),
@@ -448,7 +431,7 @@ test("evaluateDailyLimitBlocks: два тейка в понедельник — 
   );
   const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
   assert.ok(takeBlock);
-  assert.match(takeBlock.reason, /2 тейка за день/);
+  assert.equal(takeBlock.reason, "Тейк в понедельник — на сегодня достаточно");
 });
 
 test("evaluateDailyLimitBlocks: без ключа дня правило дня недели не действует", () => {
