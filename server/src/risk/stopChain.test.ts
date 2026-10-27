@@ -62,16 +62,17 @@ test("на следующий день хватает одного стопа �
   assert.equal(block?.until.toISOString(), "2026-07-16T04:00:00.000Z");
 });
 
-test("дальше лестница растёт: 2 полных дня, потом 3", () => {
-  const twoDays = computeStopChain(
+// Правка 27.10.2026: выходной не растёт со ступенью — он всегда один.
+test("дальше по серии выходной остаётся один, а не копится", () => {
+  const third = computeStopChain(
     [day("2026-07-13", "sl", "sl"), day("2026-07-14", "sl"), day("2026-07-17", "sl")],
     "2026-07-17",
   );
-  assert.equal(twoDays.stage, 3);
-  assert.equal(twoDays.blockedFullDays, 2);
-  assert.equal(twoDays.triggeredDayKey, "2026-07-17");
+  assert.equal(third.stage, 3);
+  assert.equal(third.blockedFullDays, 1);
+  assert.equal(third.triggeredDayKey, "2026-07-17");
 
-  const threeDays = computeStopChain(
+  const fourth = computeStopChain(
     [
       day("2026-07-13", "sl", "sl"),
       day("2026-07-14", "sl"),
@@ -80,8 +81,13 @@ test("дальше лестница растёт: 2 полных дня, пот�
     ],
     "2026-07-21",
   );
-  assert.equal(threeDays.stage, 4);
-  assert.equal(threeDays.blockedFullDays, 3);
+  assert.equal(fourth.stage, 4);
+  assert.equal(fourth.blockedFullDays, 1);
+
+  // Пауза в календаре тоже ровно один день: день 21-го кончается сбросом 22-го в 07:00
+  // МСК, плюс один полный день → 23-е 07:00 МСК.
+  const block = buildStopChainBlock(new Date("2026-07-21T20:00:00Z"), fourth, CONFIG);
+  assert.equal(block?.until.toISOString(), "2026-07-23T04:00:00.000Z");
 });
 
 test("тейк обнуляет лестницу целиком", () => {
@@ -133,21 +139,15 @@ test("buildStopChainBlock: пауза истекла — блока нет", () 
   assert.ok(buildStopChainBlock(new Date("2026-07-16T03:59:00Z"), state, CONFIG));
 });
 
-test("buildStopChainBlock: в причине — правильное склонение дней", () => {
-  function reasonFor(blockedFullDays: number): string {
-    const state = {
-      stage: blockedFullDays + 1,
-      todayStopLimit: 1,
-      triggeredDayKey: "2026-07-13",
-      blockedFullDays,
-    };
-    return buildStopChainBlock(new Date("2026-07-13T12:00:00Z"), state, CONFIG)?.reason ?? "";
-  }
-  assert.match(reasonFor(1), /на 1 день/);
-  assert.match(reasonFor(2), /на 2 дня/);
-  assert.match(reasonFor(5), /на 5 дней/);
-  assert.match(reasonFor(11), /на 11 дней/);
-  assert.match(reasonFor(21), /на 21 день/);
+test("buildStopChainBlock: причина говорит про один выходной и помещается в плашку", () => {
+  const state = computeStopChain(
+    [day("2026-07-13", "sl", "sl"), day("2026-07-14", "sl")],
+    "2026-07-14",
+  );
+  const block = buildStopChainBlock(new Date("2026-07-14T20:00:00Z"), state, CONFIG);
+  assert.ok(block);
+  assert.equal(block.reason, "Серия стопов — пауза ещё на день. Тейк обнулит серию");
+  assert.ok(block.reason.length <= 60);
 });
 
 test("getResetAtAfterTradingDay: конец дня и полные дни сверху", () => {

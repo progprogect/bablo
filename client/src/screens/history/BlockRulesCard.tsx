@@ -66,7 +66,11 @@ const WEEKDAY_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
 ];
 
-/** Лестница пауз после стопов (правило #14): каждое следующее срабатывание дороже. */
+/**
+ * Лестница пауз после стопов (правило #14): внутри серии день закрывает уже один стоп, и
+ * к нему добавляется выходной. Выходной ровно один и не растёт (правка 27.10.2026) —
+ * поэтому третья строка повторяет вторую: так видно, что дальше ничего не копится.
+ */
 const CHAIN_SCENARIOS: Scenario[] = [
   {
     chips: [
@@ -77,7 +81,7 @@ const CHAIN_SCENARIOS: Scenario[] = [
     blocked: true,
   },
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, завтра выходной", blocked: true },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, два дня выходных", blocked: true },
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, снова один выходной", blocked: true },
 ];
 
 function OutcomeChip({ outcome, label }: { outcome: Outcome; label: string }) {
