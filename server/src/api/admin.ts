@@ -18,6 +18,11 @@ import {
 import { listRiskLevelDefs, listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
 import { getOrCreateRiskState, updateRiskState } from "../db/repositories/riskState.js";
 import { toRiskState, validateManualRiskState } from "../risk/manualState.js";
+import {
+  DEFAULT_IMPORT_DAYS,
+  previewBingxImport,
+  runBingxImport,
+} from "../history/bingxImportService.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
@@ -422,6 +427,35 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     await resyncMarketSymbols();
     reply.code(204);
   });
+
+  /**
+   * Восстановление истории сделок из журнала ордеров BingX (01.11.2026, docs/DEPLOY.md).
+   * Два шага намеренно: `dryRun: true` только показывает, что нашлось, и ничего не пишет.
+   * История — основа всей статистики, и увидеть её до записи важнее, чем сэкономить клик.
+   */
+  app.post<{ Body: { days?: number; dryRun?: boolean } }>(
+    "/admin/import-bingx",
+    async (request, reply) => {
+      const credentials = await getBingxCredentials();
+      if (!credentials) {
+        reply.code(400).send({ error: "Ключи BingX не настроены" });
+        return;
+      }
+      const days = Number(request.body?.days ?? DEFAULT_IMPORT_DAYS);
+      const dryRun = request.body?.dryRun !== false;
+      try {
+        return dryRun
+          ? { ...(await previewBingxImport(credentials, days)), imported: 0 }
+          : await runBingxImport(credentials, days);
+      } catch (error) {
+        if (error instanceof BingXApiError) {
+          reply.code(502).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+    },
+  );
 
   // --- Риск-план: текущее состояние (уровень и накопленный R) ---
 

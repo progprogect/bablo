@@ -184,6 +184,38 @@ export type DashboardResponse = {
   notices?: DayNotice[];
 };
 
+/** Сделка, восстановленная из журнала ордеров BingX (админка → импорт истории). */
+export type ImportedTradeView = {
+  symbol: string;
+  side: "long" | "short";
+  quantity: number;
+  entryPrice: number;
+  closePrice: number;
+  slPrice: number | null;
+  openedAt: string;
+  closedAt: string;
+  closeReason: "sl" | "tp" | "manual";
+  riskUsd: number | null;
+  resultR: number | null;
+  resultPct: number | null;
+  realizedPnlUsd: number;
+  orderIds: { entry: string[]; exit: string[] };
+  /** Уже есть в базе — импортирована не будет. */
+  duplicate: boolean;
+};
+
+export type BingxImportResult = {
+  from: string;
+  to: string;
+  symbols: string[];
+  ordersFetched: number;
+  trades: ImportedTradeView[];
+  skipped: { symbol: string; reason: string; orderIds: string[] }[];
+  errors: { symbol: string; error: string }[];
+  /** Сколько записано в базу; у предпросмотра всегда 0. */
+  imported: number;
+};
+
 /** Текущее состояние лестницы риск-плана — правится вручную в админке. */
 export type RiskStateView = {
   currentLevel: number;

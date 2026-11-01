@@ -50,6 +50,88 @@ export async function createTrade(input: CreateTradeInput): Promise<Trade> {
   return created;
 }
 
+/**
+ * Сделка, восстановленная из журнала ордеров BingX (history/bingxImport.ts). Пишется
+ * сразу ЗАКРЫТОЙ и со своими openedAt/closedAt — в отличие от createTrade, который
+ * заводит активную сделку «сейчас». Поля плана (tpPrice, rrPreset) остаются пустыми:
+ * биржа их не помнит, и выдумывать их нельзя.
+ */
+export type ImportedTradeInput = {
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  leverage: number;
+  entryPrice: number;
+  slPrice: number | null;
+  riskUsd: number | null;
+  openedAt: Date;
+  closedAt: Date;
+  closeReason: string;
+  closePrice: number;
+  resultR: number | null;
+  resultPct: number | null;
+  bingxOrderIds: Record<string, unknown>;
+};
+
+export async function insertImportedTrade(input: ImportedTradeInput): Promise<Trade> {
+  const db = getDb();
+  const [created] = await db
+    .insert(trades)
+    .values({
+      symbol: input.symbol,
+      side: input.side,
+      status: "closed",
+      quantity: String(input.quantity),
+      leverage: input.leverage,
+      entryPrice: String(input.entryPrice),
+      slPrice: input.slPrice !== null ? String(input.slPrice) : null,
+      riskUsd: input.riskUsd !== null ? String(input.riskUsd) : null,
+      openedAt: input.openedAt,
+      closedAt: input.closedAt,
+      closeReason: input.closeReason,
+      closePrice: String(input.closePrice),
+      resultR: input.resultR !== null ? String(input.resultR) : null,
+      resultPct: input.resultPct !== null ? String(input.resultPct) : null,
+      bingxOrderIds: input.bingxOrderIds,
+    })
+    .returning();
+  if (!created) {
+    throw new Error("Не удалось записать импортированную сделку");
+  }
+  return created;
+}
+
+/**
+ * Все идентификаторы ордеров BingX, уже известные базе (и у активных сделок, и у
+ * закрытых). Импорт пропускает сделку, чей ордер входа здесь есть, — иначе повторный
+ * запуск задвоил бы историю.
+ */
+export async function listKnownBingxOrderIds(): Promise<Set<string>> {
+  const db = getDb();
+  const rows = await db.select({ ids: trades.bingxOrderIds }).from(trades);
+  const known = new Set<string>();
+  for (const row of rows) {
+    collectOrderIds(row.ids, known);
+  }
+  return known;
+}
+
+/** orderId лежат и плоско ({entry: 1}), и списками ({entry: [1,2]}) — забираем все. */
+function collectOrderIds(value: unknown, into: Set<string>): void {
+  if (value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectOrderIds(item, into);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>)) collectOrderIds(item, into);
+    return;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    into.add(String(value));
+  }
+}
+
 export type UpdateTradeInput = Partial<{
   tpPrice: number;
   /** План входа: пишется один раз вместе с первым tpPrice, потом не трогается. */

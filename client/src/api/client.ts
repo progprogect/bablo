@@ -2,6 +2,7 @@ import type {
   ActiveTradeView,
   Asset,
   AuthStatus,
+  BingxImportResult,
   BingxKeyStatus,
   DashboardResponse,
   BingXBalance,
@@ -300,6 +301,16 @@ export const getPrice = (symbol: string) => request<PriceQuote>(`/price/${encode
 // --- Админка: риск-план ---
 
 export const getRiskLevels = () => request<RiskLevel[]>("/admin/risk-levels");
+
+/**
+ * Восстановление истории сделок из журнала BingX. `dryRun: true` только показывает,
+ * что нашлось, и ничего не пишет — им и открывается диалог в админке.
+ */
+export const importBingxHistory = (days: number, dryRun: boolean) =>
+  request<BingxImportResult>("/admin/import-bingx", {
+    method: "POST",
+    body: JSON.stringify({ days, dryRun }),
+  });
 
 /** Текущий уровень и накопленный R — чтение и ручная установка (админка). */
 export const getRiskStateAdmin = () => request<RiskStateView>("/admin/risk-state");
