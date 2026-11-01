@@ -351,3 +351,49 @@ export function summarizeHours(
 
   return [...buckets.values()].sort((a, b) => a.hour - b.hour);
 }
+
+/**
+ * Код ошибки BingX «слишком частые запросы к эндпоинту». Биржа не просто отказывает, а
+ * закрывает эндпоинт на время и сообщает момент разблокировки прямо в тексте:
+ * «…will be unblocked after 1793575720168» (миллисекунды эпохи).
+ */
+export const RATE_LIMIT_CODE = 100410;
+
+/** Дольше этого не ждём: лучше честно показать ошибку, чем держать запрос минутами. */
+export const MAX_RATE_LIMIT_WAIT_MS = 90_000;
+
+/** Пауза по умолчанию, когда биржа ограничила частоту, но момент разблокировки не назвала. */
+const DEFAULT_RATE_LIMIT_WAIT_MS = 3_000;
+
+/**
+ * Сколько ждать перед повтором запроса, если биржа ограничила частоту; null — ошибка не
+ * про частоту, повторять незачем.
+ *
+ * Момент разблокировки берём из текста ошибки — он точнее любой нашей догадки. Если его
+ * нет, ждём фиксированную паузу. Отрицательное ожидание (момент уже прошёл) означает,
+ * что повторять можно сразу.
+ */
+export function rateLimitWaitMs(message: string, now: number): number | null {
+  const text = message.toLowerCase();
+  // «unblocked after» — тоже признак: так биржа отвечает именно на частоту запросов,
+  // и формулировка кода в сообщении может меняться.
+  const isRateLimit =
+    text.includes(String(RATE_LIMIT_CODE)) ||
+    text.includes("rate limit") ||
+    text.includes("frequency limit") ||
+    text.includes("unblocked after");
+  if (!isRateLimit) return null;
+
+  const match = /unblocked after (\d{10,})/i.exec(message);
+  if (!match) return DEFAULT_RATE_LIMIT_WAIT_MS;
+  const target = Number(match[1]);
+  if (!Number.isFinite(target)) return DEFAULT_RATE_LIMIT_WAIT_MS;
+  return Math.min(Math.max(target - now, 0), MAX_RATE_LIMIT_WAIT_MS);
+}
+
+/** Короткое человеческое объяснение ошибки биржи — для списка в админке. */
+export function describeFetchError(message: string): string {
+  return rateLimitWaitMs(message, Date.now()) !== null
+    ? "биржа ограничила частоту запросов"
+    : message;
+}

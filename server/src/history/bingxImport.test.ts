@@ -270,3 +270,41 @@ test("сводка по часам: сделки без R в счёт не ид�
 test("сводка по часам: пустой список даёт пустую сводку", () => {
   assert.deepEqual(summarizeHours([], TZ), []);
 });
+
+// --- Ограничение частоты запросов у BingX (поймано на боевом импорте 01.11.2026) ---
+
+import { describeFetchError, MAX_RATE_LIMIT_WAIT_MS, rateLimitWaitMs } from "./bingxImport.js";
+
+test("rateLimitWaitMs: момент разблокировки берётся из текста ошибки", () => {
+  const now = 1793575700000;
+  const message =
+    "code:100410:The endpoint trigger frequency limit rule is currently in the disabled period and will be unblocked after 1793575720168";
+  assert.equal(rateLimitWaitMs(message, now), 20168);
+});
+
+test("rateLimitWaitMs: момент уже прошёл — ждать нечего, но повторить стоит", () => {
+  assert.equal(rateLimitWaitMs("... will be unblocked after 1793575720168", 1793575999999), 0);
+});
+
+test("rateLimitWaitMs: ожидание ограничено сверху", () => {
+  const now = 1793575700000;
+  const far = now + 10 * 60_000;
+  assert.equal(rateLimitWaitMs(`will be unblocked after ${far}`, now), MAX_RATE_LIMIT_WAIT_MS);
+});
+
+test("rateLimitWaitMs: ограничение без точного времени — фиксированная пауза", () => {
+  assert.equal(rateLimitWaitMs("rate limited", Date.now()), 3000);
+});
+
+test("rateLimitWaitMs: обычная ошибка повтора не требует", () => {
+  assert.equal(rateLimitWaitMs("code:100001:Signature verification failed", Date.now()), null);
+  assert.equal(rateLimitWaitMs("Не удалось получить историю ордеров", Date.now()), null);
+});
+
+test("describeFetchError: про частоту говорим по-человечески, остальное — как есть", () => {
+  assert.equal(
+    describeFetchError("code:100410:The endpoint trigger frequency limit rule ..."),
+    "биржа ограничила частоту запросов",
+  );
+  assert.equal(describeFetchError("Signature verification failed"), "Signature verification failed");
+});

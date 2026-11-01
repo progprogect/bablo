@@ -4,6 +4,8 @@ import { insertImportedTrade, listKnownBingxOrderIds } from "../db/repositories/
 import { getRiskSettings } from "../db/repositories/settings.js";
 import {
   buildTradesFromOrders,
+  describeFetchError,
+  rateLimitWaitMs,
   summarizeHours,
   toImportOrder,
   type ImportedTrade,
@@ -22,6 +24,21 @@ import {
 
 /** BingX отдаёт историю ордеров окнами; 7 суток — безопасный размер одного запроса. */
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Пауза между запросами к бирже. На 30 днях и четырёх активах это два десятка запросов
+ * подряд, и BingX закрывает эндпоинт за частоту (code 100410) — поймано на первом же
+ * боевом импорте 01.11.2026. Четверть секунды растягивает всю выгрузку на считанные
+ * секунды и снимает проблему.
+ */
+const REQUEST_PAUSE_MS = 250;
+
+/** Сколько раз повторяем окно, если биржа ответила ограничением частоты. */
+const RATE_LIMIT_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Сколько дней истории тянуть по умолчанию. Глубину хранения биржа ограничивает сама. */
 export const DEFAULT_IMPORT_DAYS = 30;
@@ -109,15 +126,26 @@ export async function previewBingxImport(
     const raw: Record<string, unknown>[] = [];
     for (let windowStart = from; windowStart < to; windowStart += WINDOW_MS) {
       const windowEnd = Math.min(windowStart + WINDOW_MS, to);
-      try {
-        raw.push(...(await fetchOrders(asset.symbol, windowStart, windowEnd)));
-      } catch (error) {
-        // Биржа может не отдать глубокое окно — это не повод терять остальные.
-        errors.push({
-          symbol: asset.symbol,
-          error: error instanceof Error ? error.message : "Не удалось получить историю ордеров",
-        });
+      // Ограничение частоты — не отказ, а «подожди»: биржа сама называет момент
+      // разблокировки, поэтому ждём ровно до него и повторяем то же окно.
+      for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt += 1) {
+        try {
+          raw.push(...(await fetchOrders(asset.symbol, windowStart, windowEnd)));
+          break;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Не удалось получить историю ордеров";
+          const wait = rateLimitWaitMs(message, Date.now());
+          if (wait !== null && attempt < RATE_LIMIT_RETRIES) {
+            await sleep(wait);
+            continue;
+          }
+          // Биржа может не отдать глубокое окно — это не повод терять остальные.
+          errors.push({ symbol: asset.symbol, error: describeFetchError(message) });
+          break;
+        }
       }
+      await sleep(REQUEST_PAUSE_MS);
     }
 
     ordersFetched += raw.length;
@@ -161,7 +189,9 @@ export async function previewBingxImport(
     hourly,
     tzOffsetMinutes: settings.tzOffsetMinutes,
     skipped,
-    errors,
+    // Одинаковые ошибки по одному активу схлопываем: сорок одинаковых строк в админке
+    // ничего не объясняют, а число повторов — объясняет.
+    errors: collapseErrors(errors),
   };
 }
 
@@ -205,4 +235,21 @@ export async function runBingxImport(
   }
 
   return { ...preview, imported };
+}
+
+/** Схлопывает повторы: [{symbol, error}] → [{symbol, error: "текст (×12)"}]. */
+function collapseErrors(
+  errors: { symbol: string; error: string }[],
+): { symbol: string; error: string }[] {
+  const counts = new Map<string, { symbol: string; error: string; count: number }>();
+  for (const item of errors) {
+    const key = `${item.symbol}|${item.error}`;
+    const known = counts.get(key);
+    if (known) known.count += 1;
+    else counts.set(key, { ...item, count: 1 });
+  }
+  return [...counts.values()].map(({ symbol, error, count }) => ({
+    symbol,
+    error: count > 1 ? `${error} (×${count})` : error,
+  }));
 }

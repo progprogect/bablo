@@ -228,8 +228,9 @@ export function RecoverySection() {
           )}
           {result.errors.length > 0 && (
             <p className="text-[11px] text-amber-700">
-              Биржа ответила ошибкой по части запросов:{" "}
-              {result.errors.map((item) => `${item.symbol} — ${item.error}`).join("; ")}
+              Часть данных биржа не отдала: {result.errors.map((item) => `${item.symbol} — ${item.error}`).join("; ")}.
+              Если дело в частоте запросов — подожди пару минут и загрузи снова или возьми
+              глубину поменьше: чем меньше дней, тем меньше запросов к бирже.
             </p>
           )}
           <p className="text-[11px] text-slate-400">
