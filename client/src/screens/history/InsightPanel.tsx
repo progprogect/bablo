@@ -252,6 +252,11 @@ function HoursChart({
  * Карточка-подсказка над списком сделок. С 11.09.2026 в ней остались ТОЛЬКО часы:
  * статистика по пресетам R/R, типичный час дневной цели и «время отработки 1/3»
  * убраны по просьбе пользователя (серверные расчёты удалены вместе с ними).
+ *
+ * Пустая сетка часов показывается ТОЖЕ (просьба пользователя от 02.11.2026, после
+ * переезда на новую базу): раньше панель пряталась целиком, пока нет ни одной закрытой
+ * сделки, и экран выглядел сломанным. Теперь видно разметку суток и подпись, что часы
+ * заполнятся после первых сделок.
  */
 export function InsightPanel({
   insights,
@@ -268,7 +273,7 @@ export function InsightPanel({
   onSelectHour?: (hour: number) => void;
 }) {
   const hourlyOutcomes = insights.hourlyOutcomes ?? [];
-  if (hourlyOutcomes.length === 0) return null;
+  const isEmpty = hourlyOutcomes.length === 0;
 
   return (
     <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -280,6 +285,12 @@ export function InsightPanel({
         selectedHour={selectedHour}
         onSelectHour={onSelectHour ?? (() => {})}
       />
+      {isEmpty && (
+        <p className="text-[11px] text-slate-400">
+          Часы заполнятся после первых закрытых сделок — или когда восстановишь историю в
+          админке.
+        </p>
+      )}
     </div>
   );
 }
