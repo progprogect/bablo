@@ -11,6 +11,7 @@ import type {
   PagedTrades,
   RiskLevel,
   RiskSettings,
+  RiskStateView,
   SetTakeProfitResult,
   StatsResponse,
   Trade,
@@ -299,6 +300,12 @@ export const getPrice = (symbol: string) => request<PriceQuote>(`/price/${encode
 // --- Админка: риск-план ---
 
 export const getRiskLevels = () => request<RiskLevel[]>("/admin/risk-levels");
+
+/** Текущий уровень и накопленный R — чтение и ручная установка (админка). */
+export const getRiskStateAdmin = () => request<RiskStateView>("/admin/risk-state");
+
+export const setRiskStateRequest = (state: RiskStateView) =>
+  request<RiskStateView>("/admin/risk-state", { method: "PUT", body: JSON.stringify(state) });
 
 export const updateRiskLevelRequest = (level: number, patch: { riskUsd?: number; requiredR?: number }) =>
   request<RiskLevel>(`/admin/risk-levels/${level}`, { method: "PATCH", body: JSON.stringify(patch) });

@@ -184,6 +184,12 @@ export type DashboardResponse = {
   notices?: DayNotice[];
 };
 
+/** Текущее состояние лестницы риск-плана — правится вручную в админке. */
+export type RiskStateView = {
+  currentLevel: number;
+  accumulatedR: number;
+};
+
 export type BingxKeyStatus = {
   configured: boolean;
 };

@@ -15,7 +15,9 @@ import {
   setRiskSettings,
   type RiskSettings,
 } from "../db/repositories/settings.js";
-import { listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
+import { listRiskLevelDefs, listRiskLevels, updateRiskLevel } from "../db/repositories/riskLevels.js";
+import { getOrCreateRiskState, updateRiskState } from "../db/repositories/riskState.js";
+import { toRiskState, validateManualRiskState } from "../risk/manualState.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
@@ -420,6 +422,45 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     await resyncMarketSymbols();
     reply.code(204);
   });
+
+  // --- Риск-план: текущее состояние (уровень и накопленный R) ---
+
+  app.get("/admin/risk-state", async () => {
+    const state = await getOrCreateRiskState();
+    return {
+      currentLevel: state.currentLevel,
+      accumulatedR: Number(state.accumulatedR),
+    };
+  });
+
+  /**
+   * Ручная установка уровня и прогресса (01.11.2026). Нужна была при переезде с Railway:
+   * база осталась у заблокированного хостинга, новая поднялась пустой — и риск считался
+   * от первого уровня. Обычный путь прогресса (applyTradeResult при закрытии сделки)
+   * этим не затрагивается: здесь разовая правка состояния, а не второй механизм.
+   */
+  app.put<{ Body: { currentLevel?: number; accumulatedR?: number } }>(
+    "/admin/risk-state",
+    async (request, reply) => {
+      const { currentLevel, accumulatedR } = request.body ?? {};
+      const input = { currentLevel: Number(currentLevel), accumulatedR: Number(accumulatedR) };
+      const levels = await listRiskLevelDefs();
+      const error = validateManualRiskState(input, levels);
+      if (error) {
+        reply.code(400).send({ error });
+        return;
+      }
+      const state = await getOrCreateRiskState();
+      const updated = await updateRiskState(state.id, toRiskState(input));
+      if (!updated) {
+        reply.code(500).send({ error: "Не удалось обновить состояние риск-плана" });
+        return;
+      }
+      // Дашборд открыт на телефоне — пусть подхватит новый уровень без перезагрузки.
+      eventBus.emitTyped("refresh", { reason: "risk-state.updated" });
+      return { currentLevel: updated.currentLevel, accumulatedR: Number(updated.accumulatedR) };
+    },
+  );
 
   // --- Риск-план: лестница уровней ---
 
