@@ -20,6 +20,8 @@ bablo/
 ├── server/         # Fastify API + раздача статики клиента + Drizzle/PostgreSQL
 ├── railway.json    # конфигурация деплоя Railway
 ├── render.yaml     # то же для Render — запасной хостинг (docs/DEPLOY.md)
+├── Dockerfile      # образ для Fly.io (Railway и Render собирают своими билдерами)
+├── fly.toml        # конфигурация Fly: одна машина, без засыпания
 └── package.json    # npm workspaces (общие скрипты)
 ```
 

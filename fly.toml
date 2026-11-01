@@ -1,0 +1,32 @@
+# Fly.io. Главное здесь — машина НЕ засыпает и она одна: сервер держит WebSocket к BingX,
+# SSE-канал к телефону и таймеры (ночной TP, досверка закрытий), а второй инстанс открыл
+# бы второй стрим к бирже и раздвоил дневные блокировки. См. docs/DEPLOY.md.
+app = "bablo"
+primary_region = "fra"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  # Приложение слушает PORT (по умолчанию 3000) на 0.0.0.0 — значение совпадает с
+  # internal_port ниже.
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Засыпать нельзя: со сном машины рвётся стрим биржи и пропускается ночное правило.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
