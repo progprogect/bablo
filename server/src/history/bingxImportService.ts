@@ -1,10 +1,13 @@
 import { getOrderHistory, type BingXCredentials } from "../bingx/client.js";
 import { listActiveAssets } from "../db/repositories/assets.js";
 import { insertImportedTrade, listKnownBingxOrderIds } from "../db/repositories/trades.js";
+import { getRiskSettings } from "../db/repositories/settings.js";
 import {
   buildTradesFromOrders,
+  summarizeHours,
   toImportOrder,
   type ImportedTrade,
+  type ImportHourStat,
   type ImportSkip,
 } from "./bingxImport.js";
 
@@ -37,6 +40,14 @@ export type BingxImportPreview = {
   symbols: string[];
   ordersFetched: number;
   trades: ImportedTradeView[];
+  /**
+   * Сводка по часам открытия — первый шаг восстановления: прибыльные и убыточные часы
+   * видно до того, как история окажется в базе. Считается тем же правилом, что живая
+   * гистограмма (history/insights.ts).
+   */
+  hourly: ImportHourStat[];
+  /** Таймзона риск-плана, в которой разложены часы. */
+  tzOffsetMinutes: number;
   skipped: ImportSkip[];
   /** Ошибки по конкретным активам — остальные всё равно обрабатываются. */
   errors: { symbol: string; error: string }[];
@@ -83,8 +94,11 @@ export async function previewBingxImport(
   const to = now.getTime();
   const from = to - depth * 24 * 60 * 60 * 1000;
 
-  const assets = await listActiveAssets();
-  const known = await listKnownBingxOrderIds();
+  const [assets, known, settings] = await Promise.all([
+    listActiveAssets(),
+    listKnownBingxOrderIds(),
+    getRiskSettings(),
+  ]);
 
   const trades: ImportedTradeView[] = [];
   const skipped: ImportSkip[] = [];
@@ -127,12 +141,25 @@ export async function previewBingxImport(
 
   trades.sort((a, b) => (a.closedAt < b.closedAt ? -1 : a.closedAt > b.closedAt ? 1 : 0));
 
+  // Сводка — по ВСЕМ собранным сделкам, включая уже известные базе: час описывает
+  // поведение рынка и твоё поведение в нём, а не состояние импорта.
+  const hourly = summarizeHours(
+    trades.map((trade) => ({
+      ...trade,
+      openedAt: new Date(trade.openedAt),
+      closedAt: new Date(trade.closedAt),
+    })),
+    settings.tzOffsetMinutes,
+  );
+
   return {
     from: new Date(from).toISOString(),
     to: new Date(to).toISOString(),
     symbols: assets.map((asset) => asset.symbol),
     ordersFetched,
     trades,
+    hourly,
+    tzOffsetMinutes: settings.tzOffsetMinutes,
     skipped,
     errors,
   };

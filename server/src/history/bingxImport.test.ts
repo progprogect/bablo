@@ -190,3 +190,83 @@ test("toImportOrder: строки BingX приводятся к числам, п
   assert.equal(parsed.triggerOrderId, null);
   assert.equal(toImportOrder({ symbol: "TAO-USDT" }), null);
 });
+
+// --- Сводка по часам: первый шаг восстановления данных (01.11.2026) ---
+
+import { summarizeHours, type ImportedTrade } from "./bingxImport.js";
+
+/** Сделка для сводки: важны только час открытия, исход и R. */
+function imported(partial: Partial<ImportedTrade> & { openedAt: Date }): ImportedTrade {
+  return {
+    symbol: "TIA-USDT",
+    side: "long",
+    quantity: 10,
+    entryPrice: 100,
+    closePrice: 104,
+    slPrice: 98,
+    closedAt: partial.openedAt,
+    closeReason: "tp",
+    riskUsd: 20,
+    resultR: 2,
+    resultPct: 4,
+    realizedPnlUsd: 40,
+    orderIds: { entry: ["1"], exit: ["2"] },
+    ...partial,
+  };
+}
+
+/** 10:30 МСК = 07:30 UTC. Таймзона риск-плана по умолчанию — UTC+3. */
+const TZ = 180;
+const atMsk = (hour: number, day = 20) =>
+  new Date(Date.UTC(2026, 9, day, hour, 30) - TZ * 60_000);
+
+test("сводка по часам: час берётся в таймзоне риск-плана", () => {
+  const stats = summarizeHours([imported({ openedAt: atMsk(10) })], TZ);
+  assert.deepEqual(stats, [{ hour: 10, total: 1, tpCount: 1 }]);
+  // В UTC та же сделка попала бы в 7 часов — проверяем, что таймзона действительно учтена.
+  assert.deepEqual(summarizeHours([imported({ openedAt: atMsk(10) })], 0), [
+    { hour: 7, total: 1, tpCount: 1 },
+  ]);
+});
+
+test("сводка по часам: тейки и стопы считаются раздельно, часы по возрастанию", () => {
+  const stats = summarizeHours(
+    [
+      imported({ openedAt: atMsk(14), closeReason: "sl", resultR: -1 }),
+      imported({ openedAt: atMsk(9) }),
+      imported({ openedAt: atMsk(9), closeReason: "sl", resultR: -1 }),
+      imported({ openedAt: atMsk(14) }),
+      imported({ openedAt: atMsk(14) }),
+    ],
+    TZ,
+  );
+  assert.deepEqual(stats, [
+    { hour: 9, total: 2, tpCount: 1 },
+    { hour: 14, total: 3, tpCount: 2 },
+  ]);
+});
+
+test("сводка по часам: стоп, уведённый в прибыль, считается тейком", () => {
+  // closeReason = sl, но результат положительный и стоп выше входа — это тейк
+  // (то же правило, что в живой гистограмме, см. history/outcome.ts).
+  const stats = summarizeHours(
+    [imported({ openedAt: atMsk(12), closeReason: "sl", slPrice: 102, resultR: 1 })],
+    TZ,
+  );
+  assert.deepEqual(stats, [{ hour: 12, total: 1, tpCount: 1 }]);
+});
+
+test("сводка по часам: сделки без R в счёт не идут", () => {
+  const stats = summarizeHours(
+    [
+      imported({ openedAt: atMsk(11), resultR: null, riskUsd: null, slPrice: null, closeReason: "manual" }),
+      imported({ openedAt: atMsk(11) }),
+    ],
+    TZ,
+  );
+  assert.deepEqual(stats, [{ hour: 11, total: 1, tpCount: 1 }]);
+});
+
+test("сводка по часам: пустой список даёт пустую сводку", () => {
+  assert.deepEqual(summarizeHours([], TZ), []);
+});

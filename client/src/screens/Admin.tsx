@@ -2,7 +2,7 @@ import { BingxKeysSection } from "./admin/BingxKeysSection";
 import { AssetsCard } from "../components/AssetsCard";
 import { RiskPlanSection } from "./admin/RiskPlanSection";
 import { EquityAdjustmentsSection } from "./admin/EquityAdjustmentsSection";
-import { ImportHistorySection } from "./admin/ImportHistorySection";
+import { RecoverySection } from "./admin/RecoverySection";
 import { TradeCloseReasonSection } from "./admin/TradeCloseReasonSection";
 import { TradeStatsRrSection } from "./admin/TradeStatsRrSection";
 
@@ -18,7 +18,7 @@ export function Admin() {
           удаление; правка плеча одинаковая здесь и там. */}
       <AssetsCard manage />
       <RiskPlanSection />
-      <ImportHistorySection />
+      <RecoverySection />
       <EquityAdjustmentsSection />
     </section>
   );

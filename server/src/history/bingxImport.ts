@@ -1,4 +1,6 @@
 import { computeRiskUsd, computeResultFromPrices, type TradeSide } from "../trades/math.js";
+import { getLocalHour } from "../risk/tradingDay.js";
+import { resolveTradeOutcome } from "./outcome.js";
 
 /**
  * Восстановление истории сделок из журнала ордеров BingX (01.11.2026).
@@ -301,4 +303,51 @@ function finishTrade(symbol: string, position: OpenPosition): ImportedTrade {
     realizedPnlUsd,
     orderIds: { entry: position.entryOrderIds, exit: position.exitOrderIds },
   };
+}
+
+/** Строка сводки по часу открытия — те же цифры, что в живой гистограмме «Сделки». */
+export type ImportHourStat = {
+  hour: number;
+  total: number;
+  tpCount: number;
+};
+
+/**
+ * Сводка восстановленных сделок по часам ОТКРЫТИЯ — первый шаг восстановления данных
+ * (просьба пользователя от 01.11.2026): увидеть прибыльные и убыточные часы раньше, чем
+ * писать в базу саму историю.
+ *
+ * Считается ровно так же, как живая гистограмма (history/insights.ts): час берётся в
+ * таймзоне риск-плана, исход — общим правилом (стоп, уведённый в прибыль, это тейк).
+ * Иначе восстановленные часы расходились бы с теми, что появятся после импорта.
+ *
+ * Сделки без R в счёт не идут: в гистограмме их тоже нет — по ним нечего сказать
+ * о результате часа.
+ */
+export function summarizeHours(
+  trades: ImportedTrade[],
+  tzOffsetMinutes: number,
+): ImportHourStat[] {
+  const buckets = new Map<number, ImportHourStat>();
+
+  for (const trade of trades) {
+    if (trade.resultR === null) continue;
+    const hour = getLocalHour(trade.openedAt, tzOffsetMinutes);
+    const bucket = buckets.get(hour) ?? { hour, total: 0, tpCount: 0 };
+    bucket.total += 1;
+    const outcome = resolveTradeOutcome(
+      {
+        closeReason: trade.closeReason,
+        entryPrice: trade.entryPrice,
+        slPrice: trade.slPrice,
+        side: trade.side,
+        statsOutcome: null,
+      },
+      trade.resultR,
+    );
+    if (outcome === "tp") bucket.tpCount += 1;
+    buckets.set(hour, bucket);
+  }
+
+  return [...buckets.values()].sort((a, b) => a.hour - b.hour);
 }

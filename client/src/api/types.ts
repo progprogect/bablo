@@ -204,12 +204,23 @@ export type ImportedTradeView = {
   duplicate: boolean;
 };
 
+/** Строка сводки по часу открытия — те же цифры, что в живой гистограмме «Сделки». */
+export type ImportHourStat = {
+  hour: number;
+  total: number;
+  tpCount: number;
+};
+
 export type BingxImportResult = {
   from: string;
   to: string;
   symbols: string[];
   ordersFetched: number;
   trades: ImportedTradeView[];
+  /** Сводка по часам открытия — первый шаг восстановления. */
+  hourly: ImportHourStat[];
+  /** Таймзона риск-плана, в которой разложены часы. */
+  tzOffsetMinutes: number;
   skipped: { symbol: string; reason: string; orderIds: string[] }[];
   errors: { symbol: string; error: string }[];
   /** Сколько записано в базу; у предпросмотра всегда 0. */
