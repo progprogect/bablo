@@ -37,15 +37,33 @@ type StoredBingxCredentials = {
   secretKeyEncrypted: string;
 };
 
+/**
+ * Ключи BingX из БД, или null — ключей нет либо их не расшифровать.
+ *
+ * Расшифровка падает ровно в одном сценарии: база приехала с другого хостинга, а
+ * ENCRYPTION_KEY там был другой (переезд 01.11.2026, docs/DEPLOY.md). Раньше ошибка
+ * летела наверх и дашборд отвечал 500 — экран оставался пустым, и было непонятно, что
+ * делать. Теперь это тот же случай, что «ключи ещё не заведены»: дашборд показывает
+ * «Ключи BingX не настроены — добавьте их в админке», и ровно это и надо сделать.
+ * Сохранение ключей в админке ничего не расшифровывает и работает как обычно.
+ */
 export async function getBingxCredentials(): Promise<BingXCredentials | null> {
   const stored = await getValue<StoredBingxCredentials>(BINGX_CREDENTIALS_KEY);
   if (!stored) {
     return null;
   }
-  return {
-    apiKey: decrypt(stored.apiKeyEncrypted),
-    secretKey: decrypt(stored.secretKeyEncrypted),
-  };
+  try {
+    return {
+      apiKey: decrypt(stored.apiKeyEncrypted),
+      secretKey: decrypt(stored.secretKeyEncrypted),
+    };
+  } catch (error) {
+    console.error(
+      "[settings] ключи BingX не расшифровываются — ENCRYPTION_KEY не тот, которым они были зашифрованы. Введите ключи заново в админке.",
+      error,
+    );
+    return null;
+  }
 }
 
 export async function setBingxCredentials(credentials: BingXCredentials): Promise<void> {
