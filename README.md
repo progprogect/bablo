@@ -9,6 +9,7 @@
 - [Риск-движок](docs/RISK_ENGINE.md) — лестница уровней, дневные лимиты, геймификация
 - [Архитектура](docs/ARCHITECTURE.md) — стек, модули, схема БД, API, realtime без поллинга
 - [Roadmap](docs/ROADMAP.md) — этапы разработки с критериями приёмки
+- [Переезд на другой хостинг](docs/DEPLOY.md) — требования к серверу, перенос базы, Render
 
 ## Структура репозитория
 
@@ -18,6 +19,7 @@ bablo/
 ├── client/         # React + Vite PWA (Tailwind, react-router)
 ├── server/         # Fastify API + раздача статики клиента + Drizzle/PostgreSQL
 ├── railway.json    # конфигурация деплоя Railway
+├── render.yaml     # то же для Render — запасной хостинг (docs/DEPLOY.md)
 └── package.json    # npm workspaces (общие скрипты)
 ```
 

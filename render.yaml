@@ -1,0 +1,51 @@
+# Деплой на Render (ноябрь 2026): запасной дом на случай, когда Railway недоступен.
+# railway.json рядом не удалён намеренно — каждая платформа читает только свой файл,
+# и вернуться назад можно без правок кода.
+#
+# Главное требование к хостингу: ОДИН всегда включённый процесс. Сервер держит WebSocket
+# к BingX, SSE-канал к телефону и таймеры (ночной TP, досверка закрытий), поэтому
+# serverless (Vercel, Netlify, Cloudflare Workers), засыпающие тарифы и автоскейлинг
+# в несколько реплик не годятся: второй инстанс открыл бы второй стрим к бирже и
+# раздвоил дневные блокировки. Подробности — в docs/DEPLOY.md.
+#
+# Blueprint создаёт сразу и сервис, и базу: DATABASE_URL подставится сам. Названия тарифов
+# у Render со временем меняются — если он отругается на `plan`, заведи базу в интерфейсе
+# и пропиши DATABASE_URL переменной вручную, остальное не изменится.
+
+databases:
+  - name: bablo-db
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: bablo
+    runtime: node
+    # Starter, а не Free: бесплатный веб-сервис Render засыпает после 15 минут тишины,
+    # а вместе с ним умирает стрим биржи.
+    plan: starter
+    region: frankfurt
+    # Строго 1 — см. комментарий выше.
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    # Тот же healthcheck, что был у Railway (server/src/api/health.ts).
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bablo-db
+          property: connectionString
+      # Значения задаются в интерфейсе Render, а не в этом файле. ENCRYPTION_KEY —
+      # ТОТ ЖЕ, что был на старом хостинге: иначе сохранённые в базе ключи BingX не
+      # расшифровать. SESSION_SECRET — любой новый, он лишь разлогинит PIN.
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
