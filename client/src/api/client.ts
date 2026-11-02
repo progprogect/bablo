@@ -4,6 +4,7 @@ import type {
   AuthStatus,
   BingxImportResult,
   BingxKeyStatus,
+  HourBaselineEntry,
   DashboardResponse,
   BingXBalance,
   EquitySnapshot,
@@ -301,6 +302,17 @@ export const getPrice = (symbol: string) => request<PriceQuote>(`/price/${encode
 // --- Админка: риск-план ---
 
 export const getRiskLevels = () => request<RiskLevel[]>("/admin/risk-levels");
+
+/** Стартовая статистика по часам: чтение и полная замена (админка). */
+export const getHourBaseline = () =>
+  request<{ entries: HourBaselineEntry[] }>("/admin/hour-baseline");
+
+/** Текст в формате «11 - 16/32», по строке на час; сервер разбирает его сам. */
+export const saveHourBaselineRequest = (text: string) =>
+  request<{ entries: HourBaselineEntry[] }>("/admin/hour-baseline", {
+    method: "PUT",
+    body: JSON.stringify({ text }),
+  });
 
 /**
  * Восстановление истории сделок из журнала BingX. `dryRun: true` только показывает,

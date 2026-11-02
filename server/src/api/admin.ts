@@ -23,6 +23,8 @@ import {
   previewBingxImport,
   runBingxImport,
 } from "../history/bingxImportService.js";
+import { listHourBaseline, replaceHourBaseline } from "../db/repositories/hourBaseline.js";
+import { parseHourBaseline, type HourBaselineEntry } from "../history/hourBaseline.js";
 import { getActiveTrade } from "../db/repositories/trades.js";
 import { resetAccountData } from "../db/repositories/accountReset.js";
 import { reclassifyExternalTrades } from "../trades/reclassify.js";
@@ -427,6 +429,62 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     await resyncMarketSymbols();
     reply.code(204);
   });
+
+  // --- Стартовая статистика по часам ---
+
+  app.get("/admin/hour-baseline", async () => {
+    return { entries: await listHourBaseline() };
+  });
+
+  /**
+   * Замена стартовой статистики по часам (02.11.2026). Принимает либо разобранный
+   * список, либо текст в том виде, в каком пользователь его помнит («11 - 16/32»).
+   * Запись всегда полная: вставленный список заменяет прежний целиком, пустой — очищает.
+   */
+  app.put<{ Body: { text?: string; entries?: HourBaselineEntry[] } }>(
+    "/admin/hour-baseline",
+    async (request, reply) => {
+      const body = request.body ?? {};
+      let entries: HourBaselineEntry[];
+
+      if (typeof body.text === "string") {
+        const parsed = parseHourBaseline(body.text);
+        if (parsed.errors.length > 0) {
+          reply.code(400).send({
+            error: `Не разобрал строки: ${parsed.errors.join("; ")}`,
+            entries: parsed.entries,
+          });
+          return;
+        }
+        entries = parsed.entries;
+      } else if (Array.isArray(body.entries)) {
+        const invalid = body.entries.find(
+          (entry) =>
+            !Number.isInteger(entry.hour) ||
+            entry.hour < 0 ||
+            entry.hour > 23 ||
+            !Number.isInteger(entry.total) ||
+            !Number.isInteger(entry.tpCount) ||
+            entry.total < 0 ||
+            entry.tpCount < 0 ||
+            entry.tpCount > entry.total,
+        );
+        if (invalid) {
+          reply.code(400).send({ error: `Некорректная строка для часа ${invalid.hour}` });
+          return;
+        }
+        entries = body.entries;
+      } else {
+        reply.code(400).send({ error: "Нужен text или entries" });
+        return;
+      }
+
+      await replaceHourBaseline(entries);
+      // Гистограмма открыта на телефоне — пусть обновится без перезагрузки.
+      eventBus.emitTyped("refresh", { reason: "hour-baseline.updated" });
+      return { entries: await listHourBaseline() };
+    },
+  );
 
   /**
    * Восстановление истории сделок из журнала ордеров BingX (01.11.2026, docs/DEPLOY.md).

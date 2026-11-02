@@ -1,6 +1,16 @@
-import { useState } from "react";
-import { ApiError, importBingxHistory } from "../../api/client";
-import type { BingxImportResult, ImportHourStat, ImportedTradeView } from "../../api/types";
+import { useEffect, useState } from "react";
+import {
+  ApiError,
+  getHourBaseline,
+  importBingxHistory,
+  saveHourBaselineRequest,
+} from "../../api/client";
+import type {
+  BingxImportResult,
+  HourBaselineEntry,
+  ImportHourStat,
+  ImportedTradeView,
+} from "../../api/types";
 
 /**
  * Восстановление данных после потери базы (01.11.2026). База осталась у заблокированного
@@ -94,6 +104,98 @@ function TradeRow({ trade }: { trade: ImportedTradeView }) {
   );
 }
 
+/**
+ * Стартовая статистика по часам: то, что было до этой базы. Вставляется списком в том
+ * виде, в каком пользователь его помнит («11 - 16/32», по строке на час) — набивать 48
+ * полей с телефона было бы мучением.
+ *
+ * Цифры складываются с реальными сделками ТОЛЬКО в гистограмме часов: месячная
+ * статистика, суммы R и прогресс уровней их не видят.
+ */
+function HourBaselineBlock() {
+  const [text, setText] = useState("");
+  const [saved, setSaved] = useState<HourBaselineEntry[]>([]);
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    getHourBaseline()
+      .then((response) => {
+        setSaved(response.entries);
+        if (response.entries.length > 0) {
+          setText(
+            response.entries
+              .map((entry) => `${entry.hour} - ${entry.tpCount}/${entry.total}`)
+              .join("\n"),
+          );
+        }
+      })
+      .catch(() => {
+        /* молча: блок не обязателен для работы админки */
+      });
+  }, []);
+
+  async function save() {
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await saveHourBaselineRequest(text);
+      setSaved(response.entries);
+      setNotice(
+        response.entries.length > 0
+          ? `Сохранено часов: ${response.entries.length}`
+          : "Стартовая статистика очищена",
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось сохранить");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const totals = saved.reduce(
+    (acc, entry) => ({ total: acc.total + entry.total, tp: acc.tp + entry.tpCount }),
+    { total: 0, tp: 0 },
+  );
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-line bg-card p-3">
+      <p className="text-xs font-medium text-ink">Стартовая статистика по часам</p>
+      <p className="text-[11px] text-slate-500">
+        То, что было до этой базы. Вставь списком, по строке на час, в формате
+        «11 - 16/32» — тейков через дробь от всех сделок. Эти цифры складываются с новыми
+        сделками только в гистограмме часов и не влияют на статистику месяцев, R и уровень.
+      </p>
+      <textarea
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        rows={6}
+        placeholder={"6 - 1/1\n7 - 2/5\n8 - 5/10"}
+        className="w-full rounded-md border border-line bg-transparent px-2 py-1 font-mono text-xs text-ink outline-none focus:border-accent"
+      />
+      <button
+        type="button"
+        disabled={isBusy}
+        onClick={save}
+        className="self-start rounded-lg border border-line bg-card px-3 py-1.5 text-sm text-ink disabled:opacity-60"
+      >
+        {isBusy ? "Сохраняю…" : "Сохранить"}
+      </button>
+      {error && <p className="text-[11px] text-red-600">{error}</p>}
+      {notice && <p className="text-[11px] text-emerald-600">{notice}</p>}
+      {saved.length > 0 && (
+        <p className="text-[11px] text-slate-400">
+          Учтено {totals.total} сделок, из них тейком {totals.tp} (
+          {Math.round((totals.tp / Math.max(totals.total, 1)) * 100)}%). Чтобы убрать —
+          очисти поле и сохрани.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function RecoverySection() {
   const [days, setDays] = useState(30);
   const [result, setResult] = useState<BingxImportResult | null>(null);
@@ -139,6 +241,8 @@ export function RecoverySection() {
           сначала смотрим статистику по часам, запись истории отдельной кнопкой.
         </p>
       </div>
+
+      <HourBaselineBlock />
 
       <div className="flex items-center gap-2">
         <label className="text-xs text-slate-500">Глубина, дней</label>

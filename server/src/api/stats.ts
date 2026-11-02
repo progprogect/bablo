@@ -13,13 +13,14 @@ import {
   type MonthlyStatTradeInput,
 } from "../history/monthlyStats.js";
 import { listLevelWithdrawals } from "../db/repositories/levelWithdrawals.js";
+import { listHourBaseline } from "../db/repositories/hourBaseline.js";
 import { getLocalDateKey } from "../risk/tradingDay.js";
 import { listCurrentlyBlockedHours } from "../risk/manualBlocksService.js";
 import { requireAuth } from "./plugins/auth-guard.js";
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/stats", { preHandler: requireAuth }, async () => {
-    const [rows, riskSettings, snapshotRows, adjustmentRows, blockedHours, withdrawalRows] =
+    const [rows, riskSettings, snapshotRows, adjustmentRows, blockedHours, withdrawalRows, baseline] =
       await Promise.all([
         listAllClosedTrades(),
         getRiskSettings(),
@@ -27,9 +28,14 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
         listEquityAdjustments(),
         listCurrentlyBlockedHours(),
         listLevelWithdrawals(),
+        listHourBaseline(),
       ]);
 
-    const insights = computeTradeInsights(rows.map(toInsightInput), riskSettings.tzOffsetMinutes);
+    const insights = computeTradeInsights(
+      rows.map(toInsightInput),
+      riskSettings.tzOffsetMinutes,
+      baseline,
+    );
 
     const monthlyInputs: MonthlyStatTradeInput[] = rows.map(toMonthlyStatInput);
 

@@ -1,4 +1,5 @@
 import { getLocalHour } from "../risk/tradingDay.js";
+import { mergeHourStats, type HourBaselineEntry } from "./hourBaseline.js";
 import { resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
 
 export type InsightTradeInput = {
@@ -103,6 +104,13 @@ export function toInsightInput(row: ClosedTradeRowForInsights): InsightTradeInpu
 export function computeTradeInsights(
   trades: InsightTradeInput[],
   tzOffsetMinutes: number,
+  /**
+   * Стартовая статистика по часам (history/hourBaseline.ts) — то, что было до этой базы.
+   * Складывается ТОЛЬКО здесь: месячная статистика, суммы R и прогресс уровней её не
+   * видят и видеть не должны.
+   */
+  baseline: HourBaselineEntry[] = [],
 ): TradeInsights {
-  return { hourlyOutcomes: hourlyOutcomes(bucketByOpenHour(trades, tzOffsetMinutes)) };
+  const computed = hourlyOutcomes(bucketByOpenHour(trades, tzOffsetMinutes));
+  return { hourlyOutcomes: mergeHourStats(computed, baseline) };
 }

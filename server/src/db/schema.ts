@@ -118,6 +118,22 @@ export const trades = pgTable("trades", {
   signals: jsonb("signals"),
 });
 
+/**
+ * Стартовая статистика по часам (02.11.2026): сколько сделок и сколько из них тейком
+ * было в каждый час ДО того, как завелась эта база. Складывается с реальными сделками
+ * только в гистограмме «Тейки по часам открытия» (history/insights.ts).
+ *
+ * Отдельная таблица, а не выдуманные сделки в trades: синтетические записи исказили бы
+ * месячную статистику, суммы R, прогресс уровней и список сделок.
+ */
+export const hourBaseline = pgTable("hour_baseline", {
+  /** Час суток 0–23 в таймзоне риск-плана. */
+  hour: integer("hour").primaryKey(),
+  total: integer("total").notNull(),
+  tpCount: integer("tp_count").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Дневные агрегаты для быстрой проверки лимитов риск-плана без пересчёта истории. */
 export const dailyStats = pgTable("daily_stats", {
   date: date("date").primaryKey(),

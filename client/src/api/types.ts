@@ -204,6 +204,13 @@ export type ImportedTradeView = {
   duplicate: boolean;
 };
 
+/** Стартовая статистика по часу: что было до этой базы (админка → восстановление). */
+export type HourBaselineEntry = {
+  hour: number;
+  total: number;
+  tpCount: number;
+};
+
 /** Строка сводки по часу открытия — те же цифры, что в живой гистограмме «Сделки». */
 export type ImportHourStat = {
   hour: number;
