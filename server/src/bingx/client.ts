@@ -39,6 +39,34 @@ function buildSignedQuery(params: Record<string, string | number>, secretKey: st
   return `${canonical}&signature=${signature}`;
 }
 
+/**
+ * Разбор ответа BingX. Биржа отвечает JSON далеко не всегда: при блокировке по IP,
+ * перегрузке или сбое её фронтового прокси приходит HTML или пустое тело, и наружу
+ * улетал SyntaxError «Unexpected token <», по которому ничего не понять.
+ *
+ * И не-JSON, и ненулевой `code` пишутся в лог вместе с путём: наружу уходит только
+ * текст сообщения, а без кода и эндпоинта причина отказа не восстанавливается.
+ * Найдено 04.11.2026 — сделка по TIA упала с 502, и в логах не осталось ничего.
+ */
+async function readEnvelope<T>(response: Response, label: string): Promise<T> {
+  const raw = await response.text();
+  let json: BingXEnvelope<T>;
+  try {
+    json = JSON.parse(raw) as BingXEnvelope<T>;
+  } catch {
+    const snippet = raw.trim().slice(0, 200) || "пустой ответ";
+    console.error(`[bingx] ${label} → HTTP ${response.status}, ответ не JSON: ${snippet}`);
+    throw new BingXApiError(-1, `HTTP ${response.status}, ответ не JSON: ${snippet}`);
+  }
+
+  if (json.code !== 0) {
+    console.error(`[bingx] ${label} → code ${json.code}: ${json.msg || "без текста"}`);
+    throw new BingXApiError(json.code, json.msg || "BingX API error");
+  }
+
+  return json.data;
+}
+
 async function bingxRequest<T>(
   credentials: BingXCredentials,
   method: "GET" | "POST" | "PUT" | "DELETE",
@@ -59,13 +87,7 @@ async function bingxRequest<T>(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
-  const json = (await response.json()) as BingXEnvelope<T>;
-
-  if (json.code !== 0) {
-    throw new BingXApiError(json.code, json.msg || "BingX API error");
-  }
-
-  return json.data;
+  return readEnvelope<T>(response, `${method} ${path}`);
 }
 
 export type BingXBalance = {
@@ -129,11 +151,8 @@ type BingXPriceResponse = {
 export async function getLatestPrice(symbol: string): Promise<number> {
   const url = `${BASE_URL}/openApi/swap/v2/quote/price?symbol=${encodeURIComponent(symbol)}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  const json = (await response.json()) as BingXEnvelope<BingXPriceResponse>;
-  if (json.code !== 0) {
-    throw new BingXApiError(json.code, json.msg || "BingX API error");
-  }
-  return Number(json.data.price);
+  const data = await readEnvelope<BingXPriceResponse>(response, "GET /swap/v2/quote/price");
+  return Number(data.price);
 }
 
 export type BingXKline = {
@@ -177,11 +196,8 @@ export async function getKlines(
   });
   const url = `${BASE_URL}/openApi/swap/v3/quote/klines?${params.toString()}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  const json = (await response.json()) as BingXEnvelope<BingXKlineRaw[]>;
-  if (json.code !== 0) {
-    throw new BingXApiError(json.code, json.msg || "BingX API error");
-  }
-  const rows = Array.isArray(json.data) ? json.data : [];
+  const data = await readEnvelope<BingXKlineRaw[]>(response, "GET /swap/v3/quote/klines");
+  const rows = Array.isArray(data) ? data : [];
   return rows
     .map((row) => ({
       time: Number(row.time),
@@ -226,12 +242,9 @@ let contractsCache: { at: number; bySymbol: Map<string, BingXContractLimits> } |
 async function fetchContracts(): Promise<Map<string, BingXContractLimits>> {
   const url = `${BASE_URL}/openApi/swap/v2/quote/contracts`;
   const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  const json = (await response.json()) as BingXEnvelope<BingXContractRaw[]>;
-  if (json.code !== 0) {
-    throw new BingXApiError(json.code, json.msg || "BingX API error");
-  }
+  const data = await readEnvelope<BingXContractRaw[]>(response, "GET /swap/v2/quote/contracts");
   const map = new Map<string, BingXContractLimits>();
-  for (const c of json.data) {
+  for (const c of data) {
     map.set(c.symbol, {
       symbol: c.symbol,
       quantityPrecision: c.quantityPrecision,

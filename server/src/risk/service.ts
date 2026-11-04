@@ -229,7 +229,17 @@ export async function checkCanOpenTrade(
   }
 
   if (credentials) {
-    const positions = await getPositions(credentials).catch(() => []);
+    // Ошибку биржи здесь не превращаем в отказ открыть сделку: проверка — страховка от
+    // позиции, открытой мимо приложения, и при недоступном BingX торговлю не блокируем.
+    // Но в лог причина уходит обязательно: это первый признак того, что подписанные
+    // запросы перестали работать (сменился IP в белом списке ключа, истёк ключ).
+    const positions = await getPositions(credentials).catch((error: unknown) => {
+      console.warn(
+        "[risk] проверка позиций на BingX не удалась:",
+        error instanceof Error ? `${error.name}: ${error.message}` : error,
+      );
+      return [];
+    });
     const openPosition = positions.find((p) => Number(p.positionAmt) !== 0);
     if (openPosition) {
       throw new RiskBlockedError(
