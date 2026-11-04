@@ -27,11 +27,21 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
 
-  const body = await response.json().catch(() => null);
+  // Тело читаем как текст и разбираем сами: при ошибке оно может прийти не JSON-ом
+  // (страница прокси, обрезанный ответ), и тогда важно показать хотя бы код статуса.
+  const raw = await response.text();
+  let body: unknown = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = null;
+  }
 
   if (!response.ok) {
-    const message = (body as { error?: string } | null)?.error ?? "Запрос не выполнен";
-    throw new ApiError(message);
+    const fromServer = (body as { error?: string } | null)?.error;
+    // Голое «Запрос не выполнен» ничего не говорит ни пользователю, ни логам: по коду
+    // видно хотя бы, ответил ли сервер (4xx/5xx) или вмешался прокси. 04.11.2026.
+    throw new ApiError(fromServer ?? `Запрос не выполнен (ошибка ${response.status})`);
   }
 
   return body as T;

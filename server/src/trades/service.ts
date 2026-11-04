@@ -25,7 +25,7 @@ import {
 import { eventBus } from "../events/bus.js";
 import { sendTradeClosedPush } from "../push/service.js";
 import { collectTradeMarketData } from "../journal/marketData.js";
-import { bingxMessage, replaceConditionalOrder } from "./orders.js";
+import { bingxMessage, logBingxFailure, replaceConditionalOrder } from "./orders.js";
 import { startTrailingSlWatch, stopTrailingSlWatch } from "./trailingSlWatcher.js";
 import {
   checkCanOpenTrade,
@@ -161,6 +161,7 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
   try {
     currentPrice = await getLatestPrice(asset.symbol);
   } catch (error) {
+    logBingxFailure("цена перед входом", error);
     throw new TradeError(bingxMessage(error, "Не удалось получить цену с BingX"), 502);
   }
 
@@ -211,6 +212,7 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
     await setMarginType(credentials, asset.symbol);
     await setLeverage(credentials, asset.symbol, asset.leverage);
   } catch (error) {
+    logBingxFailure("режим позиции, маржа и плечо", error);
     throw new TradeError(bingxMessage(error, "Не удалось настроить параметры торговли на BingX"), 502);
   }
 
@@ -227,6 +229,7 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
     });
     marketOrderId = marketOrder.orderId;
   } catch (error) {
+    logBingxFailure("рыночный вход в позицию", error);
     throw new TradeError(bingxMessage(error, "Не удалось открыть позицию на BingX"), 502);
   }
 
@@ -263,6 +266,7 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
     });
     bingxOrderIds.sl = slOrder.orderId;
   } catch (error) {
+    logBingxFailure("SL сразу после входа", error);
     slWarning = bingxMessage(
       error,
       "Позиция открыта, но SL не выставлен на бирже — установите его вручную немедленно",
@@ -431,6 +435,7 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     });
     tpOrderId = tpOrder.orderId;
   } catch (error) {
+    logBingxFailure("выставление TP", error);
     throw new TradeError(bingxMessage(error, "Не удалось выставить TP на бирже"), 502);
   }
 
@@ -448,6 +453,7 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
       });
       partialTpOrderId = partialOrder.orderId;
     } catch (error) {
+      logBingxFailure("частичный TP", error);
       partialTpWarning = bingxMessage(
         error,
         "Основной TP выставлен, но частичную фиксацию поставить не удалось — попробуйте ещё раз",
@@ -1333,6 +1339,7 @@ export async function closeTrade(tradeId: number): Promise<Trade> {
       }
     }
   } catch (error) {
+    logBingxFailure("закрытие позиции", error);
     throw new TradeError(bingxMessage(error, "Не удалось закрыть позицию на BingX"), 502);
   }
 

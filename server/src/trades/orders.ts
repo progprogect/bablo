@@ -1,4 +1,5 @@
 import {
+  BingXApiError,
   cancelOrder,
   placeOrder,
   type BingXCredentials,
@@ -11,8 +12,38 @@ import {
  * service сам импортирует их, и получился бы цикл.
  */
 
+/**
+ * Текст отказа BingX для пользователя: что делали + что ответила биржа + её код.
+ *
+ * Раньше возвращался голый `error.message` — пользователь видел «Insufficient margin»
+ * без шага, на котором это случилось, а код отказа не попадал ни в экран, ни в лог.
+ * Теперь сообщение самодостаточно: по нему видно и место, и причину (04.11.2026).
+ */
 export function bingxMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  if (error instanceof BingXApiError) {
+    // code -1 — ответ не распарсился как JSON (текст уже содержит HTTP-статус).
+    const code = error.code > 0 ? ` (код BingX ${error.code})` : "";
+    return `${fallback}: ${error.message}${code}`;
+  }
+  if (error instanceof Error && error.message) {
+    return `${fallback}: ${error.message}`;
+  }
+  return fallback;
+}
+
+/**
+ * Полная причина отказа — в лог сервера. Клиенту уходит только текст сообщения,
+ * а сетевые сбои (таймаут, обрыв) до разбора ответа вообще не логируются клиентом
+ * BingX, поэтому каждый шаг открытия/закрытия сделки пишет причину сам.
+ */
+export function logBingxFailure(step: string, error: unknown): void {
+  const detail =
+    error instanceof BingXApiError
+      ? `code ${error.code}: ${error.message}`
+      : error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : String(error);
+  console.error(`[trades] ${step} — отказ BingX: ${detail}`);
 }
 
 export type ReplaceConditionalOrderResult =
