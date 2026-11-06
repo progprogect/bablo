@@ -24,13 +24,16 @@ type Scenario = {
 /**
  * Расклады одного торгового дня (правила #4, #15). Строки про тейки убраны 25.10.2026
  * вместе с самими правилами (#3 +3R, #5 два тейка, #6 тейк ≥ 2R): пока идут тейки,
- * торговать можно дальше — день заканчивает стоп. В ПН и ПТ строка про один стоп не
- * действует, там день закрывает первый же результат, см. WEEKDAY_SCENARIOS.
+ * торговать можно дальше — день заканчивает стоп. В ПН, ПТ и СБ строка про один стоп не
+ * действует: там день закрывает уже первый стоп, см. WEEKDAY_SCENARIOS и
+ * SATURDAY_SCENARIOS.
  */
 const DAY_SCENARIOS: Scenario[] = [
   {
     chips: [{ outcome: "sl", label: "Стоп" }],
-    note: "час паузы, торгуем дальше (кроме ПН и ПТН)",
+    // Исключения (ПН, ПТН, СБ) вынесены в приписку под блоком: в строке они занимали
+    // вторую строчку на iPhone, и «СБ)» висело на ней одно.
+    note: "час паузы, торгуем дальше",
     blocked: false,
   },
   {
@@ -64,6 +67,16 @@ const DAY_SCENARIOS: Scenario[] = [
 const WEEKDAY_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "tp", label: "Тейк" }], note: "стоп торговля", blocked: true },
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
+];
+
+/**
+ * Правило #17 (запрос пользователя от 06.11.2026): в субботу день закрывает один стоп, а
+ * тейки — нет. Строка про тейк здесь не лишняя: прямо над ней такая же строка ПН и ПТ
+ * стоит с замком, и без явного «торгуем дальше» суббота читалась бы так же.
+ */
+const SATURDAY_SCENARIOS: Scenario[] = [
+  { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
+  { chips: [{ outcome: "tp", label: "Тейк" }], note: "торгуем дальше", blocked: false },
 ];
 
 /**
@@ -130,7 +143,8 @@ export function BlockRulesCard() {
           ))}
         </ul>
         <p className="text-[11px] text-slate-400">
-          Тейки день не закрывают — пока идут тейки, торгуем дальше.
+          Тейки день не закрывают — пока идут тейки, торгуем дальше. В ПН, ПТН и СБ хватает
+          одного стопа — см. ниже.
         </p>
       </div>
 
@@ -141,6 +155,18 @@ export function BlockRulesCard() {
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Суббота</p>
+        <ul className="flex flex-col">
+          {SATURDAY_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+        <p className="text-[11px] text-slate-400">
+          Один стоп закрывает субботу до следующего дня. Тейки её не закрывают.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

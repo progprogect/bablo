@@ -288,13 +288,14 @@ test("buildVoluntaryPauseBlock: при нескольких глобальных
 // --- Правило #16 (10.10.2026, расширено 25.10.2026): в ПН и ПТ день закрывает
 // одна закрытая сделка — хоть стоп, хоть тейк ---
 
-test("dayStopLimitForDayKey: понедельник и пятница — один стоп, остальные дни — два", () => {
-  // 2026-10-12 — понедельник, 2026-10-16 — пятница.
+test("dayStopLimitForDayKey: ПН, ПТ и СБ — один стоп, остальные дни — два", () => {
+  // 2026-10-12 — понедельник, 2026-10-16 — пятница, 2026-10-17 — суббота.
   assert.equal(dayStopLimitForDayKey("2026-10-12"), 1);
   assert.equal(dayStopLimitForDayKey("2026-10-16"), 1);
+  assert.equal(dayStopLimitForDayKey("2026-10-17"), 1);
   assert.equal(dayStopLimitForDayKey("2026-10-13"), 2); // вторник
   assert.equal(dayStopLimitForDayKey("2026-10-15"), 2); // четверг
-  assert.equal(dayStopLimitForDayKey("2026-10-17"), 2); // суббота
+  assert.equal(dayStopLimitForDayKey("2026-10-18"), 2); // воскресенье
 });
 
 test("dayStopLimitForDayKey: лестница пауз только ужесточает лимит, не ослабляет", () => {
@@ -344,6 +345,44 @@ test("evaluateDailyLimitBlocks: один стоп во вторник день �
   assert.equal(blocks.some((block) => block.type === "daily_stop_losses"), false);
 });
 
+// --- Правило #17 (06.11.2026): в субботу день закрывает один стоп, тейки — нет ---
+
+test("evaluateDailyLimitBlocks: один стоп в субботу закрывает день", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-17T10:00:00Z"),
+    counters({ sumR: -1, slCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-17",
+  );
+  const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
+  assert.ok(stopBlock);
+  assert.equal(stopBlock.reason, "Стоп в субботу — на сегодня всё");
+});
+
+test("evaluateDailyLimitBlocks: тейк в субботу день не закрывает", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-17T10:00:00Z"),
+    counters({ sumR: 2, tpCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-17",
+  );
+  assert.deepEqual(blocks, []);
+});
+
+test("evaluateDailyLimitBlocks: тейк и стоп в субботу закрывают день смешанным раскладом", () => {
+  const blocks = evaluateDailyLimitBlocks(
+    new Date("2026-10-17T10:00:00Z"),
+    counters({ sumR: 1, slCount: 1, tpCount: 1 }),
+    CONFIG,
+    DAILY_STOP_LOSS_LIMIT,
+    "2026-10-17",
+  );
+  assert.ok(blocks.some((block) => block.type === "daily_mixed_outcomes"));
+  assert.equal(blocks.some((block) => block.type === "daily_take_profits"), false);
+});
+
 test("evaluateDailyLimitBlocks: два стопа в понедельник — обычный текст, не про день недели", () => {
   const blocks = evaluateDailyLimitBlocks(
     new Date("2026-10-12T10:00:00Z"),
@@ -375,6 +414,8 @@ test("dayTakeLimitForDayKey: лимит тейков есть только в П
   assert.equal(dayTakeLimitForDayKey("2026-10-16"), 1); // пятница
   assert.equal(dayTakeLimitForDayKey("2026-10-13"), null); // вторник
   assert.equal(dayTakeLimitForDayKey("2026-10-18"), null); // воскресенье
+  // Суббота (правило #17) ужесточает только стопы — тейки день не закрывают.
+  assert.equal(dayTakeLimitForDayKey("2026-10-17"), null);
   assert.equal(dayTakeLimitForDayKey("не дата"), null);
 });
 
