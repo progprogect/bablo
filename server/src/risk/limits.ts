@@ -165,7 +165,10 @@ export function buildDayOffBlock(
   if (name === null) return null;
   return {
     type: "weekday_day_off",
-    reason: `${name} — выходной, сегодня не торгуем`,
+    // Тон мягкий намеренно (просьба пользователя от 06.11.2026): выходной — это не
+    // наказание и не сорванный день, а часть плана, и плашка не должна читаться как
+    // запрет. Без названия дня недели в хвосте: день в списке может быть любой.
+    reason: `${name} — выходной. Отдыхаем, рынок подождёт`,
     until: getNextResetAt(now, config.resetHour, config.tzOffsetMinutes),
   };
 }

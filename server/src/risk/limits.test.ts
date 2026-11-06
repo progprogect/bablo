@@ -506,7 +506,7 @@ test("buildDayOffBlock: пятница закрыта до сброса след
   const block = buildDayOffBlock(new Date("2026-10-09T09:00:00Z"), "2026-10-09", CONFIG);
   assert.ok(block);
   assert.equal(block.type, "weekday_day_off");
-  assert.equal(block.reason, "Пятница — выходной, сегодня не торгуем");
+  assert.equal(block.reason, "Пятница — выходной. Отдыхаем, рынок подождёт");
   assert.deepEqual(block.until, new Date("2026-10-10T04:00:00Z"));
   assert.ok(block.reason.length <= 60);
 });
