@@ -155,6 +155,9 @@ export function BlockRulesCard() {
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
+        <p className="text-[11px] text-slate-400">
+          В пятницу час 11:00 закрыт — входов в это время нет (правило #18).
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

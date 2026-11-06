@@ -25,6 +25,63 @@ export type ManualHourBlock = { kind: "hour"; hour: number; endsAt: Date };
 export type ManualWindowBlock = { kind: "window"; startsAt: Date; endsAt: Date };
 export type ManualBlock = ManualHourBlock | ManualWindowBlock;
 
+/**
+ * Постоянно закрытый час конкретного дня недели — правило, а не ручная блокировка: срока
+ * у него нет, в БД он не лежит и снять его из приложения нельзя (правило #18).
+ * `weekday` — как у Date#getUTCDay: 0 — вс, 5 — пт.
+ */
+export type WeekdayHourBlock = { kind: "weekday-hour"; weekday: number; hour: number };
+
+/** Всё, что закрывает торговлю по расписанию: ручные блокировки и постоянные часы правил. */
+export type ScheduleBlock = ManualBlock | WeekdayHourBlock;
+
+/**
+ * Правило #18 (запрос пользователя от 06.11.2026): в пятницу час 11:00 закрыт — входов в
+ * это время нет. Час задан кодом, а не настройкой: это часть риск-плана, и «снять на
+ * сегодня» его быть не должно, как и у остальных правил.
+ *
+ * День недели берётся календарный, а не ключ торгового дня: закрытые часы правила лежат
+ * после сброса в 07:00, поэтому оба совпадают. Для часа ДО сброса (например, 3:00) это
+ * различие стало бы важным — такой час сюда просто так добавлять нельзя.
+ */
+export const CLOSED_WEEKDAY_HOURS: WeekdayHourBlock[] = [{ kind: "weekday-hour", weekday: 5, hour: 11 }];
+
+/** Винительный падеж для текста блокировки: «11:00 в пятницу — час закрыт». */
+const WEEKDAY_ACCUSATIVE = [
+  "воскресенье",
+  "понедельник",
+  "вторник",
+  "среду",
+  "четверг",
+  "пятницу",
+  "субботу",
+];
+
+/** Часы, закрытые правилом в этот день недели (0 — вс). Для уведомления на главной. */
+export function closedHoursForWeekday(weekday: number): number[] {
+  return CLOSED_WEEKDAY_HOURS.filter((block) => block.weekday === weekday)
+    .map((block) => block.hour)
+    .sort((a, b) => a - b);
+}
+
+/** «пятницу» — винительный падеж дня недели; null, если день не в диапазоне 0–6. */
+export function weekdayAccusative(weekday: number): string | null {
+  return WEEKDAY_ACCUSATIVE[weekday] ?? null;
+}
+
+/** Локальный день недели (таймзона риск-плана), как у Date#getUTCDay. */
+function localWeekday(at: Date, tzOffsetMinutes: number): number {
+  return new Date(at.getTime() + tzOffsetMinutes * 60_000).getUTCDay();
+}
+
+/** Закрыт ли этот момент постоянным часом правила. */
+function weekdayHourMatches(block: WeekdayHourBlock, at: Date, tzOffsetMinutes: number): boolean {
+  return (
+    block.weekday === localWeekday(at, tzOffsetMinutes) &&
+    block.hour === getLocalHour(at, tzOffsetMinutes)
+  );
+}
+
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const HOURS_IN_DAY = 24;
@@ -42,7 +99,12 @@ function nextHourStart(at: Date, tzOffsetMinutes: number): Date {
   return new Date(startOfNext - tzOffsetMinutes * 60_000);
 }
 
-/** Часы, закрытые ручной блокировкой в момент `now` (для замков в гистограмме подсказки). */
+/**
+ * Часы, закрытые РУЧНОЙ блокировкой в момент `now`. Постоянные часы правил сюда не
+ * входят намеренно: этот список проверяет заявку «закрыть час» (двойная блокировка часа
+ * запрещена), а правило #18 ручной блокировке того же часа не мешает — она про другой
+ * срок и другие дни недели.
+ */
 export function hoursBlockedAt(now: Date, blocks: ManualBlock[]): number[] {
   const hours = new Set<number>();
   for (const block of blocks) {
@@ -54,18 +116,42 @@ export function hoursBlockedAt(now: Date, blocks: ManualBlock[]): number[] {
 }
 
 /**
+ * Все часы, закрытые прямо сейчас, — замки в гистограмме часов: ручные блокировки с
+ * неистёкшим сроком плюс постоянные часы правил, если сегодня их день недели.
+ */
+export function closedHoursAt(now: Date, blocks: ScheduleBlock[], tzOffsetMinutes: number): number[] {
+  const weekday = localWeekday(now, tzOffsetMinutes);
+  const hours = new Set<number>(hoursBlockedAt(now, blocks.filter(isManual)));
+  for (const block of blocks) {
+    if (block.kind === "weekday-hour" && block.weekday === weekday) hours.add(block.hour);
+  }
+  return [...hours].sort((a, b) => a - b);
+}
+
+function isManual(block: ScheduleBlock): block is ManualBlock {
+  return block.kind !== "weekday-hour";
+}
+
+/**
  * Момент, до которого момент `at` остаётся заблокированным, или null — `at` свободен.
  * Несколько причин могут блокировать одновременно (час + окно): каждая покрывает отрезок
  * от `at` до своего «отпускания», поэтому их объединение непрерывно до максимума — его и
  * возвращаем, а вызывающий цикл проверяет новый момент заново (там может начаться другое
  * окно или другой закрытый час).
  */
-function blockedUntilAt(at: Date, blocks: ManualBlock[], tzOffsetMinutes: number): Date | null {
+function blockedUntilAt(at: Date, blocks: ScheduleBlock[], tzOffsetMinutes: number): Date | null {
   const atMs = at.getTime();
   const localHour = getLocalHour(at, tzOffsetMinutes);
   let releaseMs: number | null = null;
 
   for (const block of blocks) {
+    if (block.kind === "weekday-hour") {
+      // Час правила отпускает на границе следующего часа — срока у него нет.
+      if (!weekdayHourMatches(block, at, tzOffsetMinutes)) continue;
+      const release = nextHourStart(at, tzOffsetMinutes).getTime();
+      releaseMs = releaseMs === null ? release : Math.max(releaseMs, release);
+      continue;
+    }
     if (block.endsAt.getTime() <= atMs) continue;
     if (block.kind === "hour") {
       if (block.hour !== localHour) continue;
@@ -88,7 +174,7 @@ function blockedUntilAt(at: Date, blocks: ManualBlock[], tzOffsetMinutes: number
  * реального открытия. Цикл конечен: каждый шаг двигается минимум до границы часа или до
  * конца какого-то блока, а страховочный предел покрывает даже «закрыты все 24 часа».
  */
-export function openMomentAfter(now: Date, blocks: ManualBlock[], tzOffsetMinutes: number): Date | null {
+export function openMomentAfter(now: Date, blocks: ScheduleBlock[], tzOffsetMinutes: number): Date | null {
   let at = now;
   const maxSteps = HOURS_IN_DAY * (MAX_HOUR_BLOCK_DAYS + 2) + blocks.length + 8;
   for (let step = 0; step < maxSteps; step += 1) {
@@ -117,23 +203,37 @@ export function formatOpenMoment(now: Date, until: Date, tzOffsetMinutes: number
 }
 
 /**
- * Блокировка «сейчас действует ручная блокировка» для риск-гейта и дашборда, или null.
- * Текст объясняет, ЧТО закрыло торговлю: конкретный час — своей строкой (час главнее
- * окна: он конкретнее), иначе — окно.
+ * Блокировка «сейчас торговля закрыта по расписанию» для риск-гейта и дашборда, или null.
+ * Текст объясняет, ЧТО закрыло торговлю: постоянный час правила — своей строкой (он
+ * конкретнее и снять его нельзя), затем закрытый вручную час, иначе — окно.
  */
-export function describeManualBlock(
+export function describeScheduleBlock(
   now: Date,
-  blocks: ManualBlock[],
+  blocks: ScheduleBlock[],
   tzOffsetMinutes: number,
 ): Block | null {
   const until = openMomentAfter(now, blocks, tzOffsetMinutes);
   if (until === null) return null;
 
   const currentHour = getLocalHour(now, tzOffsetMinutes);
-  const hourIsBlocked = blocks.some(
-    (block) => block.kind === "hour" && block.hour === currentHour && block.endsAt.getTime() > now.getTime(),
-  );
   const opensAt = `Торговля откроется в ${formatOpenMoment(now, until, tzOffsetMinutes)}`;
+
+  const weekdayHour = blocks.find(
+    (block) => block.kind === "weekday-hour" && weekdayHourMatches(block, now, tzOffsetMinutes),
+  );
+  if (weekdayHour) {
+    const weekday = WEEKDAY_ACCUSATIVE[localWeekday(now, tzOffsetMinutes)] ?? "этот день";
+    return {
+      type: "weekday_hour",
+      reason: `${currentHour}:00 в ${weekday} — час закрыт. ${opensAt}`,
+      until,
+    };
+  }
+
+  const hourIsBlocked = blocks.some(
+    (block) =>
+      block.kind === "hour" && block.hour === currentHour && block.endsAt.getTime() > now.getTime(),
+  );
   const reason = hourIsBlocked
     ? `${currentHour}:00 — час закрыт вручную. ${opensAt}`
     : `Торговля закрыта вручную по расписанию. ${opensAt}`;

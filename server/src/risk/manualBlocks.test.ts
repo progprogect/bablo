@@ -2,13 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildWindow,
-  describeManualBlock,
+  closedHoursAt,
+  CLOSED_WEEKDAY_HOURS,
+  closedHoursForWeekday,
+  describeScheduleBlock,
   formatOpenMoment,
   hoursBlockedAt,
   MAX_HOUR_BLOCK_DAYS,
   openMomentAfter,
   validateHourBlockInput,
   type ManualBlock,
+  type ScheduleBlock,
 } from "./manualBlocks.js";
 
 /** Таймзона риск-плана по умолчанию — МСК (UTC+3). */
@@ -84,9 +88,9 @@ test("openMomentAfter: окно кончается внутри закрытог
   assert.deepEqual(openMomentAfter(now, blocks, TZ), atLocal(11));
 });
 
-test("describeManualBlock: закрытый час — своя формулировка и замок до границы часа", () => {
+test("describeScheduleBlock: закрытый час — своя формулировка и замок до границы часа", () => {
   const now = atLocal(9, 30);
-  const block = describeManualBlock(now, [hourBlock(9, atLocal(9, 0, 12))], TZ);
+  const block = describeScheduleBlock(now, [hourBlock(9, atLocal(9, 0, 12))], TZ);
   assert.ok(block);
   assert.equal(block.type, "manual_block");
   assert.deepEqual(block.until, atLocal(10));
@@ -94,17 +98,17 @@ test("describeManualBlock: закрытый час — своя формулир
   assert.match(block.reason, /откроется в 10:00/);
 });
 
-test("describeManualBlock: окно — формулировка расписания", () => {
+test("describeScheduleBlock: окно — формулировка расписания", () => {
   const now = atLocal(14, 10);
-  const block = describeManualBlock(now, [windowBlock(atLocal(14), atLocal(18))], TZ);
+  const block = describeScheduleBlock(now, [windowBlock(atLocal(14), atLocal(18))], TZ);
   assert.ok(block);
   assert.match(block.reason, /^Торговля закрыта вручную по расписанию/);
   assert.match(block.reason, /откроется в 18:00/);
 });
 
-test("describeManualBlock: ничего не действует — null", () => {
+test("describeScheduleBlock: ничего не действует — null", () => {
   const now = atLocal(12);
-  assert.equal(describeManualBlock(now, [], TZ), null);
+  assert.equal(describeScheduleBlock(now, [], TZ), null);
 });
 
 test("formatOpenMoment: тот же локальный день — только время, минуты с нулём", () => {
@@ -174,4 +178,51 @@ test("buildWindow: дальше года вперёд — ошибка", () => {
     (buildWindow({ date: "2028-10-05", from: "10:00", to: "12:00" }, now, TZ) as { error: string }).error,
     /далёкая дата/,
   );
+});
+
+// --- Правило #18 (06.11.2026): в пятницу 11:00 закрыт постоянно ---
+
+/** 2026-10-09 — пятница, 2026-10-05 — понедельник (см. atLocal). */
+const FRIDAY = 9;
+
+test("правило #18: в пятницу 11:00 закрыт, замок до 12:00", () => {
+  const now = atLocal(11, 30, FRIDAY);
+  const block = describeScheduleBlock(now, CLOSED_WEEKDAY_HOURS, TZ);
+  assert.ok(block);
+  assert.equal(block.type, "weekday_hour");
+  assert.deepEqual(block.until, atLocal(12, 0, FRIDAY));
+  assert.equal(block.reason, "11:00 в пятницу — час закрыт. Торговля откроется в 12:00");
+});
+
+test("правило #18: в другой час пятницы и в 11:00 другого дня торговля открыта", () => {
+  assert.equal(describeScheduleBlock(atLocal(10, 30, FRIDAY), CLOSED_WEEKDAY_HOURS, TZ), null);
+  assert.equal(describeScheduleBlock(atLocal(12, 1, FRIDAY), CLOSED_WEEKDAY_HOURS, TZ), null);
+  // Понедельник (день по умолчанию в atLocal) — тот же час свободен.
+  assert.equal(describeScheduleBlock(atLocal(11, 30), CLOSED_WEEKDAY_HOURS, TZ), null);
+});
+
+test("правило #18: час правила и ручной час подряд схлопываются в одно ожидание", () => {
+  const blocks: ScheduleBlock[] = [...CLOSED_WEEKDAY_HOURS, hourBlock(12, atLocal(23, 0, 12))];
+  const until = openMomentAfter(atLocal(11, 30, FRIDAY), blocks, TZ);
+  assert.deepEqual(until, atLocal(13, 0, FRIDAY));
+});
+
+test("closedHoursAt: замок на 11:00 только в пятницу, ручные часы — как раньше", () => {
+  const manual = hourBlock(9, atLocal(23, 0, 12));
+  const blocks: ScheduleBlock[] = [manual, ...CLOSED_WEEKDAY_HOURS];
+  assert.deepEqual(closedHoursAt(atLocal(8, 0, FRIDAY), blocks, TZ), [9, 11]);
+  assert.deepEqual(closedHoursAt(atLocal(8), blocks, TZ), [9]);
+});
+
+test("hoursBlockedAt: часы правил не мешают закрыть тот же час вручную", () => {
+  // Список для валидации заявки — только ручные блокировки, иначе 11:00 нельзя было бы
+  // закрыть вручную никогда.
+  assert.deepEqual(hoursBlockedAt(atLocal(11, 30, FRIDAY), []), []);
+  assert.equal(validateHourBlockInput({ hour: 11, days: 3 }, []), null);
+});
+
+test("closedHoursForWeekday: пятница — [11], остальные дни пусты", () => {
+  assert.deepEqual(closedHoursForWeekday(5), [11]);
+  assert.deepEqual(closedHoursForWeekday(1), []);
+  assert.deepEqual(closedHoursForWeekday(6), []);
 });

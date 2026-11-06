@@ -6,10 +6,13 @@ import {
 import { getRiskSettings } from "../db/repositories/settings.js";
 import {
   buildWindow,
-  describeManualBlock,
+  closedHoursAt,
+  CLOSED_WEEKDAY_HOURS,
+  describeScheduleBlock,
   hoursBlockedAt,
   validateHourBlockInput,
   type ManualBlock,
+  type ScheduleBlock,
 } from "./manualBlocks.js";
 import type { Block } from "./limits.js";
 
@@ -29,18 +32,22 @@ function toManualBlock(row: ManualTradingBlockRow): ManualBlock {
   return { kind: "window", startsAt: row.startsAt, endsAt: row.endsAt };
 }
 
-/** Блокировка «сейчас действует ручная блокировка» для риск-гейта и дашборда, или null. */
+/**
+ * Что закрывает торговлю по расписанию прямо сейчас — для риск-гейта и дашборда, или null.
+ * Кроме ручных блокировок из БД сюда всегда подмешиваются постоянные часы правил
+ * (CLOSED_WEEKDAY_HOURS): они действуют и тогда, когда пользователь не закрывал ничего.
+ */
 export async function evaluateManualTradingBlock(now: Date = new Date()): Promise<Block | null> {
-  const rows = await listRelevantManualBlocks(now);
-  if (rows.length === 0) return null;
-  const settings = await getRiskSettings();
-  return describeManualBlock(now, rows.map(toManualBlock), settings.tzOffsetMinutes);
+  const [rows, settings] = await Promise.all([listRelevantManualBlocks(now), getRiskSettings()]);
+  const blocks: ScheduleBlock[] = [...rows.map(toManualBlock), ...CLOSED_WEEKDAY_HOURS];
+  return describeScheduleBlock(now, blocks, settings.tzOffsetMinutes);
 }
 
-/** Часы, закрытые ручной блокировкой прямо сейчас, — замки в гистограмме подсказки. */
+/** Часы, закрытые прямо сейчас (ручные + часы правил), — замки в гистограмме подсказки. */
 export async function listCurrentlyBlockedHours(now: Date = new Date()): Promise<number[]> {
-  const rows = await listRelevantManualBlocks(now);
-  return hoursBlockedAt(now, rows.map(toManualBlock));
+  const [rows, settings] = await Promise.all([listRelevantManualBlocks(now), getRiskSettings()]);
+  const blocks: ScheduleBlock[] = [...rows.map(toManualBlock), ...CLOSED_WEEKDAY_HOURS];
+  return closedHoursAt(now, blocks, settings.tzOffsetMinutes);
 }
 
 export type ManualBlocksView = {

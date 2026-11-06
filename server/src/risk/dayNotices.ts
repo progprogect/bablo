@@ -1,4 +1,5 @@
-import { weekdayLimitRule } from "./limits.js";
+import { weekdayLimitRule, weekdayOfDayKey } from "./limits.js";
+import { closedHoursForWeekday, weekdayAccusative } from "./manualBlocks.js";
 import { getTradingDayKey } from "./tradingDay.js";
 
 /**
@@ -110,6 +111,21 @@ export function buildDayNotices(input: DayNoticesInput): DayNotice[] {
         ? "Стоп или тейк — и день закрыт. Выбирай вход придирчивее"
         : "Стоп — и день закрыт. Выбирай вход придирчивее",
     });
+  }
+
+  // Постоянно закрытые часы дня недели (правило #18): висят весь день, а не только в сам
+  // час, — чтобы про них было известно ДО того, как упрёшься в блокировку.
+  const weekdayNumber = weekdayOfDayKey(todayKey);
+  if (weekdayNumber !== null) {
+    const weekdayName = weekdayAccusative(weekdayNumber);
+    for (const hour of closedHoursForWeekday(weekdayNumber)) {
+      notices.push({
+        id: `closed-hour:${hour}`,
+        tone: "warn",
+        title: `${hour}:00 — час закрыт`,
+        detail: weekdayName ? `В ${weekdayName} в этот час не торгуем` : "В этот час не торгуем",
+      });
+    }
   }
 
   for (const [hour, endsAt] of [...latestEndByHour(input.hourBlocks)].sort((a, b) => a[0] - b[0])) {
