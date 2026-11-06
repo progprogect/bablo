@@ -25,6 +25,7 @@ import {
 } from "../withdrawals/service.js";
 import { withdrawalBlockReason } from "./withdrawals.js";
 import {
+  buildDayOffBlock,
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
@@ -163,7 +164,12 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
   // Ручная блокировка не лежит в risk_locks (часы повторяются каждый день, окна заданы
   // наперёд) — досчитываем её здесь и кладём в общий список, чтобы UI не знал про
   // разницу в источнике.
-  const manualLocks = manualBlock ? [{ ...manualBlock, symbol: null }] : [];
+  // Выходной день недели (правило #19) — туда же: он тоже не хранится в risk_locks, а
+  // выводится из ключа торгового дня.
+  const dayOffBlock = buildDayOffBlock(now, dayKey, settings);
+  const manualLocks = [manualBlock, dayOffBlock]
+    .filter((block): block is Block => block !== null)
+    .map((block) => ({ ...block, symbol: null }));
 
   return {
     currentLevel: stateRow.currentLevel,
@@ -208,7 +214,12 @@ export async function checkCanOpenTrade(
     throw new RiskBlockedError(withdrawalReason);
   }
 
-  const [locks, manualBlock] = await Promise.all([listActiveLocks(), evaluateManualTradingBlock()]);
+  const now = new Date();
+  const [locks, manualBlock, settings] = await Promise.all([
+    listActiveLocks(),
+    evaluateManualTradingBlock(now),
+    getRiskSettings(),
+  ]);
   const globalCandidates: Block[] = locks.map((l) => ({
     type: l.type as BlockType,
     reason: l.reason,
@@ -217,6 +228,14 @@ export async function checkCanOpenTrade(
   }));
   if (manualBlock) {
     globalCandidates.push(manualBlock);
+  }
+  const dayOffBlock = buildDayOffBlock(
+    now,
+    getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes),
+    settings,
+  );
+  if (dayOffBlock) {
+    globalCandidates.push(dayOffBlock);
   }
   const effective = pickEffectiveBlock(globalCandidates);
   if (effective) {

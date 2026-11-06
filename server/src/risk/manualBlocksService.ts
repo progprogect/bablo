@@ -14,7 +14,8 @@ import {
   type ManualBlock,
   type ScheduleBlock,
 } from "./manualBlocks.js";
-import type { Block } from "./limits.js";
+import { dayOffWeekdayName, type Block } from "./limits.js";
+import { getTradingDayKey } from "./tradingDay.js";
 
 /**
  * I/O-обвязка ручных блокировок торговли: чистые решения — в manualBlocks.ts, здесь —
@@ -46,7 +47,15 @@ export async function evaluateManualTradingBlock(now: Date = new Date()): Promis
 /** Часы, закрытые прямо сейчас (ручные + часы правил), — замки в гистограмме подсказки. */
 export async function listCurrentlyBlockedHours(now: Date = new Date()): Promise<number[]> {
   const [rows, settings] = await Promise.all([listRelevantManualBlocks(now), getRiskSettings()]);
-  const blocks: ScheduleBlock[] = [...rows.map(toManualBlock), ...CLOSED_WEEKDAY_HOURS];
+  // В выходной день (правило #19) закрыты все часы, и один замок на 11:00 читался бы
+  // наоборот — будто остальные часы открыты. Поэтому часы правил в такой день не
+  // показываем: про выходной говорят карточка на главной и плашка с таймером.
+  const dayOff =
+    dayOffWeekdayName(getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes)) !== null;
+  const blocks: ScheduleBlock[] = [
+    ...rows.map(toManualBlock),
+    ...(dayOff ? [] : CLOSED_WEEKDAY_HOURS),
+  ];
   return closedHoursAt(now, blocks, settings.tzOffsetMinutes);
 }
 

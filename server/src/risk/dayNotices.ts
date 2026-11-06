@@ -1,4 +1,4 @@
-import { weekdayLimitRule, weekdayOfDayKey } from "./limits.js";
+import { dayOffWeekdayName, weekdayLimitRule, weekdayOfDayKey } from "./limits.js";
 import { closedHoursForWeekday, weekdayAccusative } from "./manualBlocks.js";
 import { getTradingDayKey } from "./tradingDay.js";
 
@@ -99,7 +99,20 @@ export function buildDayNotices(input: DayNoticesInput): DayNotice[] {
   const todayKey = getTradingDayKey(input.now, input.resetHour, input.tzOffsetMinutes);
   const notices: DayNotice[] = [];
 
-  const weekday = weekdayLimitRule(todayKey);
+  // Выходной день недели (правило #19) отменяет все дневные правила разом, поэтому и
+  // карточка у него одна: «один стоп закрывает день» и «11:00 закрыт» в выходной
+  // прочитались бы как намёк, что в остальное время торговать можно.
+  const dayOff = dayOffWeekdayName(todayKey);
+  if (dayOff !== null) {
+    notices.push({
+      id: "day-off",
+      tone: "warn",
+      title: `${dayOff} — выходной`,
+      detail: "Сегодня не торгуем: ни одного входа до завтрашнего сброса",
+    });
+  }
+
+  const weekday = dayOff === null ? weekdayLimitRule(todayKey) : null;
   if (weekday !== null) {
     notices.push({
       id: "weekday",
@@ -115,7 +128,7 @@ export function buildDayNotices(input: DayNoticesInput): DayNotice[] {
 
   // Постоянно закрытые часы дня недели (правило #18): висят весь день, а не только в сам
   // час, — чтобы про них было известно ДО того, как упрёшься в блокировку.
-  const weekdayNumber = weekdayOfDayKey(todayKey);
+  const weekdayNumber = dayOff === null ? weekdayOfDayKey(todayKey) : null;
   if (weekdayNumber !== null) {
     const weekdayName = weekdayAccusative(weekdayNumber);
     for (const hour of closedHoursForWeekday(weekdayNumber)) {

@@ -10,7 +10,8 @@ import { BlockedMark } from "../../components/BlockedMark";
  * тексты статичные — при изменении правил их надо править здесь вместе с risk/limits.ts.
  */
 
-type Outcome = "tp" | "sl";
+/** «day» — не исход сделки, а сам день (выходной, правило #19): нейтральный серый чип. */
+type Outcome = "tp" | "sl" | "day";
 
 type Scenario = {
   /** Последовательность закрытых сделок дня — слева направо по времени. */
@@ -57,17 +58,28 @@ const DAY_SCENARIOS: Scenario[] = [
 ];
 
 /**
- * Правило #16 (10.10.2026, тейк добавлен 25.10.2026): в понедельник и пятницу день
- * закрывает ЛЮБОЙ первый результат — и стоп, и тейк. Края недели худшее время настаивать:
- * отыгрываться после стопа нечем, а прибыль забирается сразу.
+ * Правило #16 (10.10.2026, тейк добавлен 25.10.2026): день закрывает ЛЮБОЙ первый
+ * результат — и стоп, и тейк. Начало недели худшее время настаивать: отыгрываться после
+ * стопа нечем, а прибыль забирается сразу.
+ *
+ * С 06.11.2026 в блоке только понедельник: пятница стала выходным (правило #19), и
+ * правило #16 для неё недостижимо — см. FRIDAY_SCENARIOS.
  *
  * Строки — по триггеру, а не по дню недели (правка 10.10.2026): слева триггер, справа
- * результат, как во всех остальных раскладах; какие именно это дни, говорит заголовок
- * блока, и одинаковые строки на ПН и на ПТ читались бы как ошибка вёрстки.
+ * результат, как во всех остальных раскладах.
  */
 const WEEKDAY_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "tp", label: "Тейк" }], note: "стоп торговля", blocked: true },
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
+];
+
+/**
+ * Правило #19 (запрос пользователя от 06.11.2026): пятница — выходной, торговля закрыта
+ * весь день. Чип тут не исход сделки, а сам день: закрывает его не стоп и не тейк, а
+ * календарь, поэтому и подпись нейтральная, без красного и зелёного.
+ */
+const FRIDAY_SCENARIOS: Scenario[] = [
+  { chips: [{ outcome: "day", label: "Весь день" }], note: "выходной, сделок нет", blocked: true },
 ];
 
 /**
@@ -98,15 +110,15 @@ const CHAIN_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, снова один выходной", blocked: true },
 ];
 
+const CHIP_STYLES: Record<Outcome, string> = {
+  tp: "bg-emerald-50 text-emerald-600",
+  sl: "bg-red-50 text-red-600",
+  day: "bg-surface text-slate-500",
+};
+
 function OutcomeChip({ outcome, label }: { outcome: Outcome; label: string }) {
   return (
-    <span
-      className={
-        outcome === "tp"
-          ? "rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600"
-          : "rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600"
-      }
-    >
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CHIP_STYLES[outcome]}`}>
       {label}
     </span>
   );
@@ -149,15 +161,24 @@ export function BlockRulesCard() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="text-xs text-slate-500">Понедельник и пятница</p>
+        <p className="text-xs text-slate-500">Пятница</p>
+        <ul className="flex flex-col">
+          {FRIDAY_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+        <p className="text-[11px] text-slate-400">
+          Пятница — выходной: сделок нет весь день, до сброса в субботу.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Понедельник</p>
         <ul className="flex flex-col">
           {WEEKDAY_SCENARIOS.map((scenario, index) => (
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
-        <p className="text-[11px] text-slate-400">
-          В пятницу час 11:00 закрыт — входов в это время нет (правило #18).
-        </p>
       </div>
 
       <div className="flex flex-col gap-1">
