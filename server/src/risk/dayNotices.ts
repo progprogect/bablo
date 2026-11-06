@@ -1,4 +1,4 @@
-import { singleResultWeekdayName } from "./limits.js";
+import { weekdayLimitRule } from "./limits.js";
 import { getTradingDayKey } from "./tradingDay.js";
 
 /**
@@ -98,13 +98,17 @@ export function buildDayNotices(input: DayNoticesInput): DayNotice[] {
   const todayKey = getTradingDayKey(input.now, input.resetHour, input.tzOffsetMinutes);
   const notices: DayNotice[] = [];
 
-  const weekday = singleResultWeekdayName(todayKey);
+  const weekday = weekdayLimitRule(todayKey);
   if (weekday !== null) {
     notices.push({
       id: "weekday",
       tone: "warn",
-      title: `Сегодня ${weekday}`,
-      detail: "Стоп или тейк — и день закрыт. Выбирай вход придирчивее",
+      title: `Сегодня ${weekday.nominative}`,
+      // В СБ (правило #17) тейки день не закрывают, и обещать обратное нельзя: увидев
+      // «стоп или тейк», можно решить, что после тейка входов больше нет.
+      detail: weekday.takeClosesDay
+        ? "Стоп или тейк — и день закрыт. Выбирай вход придирчивее"
+        : "Стоп — и день закрыт. Выбирай вход придирчивее",
     });
   }
 

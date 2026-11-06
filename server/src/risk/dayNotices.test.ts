@@ -23,18 +23,27 @@ test("день недели: в понедельник и пятницу пре�
   const monday = notices(atLocal(5, 12))[0];
   assert.equal(monday?.id, "weekday");
   assert.equal(monday?.title, "Сегодня понедельник");
+  assert.equal(monday?.detail, "Стоп или тейк — и день закрыт. Выбирай вход придирчивее");
   assert.equal(notices(atLocal(9, 12))[0]?.title, "Сегодня пятница");
 });
 
+test("день недели: в субботу предупреждение про стоп, а не про любой результат", () => {
+  // Правило #17: тейки субботу не закрывают, и обещать обратное нельзя.
+  const saturday = notices(atLocal(10, 12))[0];
+  assert.equal(saturday?.id, "weekday");
+  assert.equal(saturday?.title, "Сегодня суббота");
+  assert.equal(saturday?.detail, "Стоп — и день закрыт. Выбирай вход придирчивее");
+});
+
 test("день недели: в остальные дни предупреждения нет", () => {
-  for (const day of [6, 7, 8, 10, 11]) {
+  for (const day of [6, 7, 8, 11]) {
     assert.deepEqual(ids(atLocal(day, 12)), [], `день ${day}`);
   }
 });
 
 test("день недели: ночь после пятницы — ещё пятница, день сбрасывается в 07:00", () => {
   assert.equal(notices(atLocal(10, 2))[0]?.title, "Сегодня пятница");
-  assert.deepEqual(ids(atLocal(10, 8)), []);
+  assert.equal(notices(atLocal(10, 8))[0]?.title, "Сегодня суббота");
 });
 
 test("час: в последний день блокировки — уведомление с датой открытия", () => {
