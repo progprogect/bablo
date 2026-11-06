@@ -14,6 +14,16 @@ import type { DayNotice } from "../../api/types";
 
 const ICONS: Record<DayNotice["tone"], string> = { warn: "🗓", info: "🔓" };
 
+/**
+ * Карточке постоянно закрытого часа (правило #18) — свой значок: замок против открытого
+ * замка у часа, который вот-вот откроется. Иконка выводится из id, а не приходит с
+ * сервера: сервер отвечает за текст, клиент — за вид.
+ */
+function iconOf(notice: DayNotice): string {
+  if (notice.id.startsWith("closed-hour:")) return "🔒";
+  return ICONS[notice.tone] ?? ICONS.info;
+}
+
 const TONES: Record<DayNotice["tone"], { card: string; icon: string; title: string; detail: string }> = {
   warn: {
     card: "border-amber-200 bg-amber-50",
@@ -45,7 +55,7 @@ export function DayNotices({ notices }: { notices: DayNotice[] }) {
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none ${tone.icon}`}
               aria-hidden="true"
             >
-              {ICONS[notice.tone] ?? ICONS.info}
+              {iconOf(notice)}
             </span>
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className={`text-sm font-medium ${tone.title}`}>{notice.title}</span>

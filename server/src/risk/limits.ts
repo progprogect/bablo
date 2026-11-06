@@ -11,6 +11,11 @@ export type BlockType =
    */
   | "manual_block"
   /**
+   * Постоянно закрытый час дня недели (правило #18): 11:00 в пятницу. Как и manual_block,
+   * в risk_locks не хранится — выводится из кода и текущего времени (risk/manualBlocks.ts).
+   */
+  | "weekday_hour"
+  /**
    * Добровольная пауза «поберечь депозит» — единственный лок, который пользователь ставит
    * себе сам кнопкой на дашборде (раньше — ответом на поп-ап про состояние, убран
    * 20.09.2026). Хранится в risk_locks и НЕ входит в MANAGED_TYPES, чтобы пересборка
@@ -123,7 +128,7 @@ export const WEEKDAY_SINGLE_LIMIT = 1;
  * 1 — пн … 6 — сб. Ключ уже в локальной таймзоне и сдвинут на час сброса, поэтому сделка,
  * закрытая в ночь с пятницы на субботу до 07:00, относится к пятнице — как и должна.
  */
-function weekdayOfDayKey(dayKey: string): number | null {
+export function weekdayOfDayKey(dayKey: string): number | null {
   const ms = Date.parse(`${dayKey}T00:00:00Z`);
   return Number.isFinite(ms) ? new Date(ms).getUTCDay() : null;
 }
