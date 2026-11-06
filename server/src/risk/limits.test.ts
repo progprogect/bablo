@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildDayOffBlock,
   buildVoluntaryPauseBlock,
   DAILY_STOP_LOSS_LIMIT,
   dayStopLimitForDayKey,
@@ -496,4 +497,29 @@ test("evaluateDailyLimitBlocks: причина про тейк в ПН/ПТ по
   for (const block of blocks) {
     assert.ok(block.reason.length <= 60, `${block.reason} (${block.reason.length})`);
   }
+});
+
+// --- Правило #19 (06.11.2026): пятница — выходной, торговля закрыта весь день ---
+
+test("buildDayOffBlock: пятница закрыта до сброса следующего дня", () => {
+  // 2026-10-09 — пятница; 12:00 МСК = 09:00 UTC, сброс в 07:00 МСК = 04:00 UTC субботы.
+  const block = buildDayOffBlock(new Date("2026-10-09T09:00:00Z"), "2026-10-09", CONFIG);
+  assert.ok(block);
+  assert.equal(block.type, "weekday_day_off");
+  assert.equal(block.reason, "Пятница — выходной, сегодня не торгуем");
+  assert.deepEqual(block.until, new Date("2026-10-10T04:00:00Z"));
+  assert.ok(block.reason.length <= 60);
+});
+
+test("buildDayOffBlock: ночь с пятницы на субботу — ещё выходной", () => {
+  // 02:00 МСК субботы — торговый день ещё пятничный, ключ дня это и говорит.
+  const block = buildDayOffBlock(new Date("2026-10-09T23:00:00Z"), "2026-10-09", CONFIG);
+  assert.ok(block);
+  assert.deepEqual(block.until, new Date("2026-10-10T04:00:00Z"));
+});
+
+test("buildDayOffBlock: рабочие дни и битый ключ — null", () => {
+  assert.equal(buildDayOffBlock(new Date("2026-10-12T09:00:00Z"), "2026-10-12", CONFIG), null);
+  assert.equal(buildDayOffBlock(new Date("2026-10-17T09:00:00Z"), "2026-10-17", CONFIG), null);
+  assert.equal(buildDayOffBlock(new Date("2026-10-09T09:00:00Z"), "не дата", CONFIG), null);
 });

@@ -19,12 +19,24 @@ function ids(now: Date, hourBlocks: HourBlockForNotice[] = []): string[] {
   return notices(now, hourBlocks).map((notice) => notice.id);
 }
 
-test("день недели: в понедельник и пятницу предупреждение есть", () => {
+test("день недели: в понедельник предупреждение про один результат", () => {
   const monday = notices(atLocal(5, 12))[0];
   assert.equal(monday?.id, "weekday");
   assert.equal(monday?.title, "Сегодня понедельник");
   assert.equal(monday?.detail, "Стоп или тейк — и день закрыт. Выбирай вход придирчивее");
-  assert.equal(notices(atLocal(9, 12))[0]?.title, "Сегодня пятница");
+});
+
+test("выходной: в пятницу одна карточка — про выходной", () => {
+  // Правило #19: пятница закрыта целиком, поэтому карточки «один результат» (#16) и
+  // «11:00 закрыт» (#18) в этот день не показываются — они намекали бы на то, что в
+  // остальное время торговать можно.
+  const friday = notices(atLocal(9, 12));
+  assert.deepEqual(
+    friday.map((notice) => notice.id),
+    ["day-off"],
+  );
+  assert.equal(friday[0]?.title, "Пятница — выходной");
+  assert.equal(friday[0]?.detail, "Сегодня не торгуем: ни одного входа до завтрашнего сброса");
 });
 
 test("день недели: в субботу предупреждение про стоп, а не про любой результат", () => {
@@ -35,18 +47,16 @@ test("день недели: в субботу предупреждение пр
   assert.equal(saturday?.detail, "Стоп — и день закрыт. Выбирай вход придирчивее");
 });
 
-test("закрытый час: в пятницу карточка про 11:00, в другие дни её нет", () => {
-  // Правило #18: 11:00 в пятницу закрыт постоянно, карточка висит весь день.
-  const friday = notices(atLocal(9, 12)).find((notice) => notice.id === "closed-hour:11");
-  assert.ok(friday);
-  assert.equal(friday.title, "11:00 — час закрыт");
-  assert.equal(friday.detail, "В пятницу в этот час не торгуем");
-  // Карточка есть и утром, задолго до самого часа.
-  assert.ok(notices(atLocal(9, 8)).some((notice) => notice.id === "closed-hour:11"));
-  assert.equal(
-    notices(atLocal(5, 12)).some((notice) => notice.id === "closed-hour:11"),
-    false,
-  );
+test("закрытый час: карточки про 11:00 нет ни в выходную пятницу, ни в рабочие дни", () => {
+  // Правило #18 осталось в коде, но в выходную пятницу недостижимо (правило #19), а в
+  // другие дни закрытых часов правилами нет.
+  for (const day of [9, 5, 6, 10]) {
+    assert.equal(
+      notices(atLocal(day, 12)).some((notice) => notice.id === "closed-hour:11"),
+      false,
+      `день ${day}`,
+    );
+  }
 });
 
 test("день недели: в остальные дни предупреждения нет", () => {
@@ -56,7 +66,7 @@ test("день недели: в остальные дни предупрежде
 });
 
 test("день недели: ночь после пятницы — ещё пятница, день сбрасывается в 07:00", () => {
-  assert.equal(notices(atLocal(10, 2))[0]?.title, "Сегодня пятница");
+  assert.equal(notices(atLocal(10, 2))[0]?.title, "Пятница — выходной");
   assert.equal(notices(atLocal(10, 8))[0]?.title, "Сегодня суббота");
 });
 
