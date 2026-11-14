@@ -174,12 +174,13 @@ export async function openTrade(input: OpenTradeInput): Promise<OpenTradeResult>
   // Расстояние до стопа (правило от 18.10.2026) — сразу после направления и ДО проверок
   // размера: правило про сам стоп, и при неудачном стопе пользователь должен прочитать
   // «стоп слишком близко», а не «уменьшите объём». База процента — текущая цена: по ней
-  // уходит рыночный ордер, она же база у проверки риска ниже.
+  // уходит рыночный ордер, она же база у проверки риска ниже. Минимум — свой у каждого
+  // актива (с 14.11.2026), максимум и тумблер — общие из настроек.
   const stopDistance = checkStopDistance({
     side: input.side,
     entryPrice: currentPrice,
     slPrice: input.slPrice,
-    limits: stopDistanceLimitsFrom(await getRiskSettings()),
+    limits: stopDistanceLimitsFrom(await getRiskSettings(), asset.minStopPct),
   });
   if (stopDistance.status === "too_close" || stopDistance.status === "too_far") {
     throw new TradeError(stopDistanceRejectMessage(stopDistance));

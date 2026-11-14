@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  doublePrecision,
   integer,
   jsonb,
   numeric,
@@ -22,6 +23,12 @@ export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),
   symbol: text("symbol").notNull().unique(),
   leverage: integer("leverage").notNull(),
+  /**
+   * Минимальное расстояние до стопа в % от цены входа — у каждого актива своё (запрос
+   * пользователя от 14.11.2026; до этого минимум был один на всех в risk-settings).
+   * null — у актива нет ограничения снизу. Максимум остался общим в risk-settings.
+   */
+  minStopPct: doublePrecision("min_stop_pct"),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
 });

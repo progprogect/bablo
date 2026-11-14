@@ -10,6 +10,8 @@ export type Asset = {
   id: number;
   symbol: string;
   leverage: number;
+  /** Минимум расстояния до стопа, % от входа; null — без ограничения снизу. */
+  minStopPct: number | null;
   sortOrder: number;
   isActive: boolean;
 };
@@ -129,7 +131,11 @@ export type RiskSnapshot = {
   stopDistance?: StopDistanceLimits;
 };
 
-/** Границы расстояния «вход → SL». `null` — без ограничения с этой стороны. */
+/**
+ * Границы расстояния «вход → SL». `null` — без ограничения с этой стороны. В снапшоте
+ * риска `minPct` всегда null: минимум у каждого актива свой (`Asset.minStopPct`), его
+ * подставляет Dashboard по выбранному активу перед передачей в форму.
+ */
 export type StopDistanceLimits = {
   enabled: boolean;
   minPct: number | null;

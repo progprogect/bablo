@@ -152,10 +152,20 @@ export function Dashboard() {
               <TradeForm
                 symbol={selectedSymbol}
                 leverage={data.assets.find((a) => a.symbol === selectedSymbol)?.leverage ?? 1}
+                // Минимум расстояния до стопа у каждого актива свой — в снапшоте риска
+                // он пуст, подставляем из выбранного актива (правка 14.11.2026).
                 levelRiskUsd={data.risk.levelRiskUsd}
                 currentLevel={data.risk.currentLevel}
                 livePrice={livePrices[selectedSymbol]}
-                stopDistance={data.risk.stopDistance ?? null}
+                stopDistance={
+                  data.risk.stopDistance
+                    ? {
+                        ...data.risk.stopDistance,
+                        minPct:
+                          data.assets.find((a) => a.symbol === selectedSymbol)?.minStopPct ?? null,
+                      }
+                    : null
+                }
                 blockedReason={selectedAssetSlLock?.reason ?? null}
                 onOpened={(result) => {
                   setNotice(result.slWarning);

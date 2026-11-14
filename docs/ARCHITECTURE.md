@@ -214,7 +214,7 @@ negative/muted`) — CSS-переменные RGB-триплетами (`rgb(var
 ```
 settings        — ключ/значение: API-ключи (зашифрованы AES-256-GCM, ключ в ENV),
                   таймзона/время сброса, PIN-хэш, VAPID-ключи и push-подписки устройств
-assets          — symbol, leverage, sort_order, is_active
+assets          — symbol, leverage, min_stop_pct (минимум расстояния до стопа, % — у каждого свой), sort_order, is_active
 risk_levels     — уровень, risk_usd, required_r (редактируемая лестница)
 risk_state      — текущий уровень, накопленные R, активные блокировки (тип, until)
 trades          — вся сделка: symbol, side, qty, leverage, entry_price, sl, tp, rr_preset,

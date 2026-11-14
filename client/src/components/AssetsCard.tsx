@@ -170,8 +170,7 @@ export function AssetsCard({ manage = false }: { manage?: boolean }) {
         <div>
           <h2 className="text-sm font-medium text-ink">{manage ? "Активы" : "Плечо активов"}</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Применится со следующей сделки — плечо выставляется на бирже в момент входа.
-            Уже открытую позицию не меняет.
+            Плечо выставляется на бирже в момент входа. Уже открытую позицию не меняет.
           </p>
         </div>
         {justSaved && !isEditing && (

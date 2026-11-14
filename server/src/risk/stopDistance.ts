@@ -21,21 +21,24 @@ export type StopDistanceLimits = {
 };
 
 /**
- * Настройки риск-плана → границы. Параметр структурный, а не `RiskSettings`: модуль
- * остаётся чистым и не тянет за собой слой репозиториев.
+ * Границы проверки: тумблер и максимум — общие из настроек риск-плана, минимум — свой у
+ * каждого актива (запрос пользователя от 14.11.2026; до этого минимум тоже был общим и
+ * жил в `minStopDistancePct`, который остался в настройках как неиспользуемое наследие).
  *
- * Поля в настройках плоские (`stopDistanceCheckEnabled`, `minStopDistancePct`…), потому
- * что `getRiskSettings` домешивает дефолты ПОВЕРХНОСТНЫМ слиянием: у вложенного объекта
- * запись, сохранённая до появления поля, потеряла бы соседние ключи.
+ * Параметр структурный, а не `RiskSettings`: модуль остаётся чистым и не тянет за собой
+ * слой репозиториев.
  */
-export function stopDistanceLimitsFrom(settings: {
-  stopDistanceCheckEnabled: boolean;
-  minStopDistancePct: number | null;
-  maxStopDistancePct: number | null;
-}): StopDistanceLimits {
+export function stopDistanceLimitsFrom(
+  settings: {
+    stopDistanceCheckEnabled: boolean;
+    maxStopDistancePct: number | null;
+  },
+  /** `asset.minStopPct` открываемого актива; null — у актива нет ограничения снизу. */
+  assetMinPct: number | null,
+): StopDistanceLimits {
   return {
     enabled: settings.stopDistanceCheckEnabled,
-    minPct: settings.minStopDistancePct,
+    minPct: assetMinPct,
     maxPct: settings.maxStopDistancePct,
   };
 }

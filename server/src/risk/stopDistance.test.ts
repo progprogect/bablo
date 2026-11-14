@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkStopDistance,
   formatPct,
+  stopDistanceLimitsFrom,
   stopDistancePct,
   stopDistanceRejectMessage,
 } from "./stopDistance.js";
@@ -143,4 +144,36 @@ test("stopDistanceRejectMessage: обе формулировки", () => {
     stopDistanceRejectMessage({ status: "too_far", pct: 4.1, limitPct: 3, suggestedSl: 0.6579 }),
     "Стоп в 4,10% от входа — дальше максимума 3,00%. Приблизьте SL до ≈0.6579 или ближе.",
   );
+});
+
+// --- Сборка границ: минимум у каждого актива свой (правка 14.11.2026) ---
+
+test("stopDistanceLimitsFrom: минимум берётся у актива, максимум и тумблер — из настроек", () => {
+  const limits = stopDistanceLimitsFrom(
+    { stopDistanceCheckEnabled: true, maxStopDistancePct: 3 },
+    0.7,
+  );
+  assert.deepEqual(limits, { enabled: true, minPct: 0.7, maxPct: 3 });
+});
+
+test("stopDistanceLimitsFrom: у актива нет минимума — снизу без ограничения", () => {
+  const limits = stopDistanceLimitsFrom(
+    { stopDistanceCheckEnabled: true, maxStopDistancePct: null },
+    null,
+  );
+  assert.deepEqual(limits, { enabled: true, minPct: null, maxPct: null });
+});
+
+test("минимумы активов: стоп ближе своего минимума режется, у соседнего актива — нет", () => {
+  // Одна и та же сделка (стоп в 0.6% от входа): для TIA (минимум 0.5%) проходит,
+  // для WLD (минимум 0.7%) — слишком близко.
+  const settings = { stopDistanceCheckEnabled: true, maxStopDistancePct: null };
+  const trade = { side: "long" as const, entryPrice: 100, slPrice: 99.4 };
+
+  const tia = checkStopDistance({ ...trade, limits: stopDistanceLimitsFrom(settings, 0.5) });
+  assert.equal(tia.status, "ok");
+
+  const wld = checkStopDistance({ ...trade, limits: stopDistanceLimitsFrom(settings, 0.7) });
+  assert.equal(wld.status, "too_close");
+  assert.ok(wld.status === "too_close" && wld.limitPct === 0.7);
 });

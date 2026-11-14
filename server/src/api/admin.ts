@@ -53,6 +53,20 @@ import { requireAuth } from "./plugins/auth-guard.js";
 
 const MAX_LEVERAGE = 125;
 
+/**
+ * Границы минимума расстояния до стопа, % от цены входа. Те же числа проверяет клиент
+ * (client/src/screens/history/StopDistanceCard.tsx) и правка общих границ ниже.
+ */
+const MIN_STOP_PCT = 0.01;
+const MAX_STOP_PCT = 100;
+
+/** Число с процентом до сотых — дальше знаков проверка всё равно не различает. */
+function parseStopPct(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < MIN_STOP_PCT || value > MAX_STOP_PCT) return null;
+  return Math.round(value * 100) / 100;
+}
+
 function isValidLeverage(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_LEVERAGE;
 }
@@ -401,6 +415,21 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           return;
         }
         patch.leverage = request.body.leverage;
+      }
+      if (request.body?.minStopPct !== undefined) {
+        // null — осознанное «без ограничения снизу» для этого актива.
+        if (request.body.minStopPct === null) {
+          patch.minStopPct = null;
+        } else {
+          const pct = parseStopPct(request.body.minStopPct);
+          if (pct === null) {
+            reply
+              .code(400)
+              .send({ error: `minStopPct должен быть числом от ${MIN_STOP_PCT} до ${MAX_STOP_PCT} либо null` });
+            return;
+          }
+          patch.minStopPct = pct;
+        }
       }
       if (request.body?.sortOrder !== undefined) {
         patch.sortOrder = request.body.sortOrder;
