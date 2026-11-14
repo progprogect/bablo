@@ -92,7 +92,11 @@ export type RiskSettings = {
    * ничего не должно блокировать.
    */
   stopDistanceCheckEnabled: boolean;
-  /** Минимальный допустимый разрыв в % от цены входа; null — без ограничения снизу. */
+  /**
+   * @deprecated С 14.11.2026 минимум у каждого актива свой (`assets.minStopPct`) и это
+   * поле в проверках не участвует. Осталось в типе, чтобы старые JSON-записи настроек
+   * читались без сюрпризов.
+   */
   minStopDistancePct: number | null;
   /** Максимальный допустимый разрыв в % от цены входа; null — без ограничения сверху. */
   maxStopDistancePct: number | null;

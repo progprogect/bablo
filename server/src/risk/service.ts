@@ -182,7 +182,10 @@ export async function getRiskSnapshot(): Promise<RiskSnapshot> {
     assetSlLocks: assetSlLocks.map(toLockView),
     maxTpRatio: lastWasStop ? MAX_RR_AFTER_STOP : null,
     pendingWithdrawals,
-    stopDistance: stopDistanceLimitsFrom(settings),
+    // Минимум в снапшоте пуст намеренно: он у каждого актива свой (assets.minStopPct в
+    // ответе дашборда), и клиент подставляет его по выбранному активу. Здесь — только
+    // общие тумблер и максимум.
+    stopDistance: stopDistanceLimitsFrom(settings, null),
   };
 }
 

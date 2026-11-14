@@ -4,11 +4,18 @@ import { assets } from "../schema.js";
 
 export type Asset = typeof assets.$inferSelect;
 
-const DEFAULT_ASSETS: Array<{ symbol: string; leverage: number; sortOrder: number }> = [
-  { symbol: "TIA-USDT", leverage: 20, sortOrder: 0 },
-  { symbol: "TAO-USDT", leverage: 25, sortOrder: 1 },
-  { symbol: "VIRTUAL-USDT", leverage: 25, sortOrder: 2 },
-  { symbol: "WLD-USDT", leverage: 20, sortOrder: 3 },
+const DEFAULT_ASSETS: Array<{
+  symbol: string;
+  leverage: number;
+  minStopPct: number;
+  sortOrder: number;
+}> = [
+  // Минимумы расстояния до стопа — значения пользователя от 14.11.2026 (та же четвёрка
+  // прописана в миграции 0026 для уже существующих строк).
+  { symbol: "TIA-USDT", leverage: 20, minStopPct: 0.5, sortOrder: 0 },
+  { symbol: "TAO-USDT", leverage: 25, minStopPct: 0.55, sortOrder: 1 },
+  { symbol: "VIRTUAL-USDT", leverage: 25, minStopPct: 0.65, sortOrder: 2 },
+  { symbol: "WLD-USDT", leverage: 20, minStopPct: 0.7, sortOrder: 3 },
 ];
 
 /** Идемпотентный сид: выполняется на старте сервера, если таблица активов пуста. */
@@ -38,6 +45,8 @@ export async function listActiveAssets(): Promise<Asset[]> {
 export type CreateAssetInput = {
   symbol: string;
   leverage: number;
+  /** Минимум расстояния до стопа, % от входа. null/не задан — без ограничения снизу. */
+  minStopPct?: number | null;
   sortOrder?: number;
   isActive?: boolean;
 };
@@ -49,6 +58,7 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
     .values({
       symbol: input.symbol,
       leverage: input.leverage,
+      minStopPct: input.minStopPct ?? null,
       sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true,
     })

@@ -183,6 +183,13 @@
       "when": 1791079200000,
       "tag": "0025_hour_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794689743285,
+      "tag": "0026_asset_min_stop",
+      "breakpoints": true
     }
   ]
 }
