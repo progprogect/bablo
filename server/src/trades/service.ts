@@ -426,11 +426,15 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
 
   let tpOrderId: string | number;
   try {
+    // Лимитка, а не условный TAKE_PROFIT_MARKET (решение пользователя от 16.11.2026):
+    // ордер сразу висит в стакане — мейкерская комиссия и исполнение не хуже цены TP.
+    // Плата за это: касание ≠ исполнение, при мгновенном развороте от цели тейк может
+    // остаться неисполненным — тогда позицию закроет стоп (он остаётся рыночным).
     const tpOrder = await placeOrder(credentials, {
       symbol: trade.symbol,
       side: exitSide,
-      type: "TAKE_PROFIT_MARKET",
-      stopPrice: tpPrice,
+      type: "LIMIT",
+      price: tpPrice,
       quantity: mainTpQuantity,
       reduceOnly: true,
     });
@@ -447,8 +451,8 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
       const partialOrder = await placeOrder(credentials, {
         symbol: trade.symbol,
         side: exitSide,
-        type: "TAKE_PROFIT_MARKET",
-        stopPrice: input.partialTpPrice,
+        type: "LIMIT",
+        price: input.partialTpPrice,
         quantity: partialQuantity,
         reduceOnly: true,
       });
@@ -1228,7 +1232,7 @@ export async function applyNightTakeProfitForActiveTrade(
   const replaced = await replaceConditionalOrder(credentials, {
     symbol: trade.symbol,
     exitSide,
-    type: "TAKE_PROFIT_MARKET",
+    type: "LIMIT",
     oldOrderId: orderIds.tp,
     oldStopPrice: trade.tpPrice !== null ? Number(trade.tpPrice) : null,
     newStopPrice: decision.newTpPrice,

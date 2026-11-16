@@ -223,8 +223,13 @@ export function buildTradesFromOrders(orders: ImportOrder[]): ImportBuildResult 
     position.lastCloseAt = filledAt(order);
 
     // Причина закрытия — по исходному условному ордеру, а не по типу исполнения.
+    // Закрывающая ЛИМИТКА — это тейк приложения (с 16.11.2026 TP ставится обычным
+    // reduce-only LIMIT, а не условным ордером): своего triggerOrderId у неё нет,
+    // поэтому отдельная ветка. Ручные закрытия через приложение — рыночные.
     const source = order.triggerOrderId ? conditionals.get(order.triggerOrderId) : undefined;
-    const reason = reasonOfConditional(source?.type ?? order.type);
+    const reason =
+      reasonOfConditional(source?.type ?? order.type) ??
+      (order.type.toUpperCase() === "LIMIT" ? "tp" : null);
     if (reason) position.closeReason = reason;
 
     // Остаток меньше тысячной доли объёма — это float-шум, а не недозакрытая позиция.

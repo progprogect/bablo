@@ -51,8 +51,8 @@ export type ReplaceConditionalOrderResult =
   | { ok: false; message: string; restoredOrderId: string | number | null };
 
 /**
- * Заменяет условный ордер (SL или TP) на бирже: отменяет старый, ставит новый и, если
- * новый выставить не удалось, ВОЗВРАЩАЕТ СТАРЫЙ на место.
+ * Заменяет закрывающий ордер (условный стоп или лимитный тейк) на бирже: отменяет
+ * старый, ставит новый и, если новый выставить не удалось, ВОЗВРАЩАЕТ СТАРЫЙ на место.
  *
  * Без отката позиция оставалась бы вообще без стопа или без тейка: старый ордер уже
  * отменён, новый не встал, а в БД по-прежнему лежит id мёртвого ордера — по нему потом
@@ -64,7 +64,8 @@ export async function replaceConditionalOrder(
   input: {
     symbol: string;
     exitSide: OrderSide;
-    type: "STOP_MARKET" | "TAKE_PROFIT_MARKET";
+    /** STOP_MARKET — условный стоп (цены ниже — триггер), LIMIT — лимитный тейк (цены — лимитные). */
+    type: "STOP_MARKET" | "LIMIT";
     oldOrderId: string | number | undefined;
     /** Цена старого ордера — нужна, чтобы вернуть его при сбое. null — восстанавливать нечего. */
     oldStopPrice: number | null;
@@ -85,12 +86,12 @@ export async function replaceConditionalOrder(
     }
   }
 
-  const place = (stopPrice: number) =>
+  const place = (price: number) =>
     placeOrder(credentials, {
       symbol: input.symbol,
       side: input.exitSide,
       type: input.type,
-      stopPrice,
+      ...(input.type === "LIMIT" ? { price } : { stopPrice: price }),
       quantity: input.quantity,
       reduceOnly: true,
     });

@@ -320,7 +320,7 @@ export async function setLeverage(
 // --- Ордера ---
 
 export type OrderSide = "BUY" | "SELL";
-export type OrderType = "MARKET" | "STOP_MARKET" | "TAKE_PROFIT_MARKET";
+export type OrderType = "MARKET" | "LIMIT" | "STOP_MARKET" | "TAKE_PROFIT_MARKET";
 
 export type PlaceOrderInput = {
   symbol: string;
@@ -329,6 +329,13 @@ export type PlaceOrderInput = {
   quantity: number;
   /** Обязателен для STOP_MARKET / TAKE_PROFIT_MARKET. */
   stopPrice?: number;
+  /**
+   * Обязателен для LIMIT. С 16.11.2026 тейк ставится лимиткой в стакане, а не условным
+   * TAKE_PROFIT_MARKET: мейкерская комиссия вместо тейкерской и исполнение не хуже цены
+   * TP. Стоп остаётся STOP_MARKET намеренно — лимитный стоп при резком движении может не
+   * исполниться, и убыток перестанет быть ограничен 1R.
+   */
+  price?: number;
   /** true для SL/TP-ордеров, закрывающих существующую позицию. */
   reduceOnly?: boolean;
 };
@@ -360,6 +367,11 @@ export async function placeOrder(
   if (input.stopPrice !== undefined) {
     params.stopPrice = input.stopPrice;
     params.workingType = "MARK_PRICE";
+  }
+  if (input.price !== undefined) {
+    params.price = input.price;
+    // GTC явно: лимитка-тейк висит в стакане до исполнения или отмены.
+    params.timeInForce = "GTC";
   }
   if (input.reduceOnly) {
     params.reduceOnly = "true";
