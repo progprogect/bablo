@@ -46,6 +46,19 @@ test("лонг по тейку: вход, стоп-ордер, сработав�
   assert.deepEqual(trade.orderIds, { entry: ["1"], exit: ["4"] });
 });
 
+test("закрытие лимиткой — это тейк приложения (TP лимиткой с 16.11.2026)", () => {
+  const orders = [
+    order({ orderId: "1", side: "BUY", avgPrice: 100, executedQty: 10, time: T0, updateTime: T0 }),
+    order({ orderId: "2", type: "STOP_MARKET", status: "CANCELLED", side: "SELL", stopPrice: 98, executedQty: 0, avgPrice: 0, time: T0 + minute }),
+    // Лимитный тейк исполняется под своим же orderId, без triggerOrderId.
+    order({ orderId: "3", type: "LIMIT", side: "SELL", avgPrice: 104, executedQty: 10, profit: 40, time: T0 + 30 * minute, updateTime: T0 + 30 * minute }),
+  ];
+  const { trades } = buildTradesFromOrders(orders);
+  assert.equal(trades.length, 1);
+  assert.equal(trades[0]!.closeReason, "tp");
+  assert.equal(trades[0]!.resultR, 2);
+});
+
 test("шорт по стопу: сторона и знак R считаются верно", () => {
   const orders = [
     order({ orderId: "1", side: "SELL", avgPrice: 100, executedQty: 5 }),

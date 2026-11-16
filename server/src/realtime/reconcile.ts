@@ -77,7 +77,9 @@ export async function reconcileOrderUpdate(order: OrderTradeUpdate): Promise<voi
 
 /**
  * Резервный путь (см. docs/ARCHITECTURE.md — известный нюанс BingX: срабатывание
- * STOP_MARKET/TAKE_PROFIT_MARKET не всегда приходит в ORDER_TRADE_UPDATE). Триггерится
+ * условного STOP_MARKET не всегда приходит в ORDER_TRADE_UPDATE; лимитный тейк, с
+ * 16.11.2026 заменивший условный, исполняется под своим же orderId и в стрим попадает
+ * надёжно — резерв нужен в основном для стопа). Триггерится
  * из ACCOUNT_UPDATE, когда позиция по символу активной сделки обнулилась. Одиночная
  * (не циклическая) REST-сверка статусов SL/TP-ордеров — чтобы понять, что сработало.
  *
