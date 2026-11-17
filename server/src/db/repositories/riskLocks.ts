@@ -10,6 +10,8 @@ const MANAGED_TYPES: BlockType[] = [
   "daily_loss",
   "daily_stop_losses",
   "stop_chain",
+  "take_streak",
+  "edge_stops",
   "daily_take_profits",
   "daily_mixed_outcomes",
   "asset_sl_today",
