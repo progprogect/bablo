@@ -140,7 +140,7 @@ const EDGE_STOPS_SCENARIOS: Scenario[] = [
   },
   {
     chips: [{ outcome: "sl", label: "Стоп" }],
-    note: "первая после выходного — снова выходной",
+    note: "первый после выходного — снова выходной",
     blocked: true,
   },
 ];
