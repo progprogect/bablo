@@ -1,6 +1,15 @@
+import type { TradeOutcome } from "../history/outcome.js";
 import type { Block, RiskLimitsConfig } from "./limits.js";
-import type { StopChainDay } from "./stopChain.js";
 import { getResetAtAfterTradingDay } from "./tradingDay.js";
+
+/**
+ * Исходы закрытых сделок одного торгового дня, по возрастанию времени закрытия.
+ * Дни без сделок в список не попадают (см. risk/service.ts → toOutcomeDays).
+ */
+export type OutcomeDay = {
+  dayKey: string;
+  outcomes: TradeOutcome[];
+};
 
 /**
  * Два правила «выходной после серии» (запрос пользователя от 17.11.2026). Оба закрывают
@@ -9,8 +18,8 @@ import { getResetAtAfterTradingDay } from "./tradingDay.js";
  *
  * - **Правило #20 «пять тейков подряд»**: пятая подряд сделка, закрытая тейком, даёт
  *   выходной. Серия идёт сквозь дни; её обрывает только стоп; безубыток и ручное/внешнее
- *   закрытие нейтральны — не считаются и не обнуляют (та же логика, что у лестницы пауз,
- *   только зеркальная). После срабатывания серия считается заново — «каждый раз».
+ *   закрытие нейтральны — не считаются и не обнуляют. После срабатывания серия считается
+ *   заново — «каждый раз».
  *   Смысл: длинная серия прибыли расслабляет не хуже серии убытков; пауза на пике —
  *   дёшево купленная дисциплина.
  *
@@ -22,9 +31,8 @@ import { getResetAtAfterTradingDay } from "./tradingDay.js";
  *   Смысл: закончить день стопом и начать следующий со стопа — признак, что рынок
  *   не читается; продолжать в тот же день не стоит.
  *
- * Как и лестница пауз, состояние не хранится: оно выводится из истории закрытых сделок,
- * поэтому переразметка исхода в админке чинит оба правила сама. Вход — те же дни с
- * исходами, что у computeStopChain (risk/service.ts → toStopChainDays).
+ * Состояние не хранится: оно выводится из истории закрытых сделок, поэтому переразметка
+ * исхода в админке чинит оба правила сама.
  *
  * «Тейк» и «стоп» здесь — исход по экономике сделки (history/outcome.ts): стоп, уведённый
  * в прибыль, — это тейк.
@@ -42,7 +50,7 @@ export type StreakTrigger = { dayKey: string } | null;
  * серия начинается заново. Возвращается ПОСЛЕДНЕЕ срабатывание: прежние и так истекли
  * по сроку блокировки.
  */
-export function computeTakeStreakTrigger(days: StopChainDay[]): StreakTrigger {
+export function computeTakeStreakTrigger(days: OutcomeDay[]): StreakTrigger {
   let streak = 0;
   let trigger: StreakTrigger = null;
   for (const day of days) {
@@ -66,13 +74,13 @@ export function computeTakeStreakTrigger(days: StopChainDay[]): StreakTrigger {
  * Правило #21: сработало ли «стопы на стыке дней» СЕГОДНЯ. Триггер всегда привязан к
  * текущему дню: прошлые стыки уже отжили свои блокировки, пересчитывать их незачем.
  */
-export function computeEdgeStopsTrigger(days: StopChainDay[], todayKey: string): StreakTrigger {
+export function computeEdgeStopsTrigger(days: OutcomeDay[], todayKey: string): StreakTrigger {
   const todayIndex = days.findIndex((day) => day.dayKey === todayKey);
   if (todayIndex === -1) return null;
   const today = days[todayIndex]!;
   if (today.outcomes[0] !== "sl") return null;
 
-  // Предыдущий день С СДЕЛКАМИ: toStopChainDays не создаёт пустых дней, поэтому это
+  // Предыдущий день С СДЕЛКАМИ: toOutcomeDays не создаёт пустых дней, поэтому это
   // просто предыдущий элемент списка.
   const previous = todayIndex > 0 ? days[todayIndex - 1]! : null;
   if (!previous || previous.outcomes.length === 0) return null;
@@ -83,8 +91,8 @@ export function computeEdgeStopsTrigger(days: StopChainDay[], todayKey: string):
 
 /**
  * Блокировка «день закрыт + следующий выходной» по сработавшему правилу, или null —
- * не срабатывало либо срок уже вышел. Механика срока та же, что у лестницы пауз:
- * день срабатывания заканчивается сбросом, сверху ровно один полный день.
+ * не срабатывало либо срок уже вышел. День срабатывания заканчивается сбросом,
+ * сверху ровно один полный день.
  */
 export function buildStreakDayOffBlock(
   now: Date,

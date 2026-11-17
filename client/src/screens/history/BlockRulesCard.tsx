@@ -100,24 +100,6 @@ const SATURDAY_SCENARIOS: Scenario[] = [
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
 ];
 
-/**
- * Лестница пауз после стопов (правило #14): внутри серии день закрывает уже один стоп, и
- * к нему добавляется выходной. Выходной ровно один и не растёт (правка 27.10.2026) —
- * поэтому третья строка повторяет вторую: так видно, что дальше ничего не копится.
- */
-const CHAIN_SCENARIOS: Scenario[] = [
-  {
-    chips: [
-      { outcome: "sl", label: "Стоп" },
-      { outcome: "sl", label: "Стоп" },
-    ],
-    note: "день закрыт, серия началась",
-    blocked: true,
-  },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, завтра выходной", blocked: true },
-  { chips: [{ outcome: "sl", label: "Стоп" }], note: "день закрыт, снова один выходной", blocked: true },
-];
-
 const CHIP_STYLES: Record<Outcome, string> = {
   tp: "bg-emerald-50 text-emerald-600",
   sl: "bg-red-50 text-red-600",
@@ -229,18 +211,6 @@ export function BlockRulesCard() {
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <p className="text-xs text-slate-500">Серия стопов</p>
-        <ul className="flex flex-col">
-          {CHAIN_SCENARIOS.map((scenario, index) => (
-            <ScenarioRow key={index} scenario={scenario} />
-          ))}
-        </ul>
-        <p className="text-[11px] text-slate-400">
-          Любой тейк обнуляет серию — два стопа запускают серию.
-        </p>
       </div>
 
       <div className="flex flex-col gap-1">
