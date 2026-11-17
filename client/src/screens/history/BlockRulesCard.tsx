@@ -124,6 +124,37 @@ const CHIP_STYLES: Record<Outcome, string> = {
   day: "bg-surface text-slate-500",
 };
 
+/**
+ * Правило #20 (запрос пользователя от 17.11.2026): пятый тейк подряд закрывает день и
+ * даёт выходной. Серия идёт сквозь дни, обрывает её только стоп; после выходного
+ * считается заново.
+ */
+const TAKE_STREAK_SCENARIOS: Scenario[] = [
+  {
+    chips: [{ outcome: "tp", label: "5 тейков подряд" }],
+    note: "день закрыт, завтра выходной",
+    blocked: true,
+  },
+];
+
+/**
+ * Правило #21 (запрос пользователя от 17.11.2026): крайняя сделка вчера и первая сегодня
+ * — обе по стопу → день закрыт и следующий выходной. «Вчера» — последний день со
+ * сделками, а не календарный.
+ */
+const EDGE_STOPS_SCENARIOS: Scenario[] = [
+  {
+    chips: [
+      { outcome: "sl", label: "Стоп вчера" },
+      { outcome: "sl", label: "Стоп сегодня" },
+    ],
+    // Совсем коротко: две широкие плашки слева не оставляют места длинной подписи,
+    // полная формулировка — в приписке под блоком.
+    note: "выходной",
+    blocked: true,
+  },
+];
+
 function OutcomeChip({ outcome, label }: { outcome: Outcome; label: string }) {
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CHIP_STYLES[outcome]}`}>
@@ -201,6 +232,30 @@ export function BlockRulesCard() {
         </ul>
         <p className="text-[11px] text-slate-400">
           Любой тейк обнуляет серию — два стопа запускают серию.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Серия тейков</p>
+        <ul className="flex flex-col">
+          {TAKE_STREAK_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+        <p className="text-[11px] text-slate-400">
+          Подряд — без стопа между ними, дни не важны. После выходного серия заново.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Стопы на стыке дней</p>
+        <ul className="flex flex-col">
+          {EDGE_STOPS_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+        <p className="text-[11px] text-slate-400">
+          Крайняя сделка вчера и первая сегодня — обе по стопу: день закрыт, завтра выходной.
         </p>
       </div>
     </section>

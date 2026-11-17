@@ -42,6 +42,13 @@ import {
   type StopChainDay,
   type StopChainState,
 } from "./stopChain.js";
+import {
+  buildStreakDayOffBlock,
+  computeEdgeStopsTrigger,
+  computeTakeStreakTrigger,
+  EDGE_STOPS_REASON,
+  TAKE_STREAK_REASON,
+} from "./streakDaysOff.js";
 import { getTradingDayKey } from "./tradingDay.js";
 import { resolveTradeOutcome, type TradeOutcome } from "../history/outcome.js";
 
@@ -371,7 +378,8 @@ export async function recordTradeClose(input: {
   });
 
   const slSymbols = await listDaySlSymbols(dayKey, settings.resetHour, settings.tzOffsetMinutes);
-  const stopChain = await loadStopChainState(input.closedAt, settings);
+  // Дни истории считаются один раз: по ним работают и лестница пауз, и правила #20/#21.
+  const historyDays = toStopChainDays(await listAllClosedTrades(), settings);
   const blocks = buildManagedBlocks({
     now: input.closedAt,
     counters: {
@@ -381,7 +389,8 @@ export async function recordTradeClose(input: {
     },
     lastTradeClosedAt: input.closedAt,
     lastTradeOutcome: outcome,
-    stopChain,
+    stopChain: computeStopChain(historyDays, dayKey),
+    historyDays,
     slSymbols,
     settings,
   });
@@ -440,19 +449,6 @@ function toStopChainDays(
     }));
 }
 
-/**
- * Состояние лестницы пауз на момент `now`. Считается из всей истории закрытых сделок:
- * хранимого поля нет намеренно — переразметка исхода в админке чинит лестницу сама.
- */
-async function loadStopChainState(
-  now: Date,
-  settings: { resetHour: number; tzOffsetMinutes: number },
-): Promise<StopChainState> {
-  const allClosed = await listAllClosedTrades();
-  const todayKey = getTradingDayKey(now, settings.resetHour, settings.tzOffsetMinutes);
-  return computeStopChain(toStopChainDays(allClosed, settings), todayKey);
-}
-
 type RiskSettingsLike = {
   cooldownMinutes: number;
   dailyLossLimitR: number;
@@ -470,6 +466,8 @@ function buildManagedBlocks(input: {
   lastTradeOutcome: TradeOutcome | null;
   /** Лестница пауз после стопов — задаёт лимит стопов дня и паузу на полные дни. */
   stopChain: StopChainState;
+  /** Вся история закрытых сделок по дням (toStopChainDays) — вход правил #20 и #21. */
+  historyDays: StopChainDay[];
   slSymbols: string[];
   settings: RiskSettingsLike;
 }): Block[] {
@@ -486,6 +484,26 @@ function buildManagedBlocks(input: {
   const stopChainBlock = buildStopChainBlock(input.now, input.stopChain, input.settings);
   if (stopChainBlock) {
     blocks.push(stopChainBlock);
+  }
+  // Выходные после серий (правила #20 и #21, risk/streakDaysOff.ts): день закрыт и
+  // следующий тоже. Как и лестница пауз — чистый пересчёт из истории при каждой сборке.
+  const takeStreakBlock = buildStreakDayOffBlock(
+    input.now,
+    computeTakeStreakTrigger(input.historyDays),
+    { type: "take_streak", reason: TAKE_STREAK_REASON },
+    input.settings,
+  );
+  if (takeStreakBlock) {
+    blocks.push(takeStreakBlock);
+  }
+  const edgeStopsBlock = buildStreakDayOffBlock(
+    input.now,
+    computeEdgeStopsTrigger(input.historyDays, dayKey),
+    { type: "edge_stops", reason: EDGE_STOPS_REASON },
+    input.settings,
+  );
+  if (edgeStopsBlock) {
+    blocks.push(edgeStopsBlock);
   }
   const cooldownBlock = evaluateCooldownBlock(
     input.now,
@@ -601,12 +619,14 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
 
   const lastTrade = dayTrades.length > 0 ? dayTrades[dayTrades.length - 1]! : null;
   const lastClosedAt = lastTrade?.closedAt ?? null;
+  const historyDays = toStopChainDays(allClosed, settings);
   const blocks = buildManagedBlocks({
     now,
     counters: { sumR, slCount, tpCount },
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
     lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
-    stopChain: computeStopChain(toStopChainDays(allClosed, settings), dayKey),
+    stopChain: computeStopChain(historyDays, dayKey),
+    historyDays,
     slSymbols,
     settings,
   });
