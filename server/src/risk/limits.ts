@@ -30,12 +30,6 @@ export type BlockType =
   | "daily_loss"
   | "daily_stop_losses"
   /**
-   * Лестница пауз после стопов (risk/stopChain.ts): закрывает торговлю на ПОЛНЫЕ дни
-   * сверх текущего. Первое срабатывание (два стопа за день) сюда не попадает — оно
-   * закрывает день обычным daily_stop_losses.
-   */
-  | "stop_chain"
-  /**
    * Лимит тейков дня исчерпан. С 25.10.2026 бывает только в ПН и ПТ (правило #16):
    * в обычные дни тейки день не закрывают вовсе.
    */
@@ -203,12 +197,9 @@ export function singleStopWeekdayLabel(dayKey: string): string | null {
   return weekdayLimitRule(dayKey)?.accusative ?? null;
 }
 
-/**
- * Лимит стопов дня с учётом дня недели. baseLimit — лимит из лестницы пауз
- * (risk/stopChain.ts); правило дня недели может только УЖЕСТОЧИТЬ его, не ослабить.
- */
-export function dayStopLimitForDayKey(dayKey: string, baseLimit: number = DAILY_STOP_LOSS_LIMIT): number {
-  return weekdayLimitRule(dayKey) !== null ? Math.min(baseLimit, WEEKDAY_SINGLE_LIMIT) : baseLimit;
+/** Лимит стопов дня с учётом дня недели: в ПН, ПТ и СБ хватает одного (правила #16, #17). */
+export function dayStopLimitForDayKey(dayKey: string): number {
+  return weekdayLimitRule(dayKey) !== null ? WEEKDAY_SINGLE_LIMIT : DAILY_STOP_LOSS_LIMIT;
 }
 
 /**
@@ -272,9 +263,8 @@ export function isTpRatioAllowed(ratio: number | null, previousWasStop: boolean)
  */
 
 /**
- * Текст блокировки по стопам дня — факт и зачем пауза, без упоминания серии стопов. Про
- * серию говорит отдельный лок `stop_chain`, и только когда она действительно закрывает
- * дни сверх сегодняшнего.
+ * Текст блокировки по стопам дня — факт и зачем пауза, без лишних обещаний: выходные
+ * дают отдельные правила #20/#21 (risk/streakDaysOff.ts) со своими текстами.
  *
  * Два захода правок по кейсу 01–02.10.2026:
  * 1. Убрано «Стоп при активной серии» — лимит стопов дня фиксируется на НАЧАЛО дня, из-за
@@ -299,11 +289,6 @@ export function evaluateDailyLimitBlocks(
   counters: DailyLimitCounters,
   config: RiskLimitsConfig,
   /**
-   * Сколько стопов за день закрывают торговлю. По умолчанию — обычные два (правило #4);
-   * внутри лестницы пауз (risk/stopChain.ts) хватает одного.
-   */
-  dayStopLimit: number = DAILY_STOP_LOSS_LIMIT,
-  /**
    * Ключ торгового дня (risk/tradingDay.ts). Передан — учитываем правила дня недели:
    * в ПН и ПТ день закрывает один стоп — и один тейк (#16), в СБ — один стоп (#17).
    */
@@ -315,7 +300,7 @@ export function evaluateDailyLimitBlocks(
   // Подпись дня недели заполнена ровно в те дни, где правила #16 и #17 ужесточают лимит
   // стопов, поэтому отдельная проверка лимита не нужна.
   const weekdayLabel = dayKey ? singleStopWeekdayLabel(dayKey) : null;
-  const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey, dayStopLimit) : dayStopLimit;
+  const effectiveStopLimit = dayKey ? dayStopLimitForDayKey(dayKey) : DAILY_STOP_LOSS_LIMIT;
   const takeLimit = dayKey ? dayTakeLimitForDayKey(dayKey) : null;
 
   if (counters.sumR <= config.dailyLossLimitR) {

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   buildDayOffBlock,
   buildVoluntaryPauseBlock,
-  DAILY_STOP_LOSS_LIMIT,
   dayStopLimitForDayKey,
   dayTakeLimitForDayKey,
   evaluateAssetSlBlocks,
@@ -65,13 +64,7 @@ test("evaluateDailyLimitBlocks: 2 сделки за день закрыты по
 test("evaluateDailyLimitBlocks: текст блока по стопам — коротко и без упоминания серии", () => {
   const two = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 2 }), CONFIG);
   assert.equal(two[0]?.reason, "2 стопа за день — дадим себе и графику расторговаться");
-
-  // Сниженный лимит (внутри серии хватает одного стопа) текст не меняет: про серию
-  // говорит отдельный лок stop_chain, и только когда она закрывает дни сверх сегодняшнего.
-  const one = evaluateDailyLimitBlocks(new Date("2026-07-13T10:00:00Z"), counters({ slCount: 1 }), CONFIG, 1);
-  assert.equal(one[0]?.type, "daily_stop_losses");
-  assert.equal(one[0]?.reason, "Стоп — дадим себе и графику расторговаться");
-  assert.doesNotMatch(one[0]?.reason ?? "", /сери/i);
+  assert.doesNotMatch(two[0]?.reason ?? "", /сери/i);
 });
 
 test("evaluateDailyLimitBlocks: причины помещаются в плашку — не длиннее 60 символов", () => {
@@ -299,12 +292,6 @@ test("dayStopLimitForDayKey: ПН, ПТ и СБ — один стоп, оста�
   assert.equal(dayStopLimitForDayKey("2026-10-18"), 2); // воскресенье
 });
 
-test("dayStopLimitForDayKey: лестница пауз только ужесточает лимит, не ослабляет", () => {
-  // Внутри серии лимит и так 1 — день недели его не поднимает обратно до 2.
-  assert.equal(dayStopLimitForDayKey("2026-10-13", 1), 1);
-  assert.equal(dayStopLimitForDayKey("2026-10-12", 1), 1);
-});
-
 test("dayStopLimitForDayKey: битый ключ дня не меняет лимит", () => {
   assert.equal(dayStopLimitForDayKey("не дата"), 2);
 });
@@ -314,7 +301,6 @@ test("evaluateDailyLimitBlocks: один стоп в понедельник за
     new Date("2026-10-12T10:00:00Z"),
     counters({ sumR: -1, slCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
@@ -327,7 +313,6 @@ test("evaluateDailyLimitBlocks: один стоп в пятницу закрыв
     new Date("2026-10-16T10:00:00Z"),
     counters({ sumR: -1, slCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-16",
   );
   const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
@@ -340,7 +325,6 @@ test("evaluateDailyLimitBlocks: один стоп во вторник день �
     new Date("2026-10-13T10:00:00Z"),
     counters({ sumR: -1, slCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-13",
   );
   assert.equal(blocks.some((block) => block.type === "daily_stop_losses"), false);
@@ -353,7 +337,6 @@ test("evaluateDailyLimitBlocks: один стоп в субботу закрыв
     new Date("2026-10-17T10:00:00Z"),
     counters({ sumR: -1, slCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-17",
   );
   const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
@@ -366,7 +349,6 @@ test("evaluateDailyLimitBlocks: тейк в субботу день не зак�
     new Date("2026-10-17T10:00:00Z"),
     counters({ sumR: 2, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-17",
   );
   assert.deepEqual(blocks, []);
@@ -377,7 +359,6 @@ test("evaluateDailyLimitBlocks: тейк и стоп в субботу закр�
     new Date("2026-10-17T10:00:00Z"),
     counters({ sumR: 1, slCount: 1, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-17",
   );
   assert.ok(blocks.some((block) => block.type === "daily_mixed_outcomes"));
@@ -389,7 +370,6 @@ test("evaluateDailyLimitBlocks: два стопа в понедельник — 
     new Date("2026-10-12T10:00:00Z"),
     counters({ slCount: 2 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   const stopBlock = blocks.find((block) => block.type === "daily_stop_losses");
@@ -402,7 +382,6 @@ test("evaluateDailyLimitBlocks: причина про день недели по
     new Date("2026-10-12T10:00:00Z"),
     counters({ slCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   for (const block of blocks) {
@@ -425,7 +404,6 @@ test("evaluateDailyLimitBlocks: один тейк в понедельник за
     new Date("2026-10-12T10:00:00Z"),
     counters({ sumR: 1, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
@@ -442,7 +420,6 @@ test("evaluateDailyLimitBlocks: тейк в пятницу закрывает д
     new Date("2026-10-16T10:00:00Z"),
     counters({ sumR: 0.9, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-16",
   );
   const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
@@ -455,7 +432,6 @@ test("evaluateDailyLimitBlocks: один тейк во вторник день �
     new Date("2026-10-13T10:00:00Z"),
     counters({ sumR: 1, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-13",
   );
   assert.equal(blocks.some((block) => block.type === "daily_take_profits"), false);
@@ -468,7 +444,6 @@ test("evaluateDailyLimitBlocks: второй тейк в понедельник 
     new Date("2026-10-12T10:00:00Z"),
     counters({ sumR: 2, tpCount: 2 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   const takeBlock = blocks.find((block) => block.type === "daily_take_profits");
@@ -491,7 +466,6 @@ test("evaluateDailyLimitBlocks: причина про тейк в ПН/ПТ по
     new Date("2026-10-12T10:00:00Z"),
     counters({ sumR: 1, tpCount: 1 }),
     CONFIG,
-    DAILY_STOP_LOSS_LIMIT,
     "2026-10-12",
   );
   for (const block of blocks) {

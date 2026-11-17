@@ -9,7 +9,6 @@ const MANAGED_TYPES: BlockType[] = [
   "cooldown",
   "daily_loss",
   "daily_stop_losses",
-  "stop_chain",
   "take_streak",
   "edge_stops",
   "daily_take_profits",
@@ -23,7 +22,14 @@ const MANAGED_TYPES: BlockType[] = [
  * `daily_profit` (+3R за день) и `daily_strong_tp` (тейк ≥ 2R) отменены 25.10.2026:
  * прибыль день больше не закрывает — но лок, поставленный до выката, надо снять.
  */
-const RETIRED_TYPES: string[] = ["daily_recovery_after_sl", "daily_profit", "daily_strong_tp"];
+const RETIRED_TYPES: string[] = [
+  "daily_recovery_after_sl",
+  "daily_profit",
+  "daily_strong_tp",
+  // Лестница пауз (правило #14) отменена 17.11.2026 — её заменили правила #20/#21
+  // (risk/streakDaysOff.ts); лок, поставленный до выката, снимается при пересборке.
+  "stop_chain",
+];
 
 export async function listActiveLocks(now: Date = new Date()): Promise<RiskLockRow[]> {
   const db = getDb();

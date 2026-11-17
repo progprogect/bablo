@@ -55,8 +55,8 @@ export function getNextResetAt(date: Date, resetHour: number, tzOffsetMinutes: n
 }
 
 /**
- * Момент сброса, до которого торговля закрыта, если день `dayKey` закрыт лестницей пауз
- * (risk/stopChain.ts) плюс `extraFullDays` ПОЛНЫХ дней сверху. День `dayKey` заканчивается
+ * Момент сброса, до которого торговля закрыта, если день `dayKey` закрыт правилом-серией
+ * (risk/streakDaysOff.ts) плюс `extraFullDays` ПОЛНЫХ дней сверху. День `dayKey` заканчивается
  * сбросом следующих суток, каждый полный день добавляет ещё сутки.
  *
  * `dayKey` — ключ торгового дня (YYYY-MM-DD, как его отдаёт getTradingDayKey). Некорректный
