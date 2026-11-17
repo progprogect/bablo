@@ -75,6 +75,42 @@ test("правило #21: не срабатывает, если край — н�
   assert.equal(computeEdgeStopsTrigger([day("2026-10-05", "sl")], "2026-10-06"), null);
 });
 
+test("правило #21: серия по дням пользователя — 2-й день блок, 3-й выходной, стоп в 4-й день даёт 5-й выходной", () => {
+  // День 1 (05.10): крайняя сделка по стопу — первый потенциальный день серии.
+  // День 2 (06.10): первая сделка по стопу → серия подтверждена, день закрыт.
+  // День 3 (07.10): выходной — сделок нет, в списке дней его просто нет.
+  // День 4 (08.10): первая сделка снова по стопу → день закрыт…
+  // День 5 (09.10): …и снова выходной. Дальше торговля как обычно.
+  const days = [day("2026-10-05", "tp", "sl"), day("2026-10-06", "sl"), day("2026-10-08", "sl")];
+
+  // Второй день серии: срабатывание.
+  assert.deepEqual(computeEdgeStopsTrigger(days.slice(0, 2), "2026-10-06"), { dayKey: "2026-10-06" });
+  const dayTwoBlock = buildStreakDayOffBlock(
+    new Date("2026-10-06T09:00:00Z"),
+    computeEdgeStopsTrigger(days.slice(0, 2), "2026-10-06"),
+    { type: "edge_stops", reason: EDGE_STOPS_REASON },
+    CONFIG,
+  );
+  // Закрыт сам день 2 и весь день 3; открытие — 08.10 в 07:00 МСК (04:00Z).
+  assert.deepEqual(dayTwoBlock?.until, new Date("2026-10-08T04:00:00Z"));
+
+  // Четвёртый день серии: предыдущий день СО СДЕЛКАМИ — это день 2, его крайняя — стоп.
+  assert.deepEqual(computeEdgeStopsTrigger(days, "2026-10-08"), { dayKey: "2026-10-08" });
+  const dayFourBlock = buildStreakDayOffBlock(
+    new Date("2026-10-08T09:00:00Z"),
+    computeEdgeStopsTrigger(days, "2026-10-08"),
+    { type: "edge_stops", reason: EDGE_STOPS_REASON },
+    CONFIG,
+  );
+  // Закрыт день 4 и весь день 5; открытие — 10.10 в 07:00 МСК.
+  assert.deepEqual(dayFourBlock?.until, new Date("2026-10-10T04:00:00Z"));
+});
+
+test("правило #21: тейк первой сделкой после выходного обрывает серию", () => {
+  const days = [day("2026-10-05", "tp", "sl"), day("2026-10-06", "sl"), day("2026-10-08", "tp", "sl")];
+  assert.equal(computeEdgeStopsTrigger(days, "2026-10-08"), null);
+});
+
 // --- Блокировка: день закрыт + следующий выходной ---
 
 test("блок: действует до сброса ПОСЛЕзавтрашнего дня, потом исчезает", () => {
