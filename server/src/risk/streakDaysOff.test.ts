@@ -11,6 +11,16 @@ import {
 
 const CONFIG = { resetHour: 7, tzOffsetMinutes: 180 };
 
+/**
+ * Дата включения для сценариев: правила не смотрят на сделки до STREAK_RULES_SINCE_DAY
+ * (реальная дата — 17.11.2026), а сценарии написаны на октябрьских числах. Отдельные
+ * тесты на отсечку — в конце файла, на настоящей константе.
+ */
+const SINCE = "2026-10-01";
+const takeTrigger = (days: ReturnType<typeof day>[]) => computeTakeStreakTrigger(days, SINCE);
+const edgeTrigger = (days: ReturnType<typeof day>[], todayKey: string) =>
+  computeEdgeStopsTrigger(days, todayKey, SINCE);
+
 function day(dayKey: string, ...outcomes: TradeOutcome[]) {
   return { dayKey, outcomes };
 }
@@ -19,60 +29,60 @@ function day(dayKey: string, ...outcomes: TradeOutcome[]) {
 
 test("правило #20: пятый тейк подряд даёт срабатывание в свой день", () => {
   const days = [day("2026-10-05", "tp", "tp", "tp"), day("2026-10-06", "tp", "tp")];
-  assert.deepEqual(computeTakeStreakTrigger(days), { dayKey: "2026-10-06" });
+  assert.deepEqual(takeTrigger(days), { dayKey: "2026-10-06" });
 });
 
 test("правило #20: четыре тейка — не срабатывает", () => {
-  assert.equal(computeTakeStreakTrigger([day("2026-10-05", "tp", "tp", "tp", "tp")]), null);
+  assert.equal(takeTrigger([day("2026-10-05", "tp", "tp", "tp", "tp")]), null);
 });
 
 test("правило #20: стоп обрывает серию", () => {
   const days = [day("2026-10-05", "tp", "tp", "tp", "sl"), day("2026-10-06", "tp", "tp", "tp", "tp")];
-  assert.equal(computeTakeStreakTrigger(days), null);
+  assert.equal(takeTrigger(days), null);
 });
 
 test("правило #20: безубыток и прочие закрытия серию не обрывают и не считаются", () => {
   const days = [day("2026-10-05", "tp", "tp", "be", "tp"), day("2026-10-06", "other", "tp", "tp")];
-  assert.deepEqual(computeTakeStreakTrigger(days), { dayKey: "2026-10-06" });
+  assert.deepEqual(takeTrigger(days), { dayKey: "2026-10-06" });
 });
 
 test("правило #20: после срабатывания серия считается заново («каждый раз»)", () => {
   // 5 тейков → срабатывание; дальше 4 тейка — нового срабатывания ещё нет.
   const nine = [day("2026-10-05", "tp", "tp", "tp", "tp", "tp", "tp", "tp", "tp", "tp")];
-  assert.deepEqual(computeTakeStreakTrigger(nine), { dayKey: "2026-10-05" });
+  assert.deepEqual(takeTrigger(nine), { dayKey: "2026-10-05" });
   // Десятый тейк — второе срабатывание, день его же.
   const ten = [day("2026-10-05", ...Array<TradeOutcome>(10).fill("tp"))];
-  assert.deepEqual(computeTakeStreakTrigger(ten), { dayKey: "2026-10-05" });
+  assert.deepEqual(takeTrigger(ten), { dayKey: "2026-10-05" });
 });
 
 // --- Правило #21: стопы на стыке дней ---
 
 test("правило #21: крайний стоп вчера и первый стоп сегодня — срабатывает", () => {
   const days = [day("2026-10-05", "tp", "sl"), day("2026-10-06", "sl")];
-  assert.deepEqual(computeEdgeStopsTrigger(days, "2026-10-06"), { dayKey: "2026-10-06" });
+  assert.deepEqual(edgeTrigger(days, "2026-10-06"), { dayKey: "2026-10-06" });
 });
 
 test("правило #21: предыдущий день торговли ищется по сделкам, а не по календарю", () => {
   // Между днями разрыв (выходной/паузы) — считается последний день СО СДЕЛКАМИ.
   const days = [day("2026-10-03", "sl"), day("2026-10-06", "sl", "tp")];
-  assert.deepEqual(computeEdgeStopsTrigger(days, "2026-10-06"), { dayKey: "2026-10-06" });
+  assert.deepEqual(edgeTrigger(days, "2026-10-06"), { dayKey: "2026-10-06" });
 });
 
 test("правило #21: не срабатывает, если край — не стоп", () => {
   // Вчера закончили тейком.
   assert.equal(
-    computeEdgeStopsTrigger([day("2026-10-05", "sl", "tp"), day("2026-10-06", "sl")], "2026-10-06"),
+    edgeTrigger([day("2026-10-05", "sl", "tp"), day("2026-10-06", "sl")], "2026-10-06"),
     null,
   );
   // Сегодня первая — безубыток, стоп лишь второй.
   assert.equal(
-    computeEdgeStopsTrigger([day("2026-10-05", "sl"), day("2026-10-06", "be", "sl")], "2026-10-06"),
+    edgeTrigger([day("2026-10-05", "sl"), day("2026-10-06", "be", "sl")], "2026-10-06"),
     null,
   );
   // Первого дня торговли вообще не было.
-  assert.equal(computeEdgeStopsTrigger([day("2026-10-06", "sl")], "2026-10-06"), null);
+  assert.equal(edgeTrigger([day("2026-10-06", "sl")], "2026-10-06"), null);
   // Сегодня сделок ещё нет.
-  assert.equal(computeEdgeStopsTrigger([day("2026-10-05", "sl")], "2026-10-06"), null);
+  assert.equal(edgeTrigger([day("2026-10-05", "sl")], "2026-10-06"), null);
 });
 
 test("правило #21: серия по дням пользователя — 2-й день блок, 3-й выходной, стоп в 4-й день даёт 5-й выходной", () => {
@@ -84,10 +94,10 @@ test("правило #21: серия по дням пользователя — 
   const days = [day("2026-10-05", "tp", "sl"), day("2026-10-06", "sl"), day("2026-10-08", "sl")];
 
   // Второй день серии: срабатывание.
-  assert.deepEqual(computeEdgeStopsTrigger(days.slice(0, 2), "2026-10-06"), { dayKey: "2026-10-06" });
+  assert.deepEqual(edgeTrigger(days.slice(0, 2), "2026-10-06"), { dayKey: "2026-10-06" });
   const dayTwoBlock = buildStreakDayOffBlock(
     new Date("2026-10-06T09:00:00Z"),
-    computeEdgeStopsTrigger(days.slice(0, 2), "2026-10-06"),
+    edgeTrigger(days.slice(0, 2), "2026-10-06"),
     { type: "edge_stops", reason: EDGE_STOPS_REASON },
     CONFIG,
   );
@@ -95,10 +105,10 @@ test("правило #21: серия по дням пользователя — 
   assert.deepEqual(dayTwoBlock?.until, new Date("2026-10-08T04:00:00Z"));
 
   // Четвёртый день серии: предыдущий день СО СДЕЛКАМИ — это день 2, его крайняя — стоп.
-  assert.deepEqual(computeEdgeStopsTrigger(days, "2026-10-08"), { dayKey: "2026-10-08" });
+  assert.deepEqual(edgeTrigger(days, "2026-10-08"), { dayKey: "2026-10-08" });
   const dayFourBlock = buildStreakDayOffBlock(
     new Date("2026-10-08T09:00:00Z"),
-    computeEdgeStopsTrigger(days, "2026-10-08"),
+    edgeTrigger(days, "2026-10-08"),
     { type: "edge_stops", reason: EDGE_STOPS_REASON },
     CONFIG,
   );
@@ -108,7 +118,7 @@ test("правило #21: серия по дням пользователя — 
 
 test("правило #21: тейк первой сделкой после выходного обрывает серию", () => {
   const days = [day("2026-10-05", "tp", "sl"), day("2026-10-06", "sl"), day("2026-10-08", "tp", "sl")];
-  assert.equal(computeEdgeStopsTrigger(days, "2026-10-08"), null);
+  assert.equal(edgeTrigger(days, "2026-10-08"), null);
 });
 
 // --- Блокировка: день закрыт + следующий выходной ---
@@ -146,4 +156,28 @@ test("блок: без срабатывания — null; тексты поме�
   );
   assert.ok(TAKE_STREAK_REASON.length <= 60);
   assert.ok(EDGE_STOPS_REASON.length <= 60);
+});
+
+// --- Отсечка по дате включения правил (замечание пользователя от 17.11.2026) ---
+
+test("правила не срабатывают задним числом: сделки до даты включения не считаются", () => {
+  // Серия сложилась ДО включения правил (16.11 — крайний стоп, 17.11 — первый стоп):
+  // день до включения «предыдущим днём торговли» не считается.
+  const edge = [day("2026-11-16", "tp", "sl"), day("2026-11-17", "sl")];
+  assert.equal(computeEdgeStopsTrigger(edge, "2026-11-17"), null);
+
+  // Тейки до даты включения в серию не входят: 4 старых + 1 новый — не пять подряд.
+  const takes = [day("2026-11-16", "tp", "tp", "tp", "tp"), day("2026-11-17", "tp")];
+  assert.equal(computeTakeStreakTrigger(takes), null);
+});
+
+test("с даты включения правила работают как обычно", () => {
+  assert.deepEqual(
+    computeEdgeStopsTrigger([day("2026-11-17", "tp", "sl"), day("2026-11-18", "sl")], "2026-11-18"),
+    { dayKey: "2026-11-18" },
+  );
+  assert.deepEqual(
+    computeTakeStreakTrigger([day("2026-11-17", "tp", "tp", "tp"), day("2026-11-18", "tp", "tp")]),
+    { dayKey: "2026-11-18" },
+  );
 });

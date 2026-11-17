@@ -41,6 +41,20 @@ export type OutcomeDay = {
 /** Сколько тейков подряд дают выходной (правило #20). */
 export const TAKE_STREAK_LENGTH = 5;
 
+/**
+ * Торговый день, с которого правила #20/#21 начали действовать. Более ранние сделки в
+ * сериях не участвуют: в день выката правила сработали задним числом — серия, сложившаяся
+ * ДО их появления (крайний стоп накануне + первый стоп в день выката), мгновенно закрыла
+ * день и назначила выходной, которого пользователь не просил (замечание от 17.11.2026).
+ * Правило должно начинать жизнь с чистого листа, как и любое новое правило риск-плана.
+ */
+export const STREAK_RULES_SINCE_DAY = "2026-11-17";
+
+/** Дни с даты включения правил; ключи — ISO (YYYY-MM-DD), сравнение строк корректно. */
+function sinceActivation(days: OutcomeDay[], sinceDayKey: string): OutcomeDay[] {
+  return days.filter((day) => day.dayKey >= sinceDayKey);
+}
+
 /** День, в который правило сработало в последний раз, или null — не срабатывало. */
 export type StreakTrigger = { dayKey: string } | null;
 
@@ -50,10 +64,13 @@ export type StreakTrigger = { dayKey: string } | null;
  * серия начинается заново. Возвращается ПОСЛЕДНЕЕ срабатывание: прежние и так истекли
  * по сроку блокировки.
  */
-export function computeTakeStreakTrigger(days: OutcomeDay[]): StreakTrigger {
+export function computeTakeStreakTrigger(
+  days: OutcomeDay[],
+  sinceDayKey: string = STREAK_RULES_SINCE_DAY,
+): StreakTrigger {
   let streak = 0;
   let trigger: StreakTrigger = null;
-  for (const day of days) {
+  for (const day of sinceActivation(days, sinceDayKey)) {
     for (const outcome of day.outcomes) {
       if (outcome === "sl") {
         streak = 0;
@@ -74,15 +91,21 @@ export function computeTakeStreakTrigger(days: OutcomeDay[]): StreakTrigger {
  * Правило #21: сработало ли «стопы на стыке дней» СЕГОДНЯ. Триггер всегда привязан к
  * текущему дню: прошлые стыки уже отжили свои блокировки, пересчитывать их незачем.
  */
-export function computeEdgeStopsTrigger(days: OutcomeDay[], todayKey: string): StreakTrigger {
-  const todayIndex = days.findIndex((day) => day.dayKey === todayKey);
+export function computeEdgeStopsTrigger(
+  days: OutcomeDay[],
+  todayKey: string,
+  sinceDayKey: string = STREAK_RULES_SINCE_DAY,
+): StreakTrigger {
+  const visible = sinceActivation(days, sinceDayKey);
+  const todayIndex = visible.findIndex((day) => day.dayKey === todayKey);
   if (todayIndex === -1) return null;
-  const today = days[todayIndex]!;
+  const today = visible[todayIndex]!;
   if (today.outcomes[0] !== "sl") return null;
 
   // Предыдущий день С СДЕЛКАМИ: toOutcomeDays не создаёт пустых дней, поэтому это
-  // просто предыдущий элемент списка.
-  const previous = todayIndex > 0 ? days[todayIndex - 1]! : null;
+  // просто предыдущий элемент списка. День до включения правила «предыдущим» не
+  // считается — серия не может начаться раньше самого правила.
+  const previous = todayIndex > 0 ? visible[todayIndex - 1]! : null;
   if (!previous || previous.outcomes.length === 0) return null;
   if (previous.outcomes[previous.outcomes.length - 1] !== "sl") return null;
 
