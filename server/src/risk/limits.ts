@@ -36,6 +36,8 @@ export type BlockType =
   | "daily_take_profits"
   /** За день есть и тейк, и стоп — смешанный день закрыт (правило #15). */
   | "daily_mixed_outcomes"
+  /** Первая сделка дня закрыта тейком ≥ 2R — день закрыт (правило #22). */
+  | "first_strong_tp"
   /** Пять тейков подряд — день закрыт и следующий выходной (правило #20, risk/streakDaysOff.ts). */
   | "take_streak"
   /** Крайняя сделка вчера и первая сегодня — обе по стопу: день закрыт и следующий выходной (правило #21). */
@@ -231,6 +233,29 @@ const STRONG_TP_TOLERANCE = 0.2;
 /** Тейк считается «полным» (1:2+), если resultR почти достиг STRONG_TP_MIN_R. */
 export function isStrongTakeProfit(resultR: number): boolean {
   return resultR >= STRONG_TP_MIN_R - STRONG_TP_TOLERANCE;
+}
+
+/**
+ * Правило #22 (запрос пользователя от 18.11.2026): ПЕРВАЯ сделка дня закрыта тейком
+ * ≥ 2R — торговля закрыта до следующего дня. Это возвращение отменённого правила #6
+ * («тейк ≥ 2R закрывает день», жило до 25.10.2026) в узкой форме: решает только первая
+ * сделка — полный тейк второй или третьей сделкой день не закрывает. Порог тот же, что
+ * был у #6 и остался в статистике: isStrongTakeProfit, 2R с допуском на комиссии.
+ * Смысл: начать день с полного тейка — лучший его финал, дальше можно не доказывать.
+ */
+export function evaluateFirstTradeStrongTpBlock(
+  now: Date,
+  /** Первая закрытая сделка текущего торгового дня; null — сделок сегодня ещё нет. */
+  firstTrade: { outcome: TradeOutcome; resultR: number } | null,
+  config: Pick<RiskLimitsConfig, "resetHour" | "tzOffsetMinutes">,
+): Block | null {
+  if (firstTrade === null) return null;
+  if (firstTrade.outcome !== "tp" || !isStrongTakeProfit(firstTrade.resultR)) return null;
+  return {
+    type: "first_strong_tp",
+    reason: "Тейк 2R первой сделкой — на сегодня достаточно",
+    until: getNextResetAt(now, config.resetHour, config.tzOffsetMinutes),
+  };
 }
 
 /**
