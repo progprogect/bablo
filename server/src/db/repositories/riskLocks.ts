@@ -13,6 +13,7 @@ const MANAGED_TYPES: BlockType[] = [
   "edge_stops",
   "daily_take_profits",
   "daily_mixed_outcomes",
+  "first_strong_tp",
   "asset_sl_today",
 ];
 

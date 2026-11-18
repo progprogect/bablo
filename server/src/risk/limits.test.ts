@@ -8,6 +8,7 @@ import {
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
+  evaluateFirstTradeStrongTpBlock,
   isGlobalBlock,
   isStrongTakeProfit,
   isTpRatioAllowed,
@@ -496,4 +497,38 @@ test("buildDayOffBlock: рабочие дни и битый ключ — null", 
   assert.equal(buildDayOffBlock(new Date("2026-10-12T09:00:00Z"), "2026-10-12", CONFIG), null);
   assert.equal(buildDayOffBlock(new Date("2026-10-17T09:00:00Z"), "2026-10-17", CONFIG), null);
   assert.equal(buildDayOffBlock(new Date("2026-10-09T09:00:00Z"), "не дата", CONFIG), null);
+});
+
+// --- Правило #22 (18.11.2026): первая сделка дня — тейк ≥ 2R → день закрыт ---
+
+test("правило #22: тейк 2R первой сделкой закрывает день до сброса", () => {
+  const block = evaluateFirstTradeStrongTpBlock(
+    new Date("2026-11-18T09:00:00Z"),
+    { outcome: "tp", resultR: 2.1 },
+    CONFIG,
+  );
+  assert.ok(block);
+  assert.equal(block.type, "first_strong_tp");
+  assert.equal(block.reason, "Тейк 2R первой сделкой — на сегодня достаточно");
+  // Сброс дня — 07:00 МСК следующего дня (04:00 UTC): «до следующего дня», без выходного.
+  assert.deepEqual(block.until, new Date("2026-11-19T04:00:00Z"));
+  assert.ok(block.reason.length <= 60);
+});
+
+test("правило #22: допуск как у статистики — 1.85R это тоже полный тейк", () => {
+  const block = evaluateFirstTradeStrongTpBlock(
+    new Date("2026-11-18T09:00:00Z"),
+    { outcome: "tp", resultR: 1.85 },
+    CONFIG,
+  );
+  assert.ok(block);
+});
+
+test("правило #22: обычный тейк, стоп или отсутствие сделок день не закрывают", () => {
+  const now = new Date("2026-11-18T09:00:00Z");
+  assert.equal(evaluateFirstTradeStrongTpBlock(now, { outcome: "tp", resultR: 1 }, CONFIG), null);
+  assert.equal(evaluateFirstTradeStrongTpBlock(now, { outcome: "sl", resultR: -1 }, CONFIG), null);
+  // Исход не «tp» (безубыток с плюсом) — не считается, даже при большом R.
+  assert.equal(evaluateFirstTradeStrongTpBlock(now, { outcome: "be", resultR: 2.5 }, CONFIG), null);
+  assert.equal(evaluateFirstTradeStrongTpBlock(now, null, CONFIG), null);
 });

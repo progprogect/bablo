@@ -29,6 +29,7 @@ import {
   evaluateAssetSlBlocks,
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
+  evaluateFirstTradeStrongTpBlock,
   isGlobalBlock,
   isStrongTakeProfit,
   MAX_RR_AFTER_STOP,
@@ -373,7 +374,8 @@ export async function recordTradeClose(input: {
   });
 
   const slSymbols = await listDaySlSymbols(dayKey, settings.resetHour, settings.tzOffsetMinutes);
-  const historyDays = toOutcomeDays(await listAllClosedTrades(), settings);
+  const allClosed = await listAllClosedTrades();
+  const historyDays = toOutcomeDays(allClosed, settings);
   const blocks = buildManagedBlocks({
     now: input.closedAt,
     counters: {
@@ -384,6 +386,7 @@ export async function recordTradeClose(input: {
     lastTradeClosedAt: input.closedAt,
     lastTradeOutcome: outcome,
     historyDays,
+    firstTradeToday: firstTradeOfDay(allClosed, dayKey, settings),
     slSymbols,
     settings,
   });
@@ -405,6 +408,37 @@ function resultRForDailyStats(
     return Math.max(resultR, dailyProfitLimitR);
   }
   return resultR;
+}
+
+/**
+ * Первая закрытая сделка торгового дня `dayKey` — вход правила #22 («тейк 2R первой
+ * сделкой закрывает день»). null — сделок в этот день ещё нет.
+ */
+function firstTradeOfDay(
+  trades: {
+    closedAt: Date | string | null;
+    closeReason: string | null;
+    entryPrice: string | null;
+    slPrice: string | null;
+    side: string;
+    resultR: string | null;
+    statsOutcome: string | null;
+  }[],
+  dayKey: string,
+  settings: { resetHour: number; tzOffsetMinutes: number },
+): { outcome: TradeOutcome; resultR: number } | null {
+  let first: { closedAtMs: number; outcome: TradeOutcome; resultR: number } | null = null;
+  for (const trade of trades) {
+    if (!trade.closedAt) continue;
+    const closedAt = new Date(trade.closedAt);
+    const closedAtMs = closedAt.getTime();
+    if (!Number.isFinite(closedAtMs)) continue;
+    if (getTradingDayKey(closedAt, settings.resetHour, settings.tzOffsetMinutes) !== dayKey) continue;
+    if (first === null || closedAtMs < first.closedAtMs) {
+      first = { closedAtMs, outcome: outcomeOfTrade(trade), resultR: Number(trade.resultR) || 0 };
+    }
+  }
+  return first ? { outcome: first.outcome, resultR: first.resultR } : null;
 }
 
 /**
@@ -459,6 +493,8 @@ function buildManagedBlocks(input: {
   lastTradeOutcome: TradeOutcome | null;
   /** Вся история закрытых сделок по дням (toOutcomeDays) — вход правил #20 и #21. */
   historyDays: OutcomeDay[];
+  /** Первая закрытая сделка текущего дня — вход правила #22; null — сделок ещё нет. */
+  firstTradeToday: { outcome: TradeOutcome; resultR: number } | null;
   slSymbols: string[];
   settings: RiskSettingsLike;
 }): Block[] {
@@ -485,6 +521,15 @@ function buildManagedBlocks(input: {
   );
   if (edgeStopsBlock) {
     blocks.push(edgeStopsBlock);
+  }
+  // Правило #22: первая сделка дня закрыта тейком ≥ 2R — день закрыт.
+  const firstStrongTpBlock = evaluateFirstTradeStrongTpBlock(
+    input.now,
+    input.firstTradeToday,
+    input.settings,
+  );
+  if (firstStrongTpBlock) {
+    blocks.push(firstStrongTpBlock);
   }
   const cooldownBlock = evaluateCooldownBlock(
     input.now,
@@ -607,6 +652,7 @@ export async function resyncTradingDayRisk(now: Date = new Date()): Promise<{
     lastTradeClosedAt: lastClosedAt ? new Date(lastClosedAt) : null,
     lastTradeOutcome: lastTrade ? outcomeOfTrade(lastTrade) : null,
     historyDays,
+    firstTradeToday: firstTradeOfDay(allClosed, dayKey, settings),
     slSymbols,
     settings,
   });
