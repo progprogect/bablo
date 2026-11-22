@@ -23,6 +23,16 @@ export type TradeForOutcome = {
    * значит она тейк везде — в статистике, инсайтах и дневных лимитах.
    */
   statsOutcome?: string | null;
+  /**
+   * Отметка «как закрылась бы, если не трогать» у сделок с интуитивным вмешательством
+   * (закрытых мимо своих TP/SL): "tp" | "sl". Слабее statsOutcome. Учитывается в
+   * статистике и отображении — часы, месяцы, журнал, история (просьба пользователя от
+   * 22.11.2026: «чтобы в статистике часов правильно посчиталось»). Риск-движку НЕ
+   * передаётся (risk/service.ts → outcomeOfTrade): дневные лимиты и серии считают
+   * фактические стопы/тейки, а не «как было бы», иначе отметка задним числом закрывала
+   * бы дни.
+   */
+  intuitiveOutcome?: string | null;
 };
 
 /** Значения, которые допустимо задать вручную в админке. */
@@ -74,6 +84,8 @@ export function isBreakevenClose(trade: TradeForOutcome, resultR: number): boole
 /**
  * Исход сделки для статистики:
  * - ручной оверрайд из админки (`statsOutcome`) — главнее всего;
+ * - отметка «как закрылась бы» (`intuitiveOutcome`) — для закрытых мимо своих TP/SL:
+ *   исход назначает пользователь, сильнее авто-правил ниже (включая БУ), см. поле выше;
  * - `tp` — закрытие по тейку ИЛИ по стопу, уведённому в прибыль (см. isProfitLockedStop);
  * - `be` — результат в пределах ±0.05R (стоп на входе / ручное закрытие в ноль);
  * - `sl` — реальный стоп: план защиты сработал в убыток;
@@ -82,6 +94,13 @@ export function isBreakevenClose(trade: TradeForOutcome, resultR: number): boole
  */
 export function resolveTradeOutcome(trade: TradeForOutcome, resultR: number): TradeOutcome {
   if (isManualOutcome(trade.statsOutcome)) return trade.statsOutcome;
+  if (
+    trade.closeReason !== "tp" &&
+    trade.closeReason !== "sl" &&
+    (trade.intuitiveOutcome === "tp" || trade.intuitiveOutcome === "sl")
+  ) {
+    return trade.intuitiveOutcome;
+  }
   if (isBreakevenClose(trade, resultR)) return "be";
   if (trade.closeReason === "tp") return "tp";
   if (trade.closeReason === "sl") return isProfitLockedStop(trade, resultR) ? "tp" : "sl";

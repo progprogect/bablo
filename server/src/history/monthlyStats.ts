@@ -42,6 +42,8 @@ export type MonthlyStatTradeInput = {
   side?: TradeSide | string | null;
   /** Ручной оверрайд исхода из админки (тейк/стоп/БУ) — см. history/outcome.ts. */
   statsOutcome?: string | null;
+  /** Отметка «как закрылась бы» у интуитивных сделок — учитывается как исход (history/outcome.ts). */
+  intuitiveOutcome?: string | null;
   quantity?: number | null;
   partialTpPrice?: number | null;
   partialTpFilledAt?: Date | string | null;
@@ -75,6 +77,7 @@ export function toMonthlyStatInput(row: {
   nightTpAppliedAt: Date | null;
   statsRrPreset: string | null;
   statsOutcome: string | null;
+  intuitiveOutcome: string | null;
 }): MonthlyStatTradeInput {
   return {
     openedAt: row.openedAt,
@@ -92,6 +95,7 @@ export function toMonthlyStatInput(row: {
     nightTpAppliedAt: row.nightTpAppliedAt,
     statsRrPreset: row.statsRrPreset,
     statsOutcome: row.statsOutcome,
+    intuitiveOutcome: row.intuitiveOutcome,
   };
 }
 
@@ -213,6 +217,7 @@ function toOutcomeInput(trade: MonthlyStatTradeInput): TradeForOutcome {
     slPrice: trade.slPrice ?? null,
     side: trade.side ?? "",
     statsOutcome: trade.statsOutcome ?? null,
+    intuitiveOutcome: trade.intuitiveOutcome ?? null,
   };
 }
 

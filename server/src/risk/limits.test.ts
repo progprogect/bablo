@@ -9,6 +9,7 @@ import {
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
   evaluateFirstTradeStrongTpBlock,
+  evaluateSundayFirstStopBlock,
   isGlobalBlock,
   isStrongTakeProfit,
   isTpRatioAllowed,
@@ -531,4 +532,57 @@ test("правило #22: обычный тейк, стоп или отсутс�
   // Исход не «tp» (безубыток с плюсом) — не считается, даже при большом R.
   assert.equal(evaluateFirstTradeStrongTpBlock(now, { outcome: "be", resultR: 2.5 }, CONFIG), null);
   assert.equal(evaluateFirstTradeStrongTpBlock(now, null, CONFIG), null);
+});
+
+// --- Правило #23 (22.11.2026): стоп первой сделкой в воскресенье → день закрыт ---
+
+test("правило #23: стоп первой сделкой в воскресенье закрывает день до сброса", () => {
+  // 2026-11-29 — воскресенье (уже после отсечки включения); 12:00 МСК = 09:00 UTC.
+  const block = evaluateSundayFirstStopBlock(
+    new Date("2026-11-29T09:00:00Z"),
+    { outcome: "sl" },
+    CONFIG,
+    "2026-11-29",
+  );
+  assert.ok(block);
+  assert.equal(block.type, "sunday_first_stop");
+  assert.equal(block.reason, "Стоп первой сделкой в воскресенье — день закрыт");
+  // «На день»: до сброса 07:00 МСК понедельника (04:00 UTC), без дополнительного выходного.
+  assert.deepEqual(block.until, new Date("2026-11-30T04:00:00Z"));
+  assert.ok(block.reason.length <= 60);
+});
+
+test("правило #23: тейк/БУ первой сделкой или отсутствие сделок день не закрывают", () => {
+  const now = new Date("2026-11-29T09:00:00Z");
+  assert.equal(evaluateSundayFirstStopBlock(now, { outcome: "tp" }, CONFIG, "2026-11-29"), null);
+  assert.equal(evaluateSundayFirstStopBlock(now, { outcome: "be" }, CONFIG, "2026-11-29"), null);
+  assert.equal(evaluateSundayFirstStopBlock(now, { outcome: "other" }, CONFIG, "2026-11-29"), null);
+  assert.equal(evaluateSundayFirstStopBlock(now, null, CONFIG, "2026-11-29"), null);
+});
+
+test("правило #23: действует только в воскресенье", () => {
+  // 2026-11-28 — суббота: там день закрывает любой стоп (правило #17), но не это правило.
+  assert.equal(
+    evaluateSundayFirstStopBlock(
+      new Date("2026-11-28T09:00:00Z"),
+      { outcome: "sl" },
+      CONFIG,
+      "2026-11-28",
+    ),
+    null,
+  );
+});
+
+test("правило #23: не задним числом — воскресенье до даты включения не считается", () => {
+  // 22.11.2026 — воскресенье самого выката: стоп, сделанный до появления правила, не
+  // должен закрыть остаток дня (та же логика, что отсечка правил #20/#21).
+  assert.equal(
+    evaluateSundayFirstStopBlock(
+      new Date("2026-11-22T09:00:00Z"),
+      { outcome: "sl" },
+      CONFIG,
+      "2026-11-22",
+    ),
+    null,
+  );
 });

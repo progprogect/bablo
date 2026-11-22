@@ -38,6 +38,8 @@ export type BlockType =
   | "daily_mixed_outcomes"
   /** Первая сделка дня закрыта тейком ≥ 2R — день закрыт (правило #22). */
   | "first_strong_tp"
+  /** Первая сделка воскресенья закрыта стопом — день закрыт (правило #23). */
+  | "sunday_first_stop"
   /** Пять тейков подряд — день закрыт и следующий выходной (правило #20, risk/streakDaysOff.ts). */
   | "take_streak"
   /** Крайняя сделка вчера и первая сегодня — обе по стопу: день закрыт и следующий выходной (правило #21). */
@@ -254,6 +256,39 @@ export function evaluateFirstTradeStrongTpBlock(
   return {
     type: "first_strong_tp",
     reason: "Тейк 2R первой сделкой — на сегодня достаточно",
+    until: getNextResetAt(now, config.resetHour, config.tzOffsetMinutes),
+  };
+}
+
+/**
+ * Дата включения правила #23: выкат пришёлся на само воскресенье 22.11.2026, и без
+ * отсечки правило закрыло бы остаток этого дня задним числом — по стопу, сделанному до
+ * появления правила (так уже было с правилами #20/#21, замечание пользователя от
+ * 17.11.2026). Практически правило начинает жизнь со следующего воскресенья, 29.11.2026.
+ */
+export const SUNDAY_FIRST_STOP_SINCE_DAY = "2026-11-23";
+
+/**
+ * Правило #23 (запрос пользователя от 22.11.2026): в воскресенье ПЕРВАЯ сделка дня
+ * закрыта стопом — торговля закрыта до следующего дня. Решает только первая сделка:
+ * стоп второй или третьей день этим правилом не закрывает (в отличие от субботы, где
+ * день закрывает любой стоп, правило #17). Исход — фактический: стоп, уведённый в
+ * прибыль, — тейк, а отметка «как закрылась бы» сюда не доходит (см. history/outcome.ts).
+ */
+export function evaluateSundayFirstStopBlock(
+  now: Date,
+  /** Первая закрытая сделка текущего торгового дня; null — сделок сегодня ещё нет. */
+  firstTrade: { outcome: TradeOutcome } | null,
+  config: Pick<RiskLimitsConfig, "resetHour" | "tzOffsetMinutes">,
+  /** Ключ текущего торгового дня — от него считаются день недели и отсечка включения. */
+  dayKey: string,
+): Block | null {
+  if (dayKey < SUNDAY_FIRST_STOP_SINCE_DAY) return null;
+  if (weekdayOfDayKey(dayKey) !== 0) return null;
+  if (firstTrade === null || firstTrade.outcome !== "sl") return null;
+  return {
+    type: "sunday_first_stop",
+    reason: "Стоп первой сделкой в воскресенье — день закрыт",
     until: getNextResetAt(now, config.resetHour, config.tzOffsetMinutes),
   };
 }

@@ -55,6 +55,7 @@ export function toTradeCard(trade: Trade, categoryId: number | null): JournalTra
       slPrice: geo.slPrice,
       side: trade.side,
       statsOutcome: trade.statsOutcome,
+      intuitiveOutcome: trade.intuitiveOutcome,
     },
     resultR ?? 0,
   );
