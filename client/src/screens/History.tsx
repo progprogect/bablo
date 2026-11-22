@@ -155,15 +155,15 @@ export function History() {
 
           {/* Фильтр «Интуитивное вмешательство» (запрос пользователя от 22.11.2026):
               сделки, закрытые мимо своих SL/TP — вручную на бирже или кнопкой, ещё до
-              того как цена дошла до тейка/стопа. Работает вместе с фильтром часа. */}
-          <div className="mx-4">
+              того как цена дошла до тейка/стопа. Работает вместе с фильтром часа.
+              Не кнопка, а кликабельный текст как «показать все» (просьба пользователя
+              вечером того же дня); розовый — цвет интуитивных карточек в списке. */}
+          <div className="mx-4 text-right">
             <button
               type="button"
               onClick={() => setIntuitiveFilter((current) => !current)}
-              className={`w-full rounded-xl border py-2 text-sm font-medium ${
-                intuitiveFilter
-                  ? "border-pink-300 bg-pink-50 text-pink-700"
-                  : "border-line bg-card text-slate-600"
+              className={`text-xs font-medium underline-offset-2 hover:underline ${
+                intuitiveFilter ? "text-pink-700 underline" : "text-pink-600"
               }`}
             >
               Интуитивное вмешательство{intuitiveFilter ? ` · ${total}` : ""}
