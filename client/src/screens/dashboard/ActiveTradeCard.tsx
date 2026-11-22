@@ -154,9 +154,16 @@ export function ActiveTradeCard({
   // и позиция реально открыта.
   const showClosePartialButton = isFullyConfigured && !trade.positionFlat && !trade.partialTpFilledAt;
   const [isClosingPartial, setIsClosingPartial] = useState(false);
+  /**
+   * Инлайн-подтверждение «Вы уверены? да / нет» вместо window.confirm (просьба
+   * пользователя от 22.11.2026): системный диалог iOS с «ОК/Отмена» выбивается из
+   * приложения, а свой вопрос появляется на месте нажатой строки — вторая строка
+   * остаётся видна, и понятно, что именно подтверждаешь.
+   */
+  const [confirmingAction, setConfirmingAction] = useState<"partial" | "close" | null>(null);
 
   async function handleClosePartial() {
-    if (!window.confirm("Закрыть 70% по рынку и перенести стоп остатка в безубыток?")) return;
+    setConfirmingAction(null);
     setCloseError(null);
     setIsClosingPartial(true);
     try {
@@ -171,7 +178,7 @@ export function ActiveTradeCard({
   }
 
   async function handleClose() {
-    if (!window.confirm("Закрыть сделку по рынку прямо сейчас?")) return;
+    setConfirmingAction(null);
     setCloseError(null);
     setIsClosing(true);
     try {
@@ -270,26 +277,69 @@ export function ActiveTradeCard({
         />
       )}
 
-      {showClosePartialButton && (
-        <button
-          type="button"
-          disabled={isClosingPartial || isClosing}
-          onClick={handleClosePartial}
-          className="rounded-xl border border-line py-2 text-sm font-medium text-accent disabled:opacity-50"
-        >
-          {isClosingPartial ? "Закрываю 70%…" : "Закрыть 70% по рынку и стоп на Б/У"}
-        </button>
-      )}
-      {showCloseButton && (
-        <button
-          type="button"
-          disabled={isClosing || isClosingPartial}
-          onClick={handleClose}
-          className="rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
-        >
-          {isClosing ? "Закрываю…" : "Закрыть сделку"}
-        </button>
-      )}
+      {/* Закрытия — кликабельный текст, не крупные кнопки (просьба пользователя от
+          22.11.2026): случайный тап по большой кнопке на боевом счёте страшнее, чем
+          лишний взгляд в поисках строки. Тап заменяет строку вопросом «Вы уверены?». */}
+      {showClosePartialButton &&
+        (confirmingAction === "partial" ? (
+          <p className="py-1 text-center text-sm text-slate-600">
+            Вы уверены?{" "}
+            <button
+              type="button"
+              onClick={handleClosePartial}
+              className="font-medium text-accent underline underline-offset-2"
+            >
+              да
+            </button>
+            <span className="text-slate-400"> / </span>
+            <button
+              type="button"
+              onClick={() => setConfirmingAction(null)}
+              className="font-medium text-slate-500 underline underline-offset-2"
+            >
+              нет
+            </button>
+          </p>
+        ) : (
+          <button
+            type="button"
+            disabled={isClosingPartial || isClosing}
+            onClick={() => setConfirmingAction("partial")}
+            className="py-1 text-center text-sm font-medium text-accent underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {isClosingPartial ? "Закрываю 70%…" : "Закрыть 70% по рынку и стоп на Б/У"}
+          </button>
+        ))}
+      {showCloseButton &&
+        (confirmingAction === "close" ? (
+          <p className="py-1 text-center text-sm text-slate-600">
+            Вы уверены?{" "}
+            <button
+              type="button"
+              onClick={handleClose}
+              className="font-medium text-red-600 underline underline-offset-2"
+            >
+              да
+            </button>
+            <span className="text-slate-400"> / </span>
+            <button
+              type="button"
+              onClick={() => setConfirmingAction(null)}
+              className="font-medium text-slate-500 underline underline-offset-2"
+            >
+              нет
+            </button>
+          </p>
+        ) : (
+          <button
+            type="button"
+            disabled={isClosing || isClosingPartial}
+            onClick={() => setConfirmingAction("close")}
+            className="py-1 text-center text-sm font-medium text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {isClosing ? "Закрываю…" : "Закрыть сделку"}
+          </button>
+        ))}
       {closeError && <p className="text-center text-xs text-red-600">{closeError}</p>}
     </div>
   );
