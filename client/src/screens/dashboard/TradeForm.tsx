@@ -369,9 +369,16 @@ export function TradeForm({
           </p>
           {/* Плечо фиксировано в настройках актива и до входа нигде не показывалось —
               хотя именно от него считается ликвидация ниже по форме. Держим его в паре
-              с планом риска: оба числа задают размер позиции и читаются вместе. */}
+              с планом риска: оба числа задают размер позиции и читаются вместе.
+              Третьим — минимум расстояния до стопа этого актива (просьба пользователя
+              от 22.11.2026): он тоже задаёт вход, и его удобно видеть до нажатия кнопки.
+              Все три — одной строкой, поэтому формулировки короткие: «риск», а не
+              «план риска», и у процента стопа обрезаны хвостовые нули («0,5», не «0,50»). */}
           <p className="mt-1 text-xs text-slate-400">
-            Плечо {leverage}x · план риска {levelRiskUsd} USDT (±{tolerancePctLabel}%)
+            Плечо {leverage}x · риск {levelRiskUsd} USDT (±{tolerancePctLabel}%)
+            {stopDistance?.enabled && stopDistance.minPct !== null
+              ? ` · стоп от ${formatPct(stopDistance.minPct).replace(/,?0+$/, "")}%`
+              : ""}
           </p>
           {blockedReason ? (
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
