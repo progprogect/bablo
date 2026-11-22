@@ -12,6 +12,8 @@ export type InsightTradeInput = {
   side: string;
   /** Ручной оверрайд исхода из админки (тейк/стоп/БУ) — см. history/outcome.ts. */
   statsOutcome?: string | null;
+  /** Отметка «как закрылась бы» у интуитивных сделок — учитывается как исход (history/outcome.ts). */
+  intuitiveOutcome?: string | null;
 };
 
 /**
@@ -82,6 +84,7 @@ export type ClosedTradeRowForInsights = {
   slPrice: string | null;
   side: string;
   statsOutcome: string | null;
+  intuitiveOutcome: string | null;
 };
 
 /** Приведение строки БД ко входу инсайтов — один разбор numeric, одна трактовка. */
@@ -94,6 +97,7 @@ export function toInsightInput(row: ClosedTradeRowForInsights): InsightTradeInpu
     slPrice: row.slPrice !== null ? Number(row.slPrice) : null,
     side: row.side,
     statsOutcome: row.statsOutcome,
+    intuitiveOutcome: row.intuitiveOutcome,
   };
 }
 

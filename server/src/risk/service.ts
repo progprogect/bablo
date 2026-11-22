@@ -30,6 +30,7 @@ import {
   evaluateCooldownBlock,
   evaluateDailyLimitBlocks,
   evaluateFirstTradeStrongTpBlock,
+  evaluateSundayFirstStopBlock,
   isGlobalBlock,
   isStrongTakeProfit,
   MAX_RR_AFTER_STOP,
@@ -57,6 +58,10 @@ function outcomeOfTrade(trade: {
   resultR: string | null;
   statsOutcome: string | null;
 }): TradeOutcome {
+  // intuitiveOutcome сюда НЕ передаётся сознательно: правила риск-движка (лимиты дня,
+  // серии #20/#21, первая сделка #22/#23) считают фактические стопы и тейки. Отметка
+  // «как закрылась бы» — для статистики (history/outcome.ts), иначе она задним числом
+  // закрывала бы дни.
   return resolveTradeOutcome(
     {
       closeReason: trade.closeReason,
@@ -530,6 +535,16 @@ function buildManagedBlocks(input: {
   );
   if (firstStrongTpBlock) {
     blocks.push(firstStrongTpBlock);
+  }
+  // Правило #23: первая сделка воскресенья закрыта стопом — день закрыт.
+  const sundayFirstStopBlock = evaluateSundayFirstStopBlock(
+    input.now,
+    input.firstTradeToday,
+    input.settings,
+    dayKey,
+  );
+  if (sundayFirstStopBlock) {
+    blocks.push(sundayFirstStopBlock);
   }
   const cooldownBlock = evaluateCooldownBlock(
     input.now,

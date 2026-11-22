@@ -14,6 +14,7 @@ function trade(input: {
   slPrice?: number | null;
   side?: string;
   statsOutcome?: string | null;
+  intuitiveOutcome?: string | null;
 }): InsightTradeInput {
   const day = input.day ?? "2026-07-13";
   return {
@@ -25,6 +26,7 @@ function trade(input: {
     slPrice: input.slPrice ?? 90,
     side: input.side ?? "long",
     statsOutcome: input.statsOutcome ?? null,
+    intuitiveOutcome: input.intuitiveOutcome ?? null,
   };
 }
 
@@ -91,4 +93,16 @@ test("computeTradeInsights: ручной оверрайд исхода меня�
     }),
   ];
   assert.deepEqual(computeTradeInsights(trades, TZ).hourlyOutcomes, [{ hour: 7, tpCount: 1, total: 1 }]);
+});
+
+test("computeTradeInsights: отметка «как закрылась бы» делает интуитивную сделку тейком часа", () => {
+  // Просьба пользователя от 22.11.2026: закрыла руками до тейка (+0.5R, «other»), отметила
+  // «по тейку» — в винрейте часа сделка должна считаться тейком.
+  const trades = [
+    trade({ openedHourUtc: 8, closeReason: "manual", resultR: 0.5, intuitiveOutcome: "tp" }),
+    trade({ openedHourUtc: 8, closeReason: "manual", resultR: 0.5, intuitiveOutcome: "sl" }),
+    trade({ openedHourUtc: 8, closeReason: "manual", resultR: 0.5 }),
+  ];
+  // 8:00 UTC = 11:00 МСК; с отметкой «по тейку» — 1 тейк из 3 сделок часа.
+  assert.deepEqual(computeTradeInsights(trades, TZ).hourlyOutcomes, [{ hour: 11, tpCount: 1, total: 3 }]);
 });

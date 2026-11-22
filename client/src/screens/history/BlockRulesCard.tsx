@@ -27,7 +27,8 @@ type Scenario = {
  * #5 и #6 отменены 25.10.2026) — с 06.11.2026 об этом говорит первая строка блока, а не
  * приписка под ним: расклад читается быстрее строкой, как и все остальные. В ПН и СБ
  * строка про один стоп не действует: там день закрывает уже первый стоп, см.
- * WEEKDAY_SCENARIOS и SATURDAY_SCENARIOS; пятница — выходной целиком.
+ * WEEKDAY_SCENARIOS и SATURDAY_SCENARIOS; в ВС день закрывает стоп ПЕРВОЙ сделкой
+ * (SUNDAY_SCENARIOS); пятница — выходной целиком.
  */
 const DAY_SCENARIOS: Scenario[] = [
   {
@@ -105,6 +106,17 @@ const SATURDAY_SCENARIOS: Scenario[] = [
   // сначала что НЕ закрывает день, потом что закрывает.
   { chips: [{ outcome: "tp", label: "Тейк" }], note: "торгуем дальше", blocked: false },
   { chips: [{ outcome: "sl", label: "Стоп" }], note: "стоп торговля", blocked: true },
+];
+
+/**
+ * Правило #23 (запрос пользователя от 22.11.2026): первая сделка воскресенья закрыта
+ * стопом — день закрыт. Решает только первая сделка — этим воскресенье отличается от
+ * субботы, где день закрывает любой стоп. Стоп второй или третьей сделкой живёт по
+ * обычным правилам дня (час паузы / тейк+стоп).
+ */
+const SUNDAY_SCENARIOS: Scenario[] = [
+  { chips: [{ outcome: "tp", label: "Тейк" }], note: "торгуем дальше", blocked: false },
+  { chips: [{ outcome: "sl", label: "Стоп первым" }], note: "стоп торговля", blocked: true },
 ];
 
 const CHIP_STYLES: Record<Outcome, string> = {
@@ -218,6 +230,18 @@ export function BlockRulesCard() {
             <ScenarioRow key={index} scenario={scenario} />
           ))}
         </ul>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-slate-500">Воскресенье</p>
+        <ul className="flex flex-col">
+          {SUNDAY_SCENARIOS.map((scenario, index) => (
+            <ScenarioRow key={index} scenario={scenario} />
+          ))}
+        </ul>
+        <p className="text-[11px] text-slate-400">
+          Решает первая сделка: стоп позже воскресенье не закрывает — действуют обычные правила дня.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

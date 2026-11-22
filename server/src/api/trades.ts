@@ -51,6 +51,7 @@ function withOutcome(trade: Trade): Trade & { outcome: TradeOutcome; statsResult
       slPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
       side: trade.side,
       statsOutcome: trade.statsOutcome,
+      intuitiveOutcome: trade.intuitiveOutcome,
     },
     resultR ?? 0,
   );
@@ -351,9 +352,11 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * Отметка «как закрылась бы сделка, если её не трогать» — для сделок с интуитивным
-   * вмешательством. Только заметка (решение пользователя от 22.11.2026): статистику,
-   * винрейт часов и правила риск-движка не меняет — в отличие от переразметки исхода
-   * в админке (reclassify).
+   * вмешательством. С 22.11.2026 учитывается в статистике как исход — винрейт часов,
+   * месяцы, журнал (просьба пользователя: «чтобы в статистике часов правильно
+   * посчиталось»; при создании фичи утром того же дня была только заметкой). Правила
+   * риск-движка не трогает — они считают фактические стопы/тейки (см. history/outcome.ts,
+   * intuitiveOutcome); переразметка в админке (reclassify) по-прежнему главнее и шире.
    */
   app.patch<{ Params: { id: string }; Body: { intuitiveOutcome?: "tp" | "sl" | null } }>(
     "/trades/:id/intuitive-outcome",

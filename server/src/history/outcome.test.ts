@@ -117,3 +117,39 @@ test("resolveStatsResultR: знак берётся от исхода", () => {
 test("resolveStatsResultR: мусорный пресет игнорируется", () => {
   assert.equal(resolveStatsResultR({ statsRrPreset: "garbage", resultR: 7 }, "tp"), 7);
 });
+
+test("отметка «как закрылась бы» учитывается как исход интуитивной сделки", () => {
+  const base = { closeReason: "manual", entryPrice: 100, slPrice: 90, side: "long" };
+  assert.equal(resolveTradeOutcome({ ...base, intuitiveOutcome: "tp" }, 0.5), "tp");
+  assert.equal(resolveTradeOutcome({ ...base, intuitiveOutcome: "sl" }, 0.5), "sl");
+  // Снятая отметка — снова авто-правила: +0.5R вручную это «other».
+  assert.equal(resolveTradeOutcome({ ...base, intuitiveOutcome: null }, 0.5), "other");
+  // Отметка сильнее безубытка: ручное закрытие в ноль с отметкой «по тейку» — тейк.
+  assert.equal(resolveTradeOutcome({ ...base, intuitiveOutcome: "tp" }, 0), "tp");
+});
+
+test("отметка не перебивает реальные тейк/стоп и переразметку в админке", () => {
+  // У сделок, закрытых своим SL/TP, отметки не бывает — но и пришедшая не действует.
+  assert.equal(
+    resolveTradeOutcome(
+      { closeReason: "sl", entryPrice: 100, slPrice: 90, side: "long", intuitiveOutcome: "tp" },
+      -1,
+    ),
+    "sl",
+  );
+  // Переразметка в админке (statsOutcome) главнее отметки.
+  assert.equal(
+    resolveTradeOutcome(
+      {
+        closeReason: "manual",
+        entryPrice: 100,
+        slPrice: 90,
+        side: "long",
+        statsOutcome: "be",
+        intuitiveOutcome: "tp",
+      },
+      0.5,
+    ),
+    "be",
+  );
+});

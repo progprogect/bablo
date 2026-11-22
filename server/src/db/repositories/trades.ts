@@ -189,6 +189,7 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   if (input.trailSlAppliedR !== undefined) patch.trailSlAppliedR = String(input.trailSlAppliedR);
   if (input.statsRrPreset !== undefined) patch.statsRrPreset = input.statsRrPreset;
   if (input.statsOutcome !== undefined) patch.statsOutcome = input.statsOutcome;
+  if (input.intuitiveOutcome !== undefined) patch.intuitiveOutcome = input.intuitiveOutcome;
   if (input.bingxOrderIds !== undefined) patch.bingxOrderIds = input.bingxOrderIds;
   if (input.status !== undefined) patch.status = input.status;
   if (input.closedAt !== undefined) patch.closedAt = input.closedAt;
@@ -196,6 +197,16 @@ export async function updateTrade(id: number, input: UpdateTradeInput): Promise<
   if (input.closePrice !== undefined) patch.closePrice = String(input.closePrice);
   if (input.resultR !== undefined) patch.resultR = String(input.resultR);
   if (input.resultPct !== undefined) patch.resultPct = String(input.resultPct);
+
+  // Пустой patch — выше забыт перенос поля из UpdateTradeInput: ровно так 22.11.2026
+  // падала 500-кой кнопка «редактировать» у интуитивных сделок (intuitiveOutcome был в
+  // типе, но не переносился, и drizzle кидал «No values to set»). Понятная ошибка в лог
+  // вместо загадочной.
+  if (Object.keys(patch).length === 0) {
+    throw new Error(
+      `updateTrade: ни одно поле не перенесено в patch (вход: ${Object.keys(input).join(", ")})`,
+    );
+  }
 
   const [updated] = await db.update(trades).set(patch).where(eq(trades.id, id)).returning();
   return updated ?? null;
