@@ -43,11 +43,9 @@ import {
 } from "../risk/stopDistance.js";
 import { startTracking, stopTracking } from "../tracker/activeTradeTracker.js";
 import {
-  computeAdjustedOrders,
   computePartialTpQuantity,
   computeResultFromPrices,
   computeRiskUsd,
-  parseAdjustingTpRatio,
   computeTakeProfitPrice,
   decimalsOf,
   decideMoveSlAfterPartial,
@@ -307,8 +305,6 @@ export type SetTakeProfitResult = {
   trade: Trade;
   /** Если не null — основной TP выставлен, но частичный ордер не удалось поставить на бирже. */
   partialTpWarning: string | null;
-  /** Выравнивающий пресет (1/0.9, 1/1.9): TP выставлен, но перенести SL не удалось. */
-  slAdjustWarning: string | null;
 };
 
 export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput): Promise<SetTakeProfitResult> {
@@ -329,29 +325,18 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
 
   let tpPrice: number;
   let rrPreset: string | undefined;
-  /** Выравнивающий пресет (1/0.9, 1/1.9): после постановки TP стоп переносится на −0.9×R₀. */
-  let adjustedSlPrice: number | null = null;
 
   if (input.rrPreset) {
-    const adjustingRatio = parseAdjustingTpRatio(input.rrPreset);
-    if (adjustingRatio !== null) {
-      const adjusted = computeAdjustedOrders(entryPrice, slPrice, side, adjustingRatio);
-      if (!adjusted) {
-        throw new TradeError("Выравнивание невозможно: у стопа нет дистанции от входа");
-      }
-      tpPrice = adjusted.tpPrice;
-      adjustedSlPrice = adjusted.newSlPrice;
-      rrPreset = input.rrPreset;
-    } else {
-      const ratio = parseRRRatio(input.rrPreset);
-      // isSelectableTpPreset, а не только parseRRRatio: словарь RR_PRESETS шире выбора
-      // (в нём остаются пресеты для столбцов статистики), см. trades/math.ts.
-      if (ratio === null || !isSelectableTpPreset(input.rrPreset)) {
-        throw new TradeError("Некорректный пресет соотношения риск/прибыль");
-      }
-      tpPrice = computeTakeProfitPrice(entryPrice, slPrice, side, ratio);
-      rrPreset = input.rrPreset;
+    const ratio = parseRRRatio(input.rrPreset);
+    // isSelectableTpPreset, а не только parseRRRatio: словарь RR_PRESETS шире выбора
+    // (в нём остаются пресеты для столбцов статистики), см. trades/math.ts.
+    // Пресеты 1/0.9 и 1/1.9 — обычные тейки на 100% объёма (правка 22.11.2026):
+    // прежнее «выравнивание» с переносом стопа на −0.9R убрано по просьбе пользователя.
+    if (ratio === null || !isSelectableTpPreset(input.rrPreset)) {
+      throw new TradeError("Некорректный пресет соотношения риск/прибыль");
     }
+    tpPrice = computeTakeProfitPrice(entryPrice, slPrice, side, ratio);
+    rrPreset = input.rrPreset;
   } else if (input.tpPrice !== undefined) {
     tpPrice = input.tpPrice;
   } else {
@@ -471,40 +456,6 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
   // Выравнивающий пресет: TP уже стоит — переносим стоп на −0.9×R₀ через безопасную
   // замену (при сбое прежний стоп вернётся на место, позиция без стопа не останется).
   // Двигаем только К входу (сужение): расширение риска этой операции запрещено.
-  let slAdjustWarning: string | null = null;
-  let newSlPriceForDb: number | null = null;
-  let newSlOrderId: string | number | null = null;
-  if (adjustedSlPrice !== null) {
-    const tightens =
-      side === "long"
-        ? adjustedSlPrice > slPrice && adjustedSlPrice < entryPrice
-        : adjustedSlPrice < slPrice && adjustedSlPrice > entryPrice;
-    if (!tightens) {
-      slAdjustWarning = "Стоп не перенесён: выравнивание не сузило бы его (стоп уже ближе −0.9R)";
-    } else {
-      const moved = await replaceConditionalOrder(credentials, {
-        symbol: trade.symbol,
-        exitSide,
-        type: "STOP_MARKET",
-        oldOrderId: existingOrderIds.sl,
-        oldStopPrice: slPrice,
-        newStopPrice: adjustedSlPrice,
-        quantity: totalQuantity,
-        failureMessage:
-          "TP выставлен, но перенести SL на −0.9R не удалось — стоп остался на прежнем месте",
-      });
-      if (moved.ok) {
-        newSlPriceForDb = adjustedSlPrice;
-        newSlOrderId = moved.orderId;
-      } else {
-        slAdjustWarning = moved.message;
-        if (moved.restoredOrderId !== null) {
-          newSlOrderId = moved.restoredOrderId;
-        }
-      }
-    }
-  }
-
   // TP уже реально выставлен на бирже — ошибка записи в БД не должна выглядеть
   // как отказ всей операции, но должна быть явно видна пользователю.
   try {
@@ -517,19 +468,10 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
       partialTpPrice: partialTpOrderId !== undefined ? input.partialTpPrice : undefined,
       partialTpPercent: partialTpOrderId !== undefined ? PARTIAL_TP_PERCENT : undefined,
       partialTpQuantity: partialTpOrderId !== undefined ? (partialQuantity ?? undefined) : undefined,
-      // Стоп перенесён — риск сделки СУЖЕН до 0.9 исходного: пересчитываем riskUsd,
-      // чтобы R (результат, статистика, ночное правило) считался от нового стопа.
-      ...(newSlPriceForDb !== null
-        ? {
-            slPrice: newSlPriceForDb,
-            riskUsd: computeRiskUsd(entryPrice, newSlPriceForDb, totalQuantity),
-          }
-        : {}),
       bingxOrderIds: {
         ...existingOrderIds,
         tp: tpOrderId,
         ...(partialTpOrderId !== undefined ? { partialTp: partialTpOrderId } : {}),
-        ...(newSlOrderId !== null ? { sl: newSlOrderId } : {}),
       },
     });
     if (!updated) {
@@ -538,7 +480,7 @@ export async function setTakeProfit(tradeId: number, input: SetTakeProfitInput):
     // Полный тейк 1/3 или 1/4 без частичной фиксации — включаем трейлинг-лестницу SL
     // (иначе вызов сам её выключит: пресет вне лестницы или появилась частичная).
     startTrailingSlWatch(updated);
-    return { trade: updated, partialTpWarning, slAdjustWarning };
+    return { trade: updated, partialTpWarning };
   } catch {
     throw new TradeError(
       "TP выставлен на бирже, но не удалось сохранить это в приложении — перезагрузите дашборд",
@@ -1293,6 +1235,143 @@ export async function applyNightTakeProfitForActiveTrade(
  * (биржа его отклонит, закрывать нечего), а фиксируем закрытие приближённо, чтобы
  * пользователь не оставался в дедлоке (не открыть новую сделку, не закрыть эту).
  */
+export type ClosePartialResult = {
+  trade: Trade;
+  /** Непустой — 70% закрыты, но часть перестановок не удалась: нужно проверить BingX. */
+  warnings: string[];
+};
+
+/**
+ * «Закрыть 70% по рынку и стоп на Б/У» (запрос пользователя от 22.11.2026): фиксирует
+ * 70% объёма рыночным ордером, остаток 30% защищает стопом на цене входа, а прежний тейк
+ * пересобирается на остаток и продолжает действовать (решение пользователя).
+ *
+ * Закрытые 70% записываются в поля частичной фиксации (partialTp*): вся математика
+ * итога сделки (computeResult) и статистика уже умеют складывать частичный PnL с
+ * финальным закрытием остатка — отдельного пути подсчёта не появляется.
+ */
+export async function closePartialToBreakeven(tradeId: number): Promise<ClosePartialResult> {
+  const trade = await getTradeById(tradeId);
+  if (!trade || trade.status !== "active") {
+    throw new TradeError("Активная сделка не найдена", 404);
+  }
+  if (trade.partialTpFilledAt) {
+    throw new TradeError("Частичная фиксация уже исполнена — 70% закрывать больше не от чего");
+  }
+  const entryPrice = Number(trade.entryPrice);
+  if (!(entryPrice > 0)) {
+    throw new TradeError("У сделки нет цены входа — стоп на безубыток поставить не от чего");
+  }
+  const credentials = await getBingxCredentials();
+  if (!credentials) {
+    throw new TradeError("Ключи BingX не настроены");
+  }
+
+  const side = trade.side as TradeSide;
+  const exitSide: OrderSide = side === "long" ? "SELL" : "BUY";
+  const totalQuantity = Number(trade.quantity);
+  const partialQuantity = computePartialTpQuantity(totalQuantity, decimalsOf(trade.quantity));
+  if (!(partialQuantity > 0) || partialQuantity >= totalQuantity) {
+    throw new TradeError("Объём позиции слишком мал для частичного закрытия");
+  }
+  const remainder = totalQuantity - partialQuantity;
+  const orderIds = { ...((trade.bingxOrderIds as Record<string, string | number> | null) ?? {}) };
+
+  // 1) 70% по рынку. До этого места сделка не изменена — отказ биржи просто возвращается.
+  let fillPrice: number;
+  try {
+    const closeOrder = await placeOrder(credentials, {
+      symbol: trade.symbol,
+      side: exitSide,
+      type: "MARKET",
+      quantity: partialQuantity,
+      reduceOnly: true,
+    });
+    fillPrice = closeOrder.avgPrice ? Number(closeOrder.avgPrice) : await getLatestPrice(trade.symbol);
+  } catch (error) {
+    logBingxFailure("закрытие 70% по рынку", error);
+    throw new TradeError(bingxMessage(error, "Не удалось закрыть 70% позиции на BingX"), 502);
+  }
+
+  // ВАЖНО: 70% уже закрыты на бирже. Всё ниже — best-effort перестановки и запись:
+  // ошибки собираются в предупреждения, а не роняют операцию.
+  const warnings: string[] = [];
+
+  // 2) Ожидающий ордер частичной фиксации больше не нужен: 70% только что сняты рынком.
+  if (orderIds.partialTp !== undefined) {
+    await cancelOrder(credentials, trade.symbol, orderIds.partialTp).catch(() => {
+      // мог уже исчезнуть — не критично
+    });
+    delete orderIds.partialTp;
+  }
+
+  // 3) Стоп остатка — на цену входа (безубыток).
+  let slMovedToBreakeven = false;
+  const movedSl = await replaceConditionalOrder(credentials, {
+    symbol: trade.symbol,
+    exitSide,
+    type: "STOP_MARKET",
+    oldOrderId: orderIds.sl,
+    oldStopPrice: trade.slPrice !== null ? Number(trade.slPrice) : null,
+    newStopPrice: entryPrice,
+    quantity: remainder,
+    failureMessage: "70% закрыты, но стоп на Б/У не выставлен — проверьте стоп на BingX вручную",
+  });
+  if (movedSl.ok) {
+    slMovedToBreakeven = true;
+    orderIds.sl = movedSl.orderId;
+  } else {
+    warnings.push(movedSl.message);
+    if (movedSl.restoredOrderId !== null) {
+      orderIds.sl = movedSl.restoredOrderId;
+    }
+  }
+
+  // 4) Тейк пересобирается на остаток (цена прежняя) — reduceOnly на полный объём после
+  // частичного закрытия биржа может отклонить, поэтому ордер перевыставляется явно.
+  if (trade.tpPrice !== null && orderIds.tp !== undefined) {
+    const tpPrice = Number(trade.tpPrice);
+    const movedTp = await replaceConditionalOrder(credentials, {
+      symbol: trade.symbol,
+      exitSide,
+      type: "LIMIT",
+      oldOrderId: orderIds.tp,
+      oldStopPrice: tpPrice,
+      newStopPrice: tpPrice,
+      quantity: remainder,
+      failureMessage: "70% закрыты, но тейк на остаток не перевыставлен — проверьте ордер на BingX",
+    });
+    if (movedTp.ok) {
+      orderIds.tp = movedTp.orderId;
+    } else {
+      warnings.push(movedTp.message);
+      if (movedTp.restoredOrderId !== null) {
+        orderIds.tp = movedTp.restoredOrderId;
+      }
+    }
+  }
+
+  // 5) Запись: закрытые 70% — это исполненная частичная фиксация по цене рынка.
+  const updated = await updateTrade(tradeId, {
+    partialTpPrice: fillPrice,
+    partialTpPercent: PARTIAL_TP_PERCENT,
+    partialTpQuantity: partialQuantity,
+    partialTpFilledAt: new Date(),
+    partialTpFillPrice: fillPrice,
+    ...(slMovedToBreakeven ? { slPrice: entryPrice } : {}),
+    bingxOrderIds: orderIds,
+  });
+  if (!updated) {
+    throw new TradeError(
+      "70% закрыты на бирже, но сохранить это в приложении не удалось — перезагрузите дашборд",
+      500,
+    );
+  }
+
+  eventBus.emitTyped("refresh", { reason: "trade.partialClosed" });
+  return { trade: updated, warnings };
+}
+
 export async function closeTrade(tradeId: number): Promise<Trade> {
   const trade = await getTradeById(tradeId);
   if (!trade || trade.status !== "active") {

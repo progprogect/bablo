@@ -116,6 +116,13 @@ export const trades = pgTable("trades", {
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closeReason: text("close_reason"), // 'sl' | 'tp' | 'manual' | 'external' (закрыта на бирже, обнаружено постфактум)
+  /**
+   * «Как закрылась бы сделка, если её не трогать» — заметка пользователя для сделок с
+   * интуитивным вмешательством (closeReason manual/external): 'tp' | 'sl' | null.
+   * Только отметка (решение пользователя от 22.11.2026): статистику, винрейт часов и
+   * правила риск-движка не меняет.
+   */
+  intuitiveOutcome: text("intuitive_outcome"),
   closePrice: numeric("close_price", { precision: 20, scale: 8 }),
   resultR: numeric("result_r", { precision: 10, scale: 4 }),
   resultPct: numeric("result_pct", { precision: 10, scale: 4 }),

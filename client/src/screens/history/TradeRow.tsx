@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ApiError, setIntuitiveOutcomeRequest } from "../../api/client";
 import type { Trade } from "../../api/types";
 import { formatRatioR, formatSignedUsd, roundR } from "../../lib/format";
 
@@ -74,7 +76,17 @@ function exchangePnlUsd(trade: Trade): number | null {
   return value === null || value === undefined || !Number.isFinite(value) ? null : value;
 }
 
-export function TradeRow({ trade }: { trade: Trade }) {
+export function TradeRow({
+  trade,
+  onTradeUpdated,
+}: {
+  trade: Trade;
+  /** Приходит из «Истории»: обновить сделку в загруженном списке после правки отметки. */
+  onTradeUpdated?: (trade: Trade) => void;
+}) {
+  const [isEditingIntuitive, setIsEditingIntuitive] = useState(false);
+  const [isSavingIntuitive, setIsSavingIntuitive] = useState(false);
+  const [intuitiveError, setIntuitiveError] = useState<string | null>(null);
   const displayName = trade.symbol.replace(/-USDT$/, "");
   const pnlUsd = realizedPnlUsd(trade);
   const exchangePnl = exchangePnlUsd(trade);
@@ -85,8 +97,33 @@ export function TradeRow({ trade }: { trade: Trade }) {
   const outcome = trade.outcome ?? trade.closeReason ?? undefined;
   const closeReasonLabel = outcome ? OUTCOME_LABELS[outcome] : undefined;
 
+  /**
+   * «Интуитивное вмешательство» — сделка закрыта мимо своих SL/TP (вручную на бирже или
+   * кнопкой), ещё до того как дошла до них. Такие карточки подкрашены розовым (просьба
+   * пользователя от 22.11.2026), и у них есть отметка «как закрылась бы, если не трогать».
+   */
+  const isIntuitive = trade.closeReason !== "sl" && trade.closeReason !== "tp";
+
+  async function saveIntuitiveOutcome(value: "tp" | "sl" | null) {
+    setIsSavingIntuitive(true);
+    setIntuitiveError(null);
+    try {
+      const updated = await setIntuitiveOutcomeRequest(trade.id, value);
+      onTradeUpdated?.(updated);
+      setIsEditingIntuitive(false);
+    } catch (err) {
+      setIntuitiveError(err instanceof ApiError ? err.message : "Не удалось сохранить отметку");
+    } finally {
+      setIsSavingIntuitive(false);
+    }
+  }
+
   return (
-    <div className="mx-4 flex flex-col gap-2 rounded-2xl border border-line bg-card p-4 shadow-sm">
+    <div
+      className={`mx-4 flex flex-col gap-2 rounded-2xl border p-4 shadow-sm ${
+        isIntuitive ? "border-pink-200 bg-pink-50/70" : "border-line bg-card"
+      }`}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-ink">{displayName}</span>
@@ -128,6 +165,63 @@ export function TradeRow({ trade }: { trade: Trade }) {
           {formatSignedUsd(pnlUsd)}
         </span>
       </div>
+
+      {isIntuitive && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-pink-200/70 pt-2 text-[11px]">
+          <span className="text-pink-700">
+            {trade.intuitiveOutcome
+              ? `Закрылась бы: ${trade.intuitiveOutcome === "tp" ? "по тейку" : "по стопу"}`
+              : "Как закрылась бы, если не трогать?"}
+          </span>
+          {isEditingIntuitive ? (
+            <span className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={isSavingIntuitive}
+                onClick={() => saveIntuitiveOutcome("tp")}
+                className="rounded-md bg-emerald-100 px-2 py-1 font-medium text-emerald-700 disabled:opacity-50"
+              >
+                по тейку
+              </button>
+              <button
+                type="button"
+                disabled={isSavingIntuitive}
+                onClick={() => saveIntuitiveOutcome("sl")}
+                className="rounded-md bg-red-100 px-2 py-1 font-medium text-red-700 disabled:opacity-50"
+              >
+                по стопу
+              </button>
+              {trade.intuitiveOutcome && (
+                <button
+                  type="button"
+                  disabled={isSavingIntuitive}
+                  onClick={() => saveIntuitiveOutcome(null)}
+                  className="rounded-md px-2 py-1 text-slate-500 disabled:opacity-50"
+                >
+                  снять
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={isSavingIntuitive}
+                onClick={() => setIsEditingIntuitive(false)}
+                className="rounded-md px-2 py-1 text-slate-500 disabled:opacity-50"
+              >
+                отмена
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditingIntuitive(true)}
+              className="rounded-md px-2 py-1 font-medium text-pink-700 underline-offset-2 hover:underline"
+            >
+              редактировать
+            </button>
+          )}
+          {intuitiveError && <span className="w-full text-red-600">{intuitiveError}</span>}
+        </div>
+      )}
 
       {exchangePnl !== null && (
         <div className="flex items-baseline justify-between border-t border-line pt-2 text-[11px] text-slate-400">

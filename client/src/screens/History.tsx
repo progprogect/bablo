@@ -1,12 +1,10 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, getStats, getTradeHistory } from "../api/client";
 import { formatSignedR } from "../lib/format";
 import type { MonthlyStat, StatsResponse, Trade } from "../api/types";
-import { EquityHistorySheet } from "./history/EquityHistorySheet";
 import { InsightPanel } from "./history/InsightPanel";
 import { MonthDetailSheet } from "./history/MonthDetailSheet";
 import { MonthlyStatCard } from "./history/MonthlyStatCard";
-import { aggregateYear, YearlyStatCard } from "./history/YearlyStatCard";
 import { BlockRulesCard } from "./history/BlockRulesCard";
 import { AssetsCard } from "../components/AssetsCard";
 import { StopDistanceCard } from "./history/StopDistanceCard";
@@ -29,7 +27,8 @@ export function History() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tab, setTab] = useState<Tab>("trades");
-  const [showEquityChart, setShowEquityChart] = useState(false);
+  /** Фильтр «Интуитивное вмешательство»: сделки, закрытые не по своему тейку/стопу. */
+  const [intuitiveFilter, setIntuitiveFilter] = useState(false);
   const [monthDetail, setMonthDetail] = useState<MonthlyStat | null>(null);
   /**
    * Фильтр по часу открытия: клик по часу в подсказке (просьба от 23.09.2026). Живёт
@@ -49,7 +48,7 @@ export function History() {
   // меньше сделок, чем в ней написано.
   useEffect(() => {
     let cancelled = false;
-    getTradeHistory(PAGE_SIZE, 0, hourFilter)
+    getTradeHistory(PAGE_SIZE, 0, hourFilter, intuitiveFilter)
       .then((history) => {
         if (cancelled) return;
         setTrades(history.trades);
@@ -67,12 +66,12 @@ export function History() {
     return () => {
       cancelled = true;
     };
-  }, [hourFilter]);
+  }, [hourFilter, intuitiveFilter]);
 
   async function loadMore() {
     setIsLoadingMore(true);
     try {
-      const next = await getTradeHistory(PAGE_SIZE, trades.length, hourFilter);
+      const next = await getTradeHistory(PAGE_SIZE, trades.length, hourFilter, intuitiveFilter);
       setTrades((current) => [...current, ...next.trades]);
       setTotal(next.total);
     } catch (err) {
@@ -154,6 +153,23 @@ export function History() {
             onSelectHour={(hour) => setHourFilter((current) => (current === hour ? null : hour))}
           />
 
+          {/* Фильтр «Интуитивное вмешательство» (запрос пользователя от 22.11.2026):
+              сделки, закрытые мимо своих SL/TP — вручную на бирже или кнопкой, ещё до
+              того как цена дошла до тейка/стопа. Работает вместе с фильтром часа. */}
+          <div className="mx-4">
+            <button
+              type="button"
+              onClick={() => setIntuitiveFilter((current) => !current)}
+              className={`w-full rounded-xl border py-2 text-sm font-medium ${
+                intuitiveFilter
+                  ? "border-pink-300 bg-pink-50 text-pink-700"
+                  : "border-line bg-card text-slate-600"
+              }`}
+            >
+              Интуитивное вмешательство{intuitiveFilter ? ` · ${total}` : ""}
+            </button>
+          </div>
+
           {/* Список уезжает под подсказку, поэтому без этой строки непонятно, почему сделок
               вдруг мало. Она же — кнопка сброса, кроме повторного клика по часу. */}
           {hourFilter !== null && (
@@ -188,12 +204,22 @@ export function History() {
 
           {trades.length === 0 ? (
             <p className="px-6 text-center text-sm text-slate-500">
-              {hourFilter !== null ? `В ${hourFilter}ч сделок не было.` : "Закрытых сделок пока нет."}
+              {intuitiveFilter
+                ? "Сделок с интуитивным вмешательством нет."
+                : hourFilter !== null
+                  ? `В ${hourFilter}ч сделок не было.`
+                  : "Закрытых сделок пока нет."}
             </p>
           ) : (
             <div className="flex flex-col gap-3">
               {trades.map((trade) => (
-                <TradeRow key={trade.id} trade={trade} />
+                <TradeRow
+                  key={trade.id}
+                  trade={trade}
+                  onTradeUpdated={(updated) =>
+                    setTrades((current) => current.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)))
+                  }
+                />
               ))}
             </div>
           )}
@@ -213,54 +239,25 @@ export function History() {
 
       {tab === "stats" && (
         <div className="mx-4 flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => setShowEquityChart(true)}
-            className="rounded-xl border border-line bg-card py-2.5 text-sm font-medium text-accent shadow-sm"
-          >
-            График роста депозита
-          </button>
-
+          {/* «График роста депозита» и «Итоги года» убраны 22.11.2026 по просьбе
+              пользователя; снимки депозита на сервере продолжают собираться — они
+              нужны месячной статистике. */}
           {stats.monthly.length === 0 ? (
             <p className="px-2 text-center text-sm text-slate-500">Пока нет ни одного закрытого месяца.</p>
           ) : (
-            stats.monthly.map((stat, index) => {
-              /*
-               * Перед первым месяцем каждого года — карточка «Итоги года» (просьба от
-               * 23.10.2026): сумма всех его месяцев. Список отсортирован по убыванию
-               * (год, месяц), поэтому «первый месяц года в списке» — самый поздний, и
-               * итоги каждого года автоматически встают НАД его месяцами; появится
-               * январь 2027 — над ним появятся «Итоги 2027». Годовая карточка
-               * некликабельна: детализация есть только у месяца.
-               */
-              const isFirstOfYear = index === 0 || stats.monthly[index - 1]!.year !== stat.year;
-              return (
-                <Fragment key={`${stat.year}-${stat.month}`}>
-                  {isFirstOfYear && (
-                    <YearlyStatCard
-                      stat={aggregateYear(
-                        stat.year,
-                        stats.monthly.filter((m) => m.year === stat.year),
-                      )}
-                    />
-                  )}
-                  {/* Карточка месяца кликабельна: нажатие открывает детализацию
-                      (все сделки + диаграмма плюс/минус). */}
-                  <button
-                    type="button"
-                    onClick={() => setMonthDetail(stat)}
-                    className="w-full text-left"
-                  >
-                    <MonthlyStatCard stat={stat} />
-                  </button>
-                </Fragment>
-              );
-            })
+            stats.monthly.map((stat) => (
+              <button
+                key={`${stat.year}-${stat.month}`}
+                type="button"
+                onClick={() => setMonthDetail(stat)}
+                className="w-full text-left"
+              >
+                <MonthlyStatCard stat={stat} />
+              </button>
+            ))
           )}
         </div>
       )}
-
-      {showEquityChart && <EquityHistorySheet onClose={() => setShowEquityChart(false)} />}
 
       {monthDetail && <MonthDetailSheet stat={monthDetail} onClose={() => setMonthDetail(null)} />}
     </section>

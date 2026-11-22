@@ -27,7 +27,7 @@ export type RRPreset = (typeof RR_PRESETS)[number];
  * Отдельно от RR_PRESETS: убрать пресет из выбора нельзя ценой потери столбца
  * статистики и админского оверрайда (см. комментарий к RR_PRESETS).
  */
-export const TP_SELECTABLE_PRESETS = ["1/1", "1/1.5", "1/2", "1/3"] as const;
+export const TP_SELECTABLE_PRESETS = ["1/0.9", "1/1", "1/1.5", "1/1.9", "1/2", "1/3"] as const;
 
 /** Можно ли выбрать этот пресет при постановке тейка (см. TP_SELECTABLE_PRESETS). */
 export function isSelectableTpPreset(preset: string): boolean {
@@ -105,35 +105,6 @@ export function requiresPartialTakeProfit(ratio: number): boolean {
  * Намеренно НЕ в RR_PRESETS: это не «столбцы статистики», а операция выравнивания;
  * в сетке месяца такие сделки лягут по фактически достигнутому R (1R / 2R).
  */
-export const ADJUSTING_TP_PRESETS = { "1/0.9": 0.9, "1/1.9": 1.9 } as const;
-
-/** Куда переносится стоп при выравнивающем пресете: −0.9 исходной дистанции. */
-export const ADJUSTED_SL_RATIO = 0.9;
-
-export function parseAdjustingTpRatio(preset: string): number | null {
-  return (ADJUSTING_TP_PRESETS as Record<string, number>)[preset] ?? null;
-}
-
-/**
- * Цены TP и нового SL для выравнивающего пресета — от ТЕКУЩЕЙ дистанции стопа R₀.
- * null, если дистанции нет (SL на входе и т.п.).
- */
-export function computeAdjustedOrders(
-  entryPrice: number,
-  slPrice: number,
-  side: TradeSide,
-  tpRatio: number,
-): { tpPrice: number; newSlPrice: number } | null {
-  if (!(entryPrice > 0) || !(slPrice > 0) || !(tpRatio > 0)) return null;
-  const riskDistance = Math.abs(entryPrice - slPrice);
-  if (!(riskDistance > 0)) return null;
-  const direction = side === "long" ? 1 : -1;
-  return {
-    tpPrice: entryPrice + direction * riskDistance * tpRatio,
-    newSlPrice: entryPrice - direction * riskDistance * ADJUSTED_SL_RATIO,
-  };
-}
-
 /** Фактическое R/R по ценам входа, SL и целевого уровня (null, если риск нулевой). */
 export function computeRiskRewardRatio(entryPrice: number, slPrice: number, targetPrice: number): number | null {
   const risk = Math.abs(entryPrice - slPrice);
