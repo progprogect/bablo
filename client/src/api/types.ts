@@ -60,6 +60,11 @@ export type Trade = {
   closedAt: string | null;
   closeReason: string | null;
   /**
+   * «Как закрылась бы, если не трогать» — заметка для сделок с интуитивным вмешательством
+   * (закрытых не по своему тейку/стопу): "tp" | "sl" | null. На статистику не влияет.
+   */
+  intuitiveOutcome?: "tp" | "sl" | null;
+  /**
    * Фактический исход сделки, считает сервер (history/outcome.ts): стоп, уведённый
    * в прибыль ночным правилом, приходит как "tp" — это зафиксированная прибыль,
    * а не сработавший план защиты. Есть только у закрытых сделок из истории.
@@ -258,8 +263,6 @@ export type OpenTradeResult = {
 export type SetTakeProfitResult = {
   trade: Trade;
   partialTpWarning: string | null;
-  /** Выравнивающий пресет (1/0.9, 1/1.9): TP выставлен, но перенести SL не удалось. */
-  slAdjustWarning: string | null;
 };
 
 export type RiskLevel = {

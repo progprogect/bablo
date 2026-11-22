@@ -1,11 +1,20 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { requireAuth } from "./plugins/auth-guard.js";
-import { openTrade, setTakeProfit, closeTrade, getActiveTradeView, TradeError } from "../trades/service.js";
+import {
+  openTrade,
+  setTakeProfit,
+  closeTrade,
+  closePartialToBreakeven,
+  getActiveTradeView,
+  TradeError,
+} from "../trades/service.js";
 import type { TradeSide } from "../trades/math.js";
 import {
+  getTradeById,
   listAllClosedTrades,
   listClosedTrades,
   listClosedTradesBetween,
+  updateTrade,
   type Trade,
 } from "../db/repositories/trades.js";
 import { getBingxCredentials, getRiskSettings } from "../db/repositories/settings.js";
@@ -147,14 +156,19 @@ async function listClosedTradesPage(
   limit: number,
   offset: number,
   hour: number | null,
+  /** true — только сделки с интуитивным вмешательством (закрытые не по тейку/стопу). */
+  intuitive: boolean,
 ): Promise<{ trades: Trade[]; total: number; sumPositiveR?: number; sumNegativeR?: number }> {
-  if (hour === null) {
+  if (hour === null && !intuitive) {
     return listClosedTrades({ limit, offset });
   }
 
   const { tzOffsetMinutes } = await getRiskSettings();
   const matching = (await listAllClosedTrades())
-    .filter((trade) => getLocalHour(trade.openedAt, tzOffsetMinutes) === hour)
+    .filter((trade) => hour === null || getLocalHour(trade.openedAt, tzOffsetMinutes) === hour)
+    // «Интуитивное вмешательство» — сделка закрыта мимо своих SL/TP (вручную на бирже или
+    // кнопкой), ещё до того как дошла до них: closeReason manual/external, не sl/tp.
+    .filter((trade) => !intuitive || isIntuitiveTrade(trade))
     // Тот же порядок, что у нефильтрованного списка: сначала недавно закрытые.
     .sort((a, b) => (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0));
 
@@ -179,6 +193,11 @@ async function listClosedTradesPage(
   };
 }
 
+/** Сделка с интуитивным вмешательством: закрыта не её собственным SL/TP. */
+function isIntuitiveTrade(trade: Pick<Trade, "closeReason">): boolean {
+  return trade.closeReason !== "sl" && trade.closeReason !== "tp";
+}
+
 export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
 
@@ -186,7 +205,7 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
     return getActiveTradeView();
   });
 
-  app.get<{ Querystring: { limit?: string; offset?: string; hour?: string } }>(
+  app.get<{ Querystring: { limit?: string; offset?: string; hour?: string; intuitive?: string } }>(
     "/trades",
     async (request, reply) => {
       const limit = Math.min(
@@ -205,7 +224,9 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      const page = await listClosedTradesPage(limit, offset, hour);
+      const intuitive = request.query.intuitive === "1" || request.query.intuitive === "true";
+
+      const page = await listClosedTradesPage(limit, offset, hour, intuitive);
       // Исход считает сервер (history/outcome.ts), а не клиент: та же трактовка, что в
       // статистике и дневных лимитах — иначе подпись в истории разошлась бы с цифрами.
       const trades = await attachExchangePnl(page.trades.map(withOutcome), request.log);
@@ -327,6 +348,63 @@ export async function registerTradeRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  /**
+   * Отметка «как закрылась бы сделка, если её не трогать» — для сделок с интуитивным
+   * вмешательством. Только заметка (решение пользователя от 22.11.2026): статистику,
+   * винрейт часов и правила риск-движка не меняет — в отличие от переразметки исхода
+   * в админке (reclassify).
+   */
+  app.patch<{ Params: { id: string }; Body: { intuitiveOutcome?: "tp" | "sl" | null } }>(
+    "/trades/:id/intuitive-outcome",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id)) {
+        reply.code(400).send({ error: "Некорректный id" });
+        return;
+      }
+      const value = request.body?.intuitiveOutcome;
+      if (value !== "tp" && value !== "sl" && value !== null) {
+        reply.code(400).send({ error: "intuitiveOutcome должен быть 'tp', 'sl' или null" });
+        return;
+      }
+      const trade = await getTradeById(id);
+      if (!trade || trade.status !== "closed") {
+        reply.code(404).send({ error: "Закрытая сделка не найдена" });
+        return;
+      }
+      if (!isIntuitiveTrade(trade)) {
+        reply
+          .code(400)
+          .send({ error: "Отметка доступна только для сделок, закрытых не по своему тейку/стопу" });
+        return;
+      }
+      const updated = await updateTrade(id, { intuitiveOutcome: value });
+      if (!updated) {
+        reply.code(404).send({ error: "Сделка не найдена" });
+        return;
+      }
+      return withOutcome(updated);
+    },
+  );
+
+  // «Закрыть 70% по рынку и стоп на Б/У» — частичная фиксация рыночным ордером.
+  app.post<{ Params: { id: string } }>("/trades/:id/close-partial", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id)) {
+      reply.code(400).send({ error: "Некорректный id" });
+      return;
+    }
+    try {
+      return await closePartialToBreakeven(id);
+    } catch (error) {
+      if (error instanceof TradeError) {
+        reply.code(error.status).send({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  });
 
   app.post<{ Params: { id: string } }>("/trades/:id/close", async (request, reply) => {
     const id = Number(request.params.id);

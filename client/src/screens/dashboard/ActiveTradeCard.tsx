@@ -1,16 +1,12 @@
 import { useState } from "react";
-import { ApiError, closeTradeRequest, setTakeProfitRequest } from "../../api/client";
+import { ApiError, closePartialRequest, closeTradeRequest, setTakeProfitRequest } from "../../api/client";
 import type { ActiveTradeView, TradeSide } from "../../api/types";
 import { formatPrice, formatSignedUsd, trimTrailingZeros } from "../../lib/format";
 
 // До 1/6 (решение от 21.08.2026): дальние цели не используются, при 1/5+ обязательна partial.
 const RR_PRESETS = ["1/0.9", "1/1", "1/1.5", "1/1.9", "1/2", "1/3"];
-/**
- * «Выравнивающие» пресеты для входа с проскальзыванием — синхрон с server ADJUSTING_TP_PRESETS:
- * TP на 0.9/1.9 исходного риска + перенос SL на −0.9 (сервер делает перенос сам).
- */
-const ADJUSTING_TP_PRESETS = ["1/0.9", "1/1.9"];
-const ADJUSTED_SL_RATIO = 0.9;
+// Пресеты 1/0.9 и 1/1.9 — обычные тейки на 100% объёма (правка 22.11.2026): прежнее
+// «выравнивание» с одновременным переносом стопа на −0.9R убрано по просьбе пользователя.
 /** Пресеты частичной фиксации — синхрон с server PARTIAL_TP_PRESETS (не дальше 1/3). */
 const PARTIAL_TP_PRESETS = ["1/1", "1/2", "1/3"];
 const PARTIAL_TP_REQUIRED_MIN_RATIO = 5;
@@ -150,11 +146,29 @@ export function ActiveTradeCard({
     ? computePartialPotentialPnl(trade, Number(trade.partialTpPrice))
     : null;
 
-  // После настройки TP сделка полностью готова — дальше просто ждём SL/TP, без кнопок,
-  // которые создавали бы соблазн что-то вручную докрутить. Кнопка закрытия остаётся только
-  // как аварийный путь подтвердить уже закрытую на бирже позицию (positionFlat).
   const isFullyConfigured = Boolean(trade.tpPrice);
-  const showCloseButton = !isFullyConfigured || trade.positionFlat;
+  // Кнопка «Закрыть сделку» видна всегда (просьба пользователя от 22.11.2026; раньше после
+  // настройки TP она пряталась и оставалась только аварийным путём при positionFlat).
+  const showCloseButton = true;
+  // «Закрыть 70% по рынку и стоп на Б/У» — пока частичная фиксация ещё не исполнялась
+  // и позиция реально открыта.
+  const showClosePartialButton = isFullyConfigured && !trade.positionFlat && !trade.partialTpFilledAt;
+  const [isClosingPartial, setIsClosingPartial] = useState(false);
+
+  async function handleClosePartial() {
+    if (!window.confirm("Закрыть 70% по рынку и перенести стоп остатка в безубыток?")) return;
+    setCloseError(null);
+    setIsClosingPartial(true);
+    try {
+      const { trade: updated, warnings } = await closePartialRequest(trade.id);
+      onUpdated({ ...trade, ...updated });
+      setPartialTpWarning(warnings.length > 0 ? warnings.join(" · ") : null);
+    } catch (err) {
+      setCloseError(err instanceof ApiError ? err.message : "Не удалось закрыть 70%");
+    } finally {
+      setIsClosingPartial(false);
+    }
+  }
 
   async function handleClose() {
     if (!window.confirm("Закрыть сделку по рынку прямо сейчас?")) return;
@@ -256,10 +270,20 @@ export function ActiveTradeCard({
         />
       )}
 
+      {showClosePartialButton && (
+        <button
+          type="button"
+          disabled={isClosingPartial || isClosing}
+          onClick={handleClosePartial}
+          className="rounded-xl border border-line py-2 text-sm font-medium text-accent disabled:opacity-50"
+        >
+          {isClosingPartial ? "Закрываю 70%…" : "Закрыть 70% по рынку и стоп на Б/У"}
+        </button>
+      )}
       {showCloseButton && (
         <button
           type="button"
-          disabled={isClosing}
+          disabled={isClosing || isClosingPartial}
           onClick={handleClose}
           className="rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 disabled:opacity-50"
         >
@@ -410,13 +434,12 @@ function TakeProfitForm({
       // подправил значение вручную — отправляем именно его как обычный tpPrice.
       const input = selectedPreset ? { rrPreset: selectedPreset } : { tpPrice: Number(tpPrice) };
       const parsedPartial = partialTpPrice ? Number(partialTpPrice) : undefined;
-      const { trade: updated, partialTpWarning, slAdjustWarning } = await setTakeProfitRequest(trade.id, {
+      const { trade: updated, partialTpWarning } = await setTakeProfitRequest(trade.id, {
         ...input,
         ...(parsedPartial !== undefined ? { partialTpPrice: parsedPartial } : {}),
       });
       onUpdated({ ...trade, ...updated });
-      const warnings = [partialTpWarning, slAdjustWarning].filter(Boolean).join(" · ");
-      onWarning(warnings.length > 0 ? warnings : null);
+      onWarning(partialTpWarning ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось выставить TP");
     } finally {
@@ -463,21 +486,6 @@ function TakeProfitForm({
       {exceedsMaxTpRatio && (
         <p className="text-xs text-red-600">
           Эта цена дальше R/R 1/{maxTpRatio} — после стопа такая цель недоступна
-        </p>
-      )}
-
-      {/* Выравнивание после проскальзывания: сервер вместе с TP перенесёт стоп на −0.9R₀.
-          Показываем новую цену стопа заранее — перенос ордера не должен быть сюрпризом. */}
-      {selectedPreset && ADJUSTING_TP_PRESETS.includes(selectedPreset) && (
-        <p className="rounded-lg bg-accent/10 px-3 py-2 text-xs text-accent">
-          {(() => {
-            const entry = Number(trade.entryPrice);
-            const sl = Number(trade.slPrice);
-            const risk = Math.abs(entry - sl);
-            const newSl = trade.side === "long" ? entry - risk * ADJUSTED_SL_RATIO : entry + risk * ADJUSTED_SL_RATIO;
-            const target = selectedPreset === "1/0.9" ? "1/1" : "≈1/2.1";
-            return `Стоп будет перенесён на ${formatComputedPrice(newSl)} (−0.9 исходного риска) — соотношение станет ${target}`;
-          })()}
         </p>
       )}
 

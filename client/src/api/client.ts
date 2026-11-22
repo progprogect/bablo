@@ -7,7 +7,6 @@ import type {
   HourBaselineEntry,
   DashboardResponse,
   BingXBalance,
-  EquitySnapshot,
   MonthExchangeSummary,
   OpenTradeResult,
   PagedTrades,
@@ -275,14 +274,32 @@ export const closeTradeRequest = (tradeId: number) =>
 // --- История и статистика ---
 
 /** `hour` — фильтр по часу ОТКРЫТИЯ сделки (клик по часу в подсказке), 0–23 или null. */
-export const getTradeHistory = (limit: number, offset: number, hour: number | null = null) =>
+export const getTradeHistory = (
+  limit: number,
+  offset: number,
+  hour: number | null = null,
+  /** true — только сделки с интуитивным вмешательством (закрытые не по тейку/стопу). */
+  intuitive = false,
+) =>
   request<PagedTrades>(
-    `/trades?limit=${limit}&offset=${offset}${hour !== null ? `&hour=${hour}` : ""}`,
+    `/trades?limit=${limit}&offset=${offset}${hour !== null ? `&hour=${hour}` : ""}${intuitive ? "&intuitive=1" : ""}`,
   );
 
-export const getStats = () => request<StatsResponse>("/stats");
+/** Отметка «как закрылась бы сделка» для интуитивных сделок. null — снять отметку. */
+export const setIntuitiveOutcomeRequest = (tradeId: number, outcome: "tp" | "sl" | null) =>
+  request<Trade>(`/trades/${tradeId}/intuitive-outcome`, {
+    method: "PATCH",
+    body: JSON.stringify({ intuitiveOutcome: outcome }),
+  });
 
-export const getEquityHistory = () => request<EquitySnapshot[]>("/stats/equity-history");
+/** «Закрыть 70% по рынку и стоп на Б/У». */
+export const closePartialRequest = (tradeId: number) =>
+  request<{ trade: Trade; warnings: string[] }>(`/trades/${tradeId}/close-partial`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+export const getStats = () => request<StatsResponse>("/stats");
 
 // --- Дерево роста (Этап 6) ---
 

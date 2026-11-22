@@ -137,7 +137,6 @@ export type UpdateTradeInput = Partial<{
   /** План входа: пишется один раз вместе с первым tpPrice, потом не трогается. */
   tpPriceInitial: number;
   slPrice: number;
-  /** Пересчитанный риск (выравнивающий пресет сужает стоп до −0.9×R₀). */
   riskUsd: number;
   rrPreset: string;
   partialTpPrice: number | null;
@@ -152,6 +151,8 @@ export type UpdateTradeInput = Partial<{
   statsRrPreset: string | null;
   /** Ручной исход для статистики: null — авто; иначе "tp" | "sl" | "be". */
   statsOutcome: string | null;
+  /** «Как закрылась бы, если не трогать» — заметка для интуитивных сделок: "tp" | "sl" | null. */
+  intuitiveOutcome: "tp" | "sl" | null;
   bingxOrderIds: Record<string, string | number>;
   status: "active" | "closed";
   closedAt: Date;
