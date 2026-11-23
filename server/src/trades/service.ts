@@ -682,7 +682,13 @@ export async function listTradesForStatsRrAdmin(options: {
     const autoOutcome = resolveTradeOutcome({ ...toOutcomeInput(trade), statsOutcome: null }, resultR);
     const effectiveOutcome = resolveTradeOutcome(toOutcomeInput(trade), resultR);
     const effectiveStatsResultR = resolveStatsResultR(
-      { statsRrPreset: trade.statsRrPreset, resultR: trade.resultR !== null ? resultR : null },
+      {
+        statsRrPreset: trade.statsRrPreset,
+        resultR: trade.resultR !== null ? resultR : null,
+        closeReason: trade.closeReason,
+        statsOutcome: trade.statsOutcome,
+        intuitiveOutcome: trade.intuitiveOutcome,
+      },
       effectiveOutcome,
     );
     return {

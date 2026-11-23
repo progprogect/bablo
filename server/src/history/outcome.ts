@@ -42,6 +42,38 @@ export function isManualOutcome(value: unknown): value is TradeOutcome {
   return typeof value === "string" && (MANUAL_OUTCOMES as readonly string[]).includes(value);
 }
 
+/** Поля, по которым видно, что исход сделки задан отметкой «как закрылась бы». */
+type IntuitiveMarkInput = {
+  closeReason?: string | null;
+  statsOutcome?: string | null;
+  intuitiveOutcome?: string | null;
+};
+
+/**
+ * Исход этой сделки взят из отметки «как закрылась бы, если не трогать»: сделка закрыта
+ * мимо своих SL/TP, в админке не переразмечена, а отметка проставлена. Для таких сделок
+ * статистический R назначается фиксированным: тейк — +1R, стоп — −1R (решение
+ * пользователя от 23.11.2026), потому что фактический R («закрыла руками на +0.44R»)
+ * рядом с подписью «По тейку» ничего не значит.
+ */
+export function isIntuitiveMarkApplied(trade: IntuitiveMarkInput): boolean {
+  if (isManualOutcome(trade.statsOutcome)) return false;
+  if (trade.closeReason === "tp" || trade.closeReason === "sl") return false;
+  return trade.intuitiveOutcome === "tp" || trade.intuitiveOutcome === "sl";
+}
+
+/**
+ * Интуитивная сделка БЕЗ отметки: закрыта мимо своих SL/TP, и чем бы она кончилась —
+ * неизвестно. Такие сделки не участвуют в статистике часов (просьба пользователя от
+ * 23.11.2026: «пока не проставлю статус — не считать»), иначе собственное вмешательство
+ * портит винрейт часа, в котором сделка, может быть, дошла бы до тейка.
+ */
+export function isUnmarkedIntuitive(trade: IntuitiveMarkInput): boolean {
+  if (trade.closeReason === "tp" || trade.closeReason === "sl") return false;
+  if (isManualOutcome(trade.statsOutcome)) return false;
+  return trade.intuitiveOutcome !== "tp" && trade.intuitiveOutcome !== "sl";
+}
+
 /**
  * Закрытие по стопу с ПОЛОЖИТЕЛЬНЫМ результатом — это зафиксированная прибыль, а не
  * сработавший план защиты: либо стоп был уведён в прибыль (ночное правило 1/1,
@@ -94,12 +126,8 @@ export function isBreakevenClose(trade: TradeForOutcome, resultR: number): boole
  */
 export function resolveTradeOutcome(trade: TradeForOutcome, resultR: number): TradeOutcome {
   if (isManualOutcome(trade.statsOutcome)) return trade.statsOutcome;
-  if (
-    trade.closeReason !== "tp" &&
-    trade.closeReason !== "sl" &&
-    (trade.intuitiveOutcome === "tp" || trade.intuitiveOutcome === "sl")
-  ) {
-    return trade.intuitiveOutcome;
+  if (isIntuitiveMarkApplied(trade)) {
+    return trade.intuitiveOutcome as TradeOutcome;
   }
   if (isBreakevenClose(trade, resultR)) return "be";
   if (trade.closeReason === "tp") return "tp";
@@ -144,12 +172,22 @@ export function roundStatsR(value: number): number {
  * (`resultR × riskUsd`) при этом верные, врёт только R.
  */
 export function resolveStatsResultR(
-  trade: { statsRrPreset?: string | null; resultR: number | null },
+  trade: {
+    statsRrPreset?: string | null;
+    resultR: number | null;
+  } & IntuitiveMarkInput,
   outcome: TradeOutcome,
 ): number | null {
   const factual = trade.resultR === null ? null : roundStatsR(trade.resultR);
   const preset = trade.statsRrPreset;
   if (preset == null || preset === "" || preset === STATS_RR_PRESET_NONE) {
+    // Отметка «как закрылась бы» (слабее столбца R из админки, сильнее факта): сделка,
+    // которую не дали дойти до своих уровней, учитывается ровно в 1R — тейк в плюс,
+    // стоп в минус. В карточке это та же строка «R/R 1/1», что у обычных сделок.
+    if (isIntuitiveMarkApplied(trade)) {
+      if (outcome === "tp") return 1;
+      if (outcome === "sl") return -1;
+    }
     return factual;
   }
   const ratio = parseRRRatio(preset);
