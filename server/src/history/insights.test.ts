@@ -55,12 +55,22 @@ test("computeTradeInsights: hourlyOutcomes — все часы со сделка
   ]);
 });
 
-test("computeTradeInsights: прибыльный external — в total часа, но не в tpCount", () => {
+test("computeTradeInsights: прибыльный external без отметки — вне часа вовсе", () => {
+  // До 23.11.2026 такая сделка шла в total и портила винрейт часа нулём в tpCount.
+  // Теперь исход неизвестен, пока не проставлена отметка, — часа она не касается.
   const insights = computeTradeInsights(
     [trade({ openedHourUtc: 4, resultR: 1, closeReason: "external" })],
     TZ,
   );
-  assert.deepEqual(insights.hourlyOutcomes, [{ hour: 7, tpCount: 0, total: 1 }]);
+  assert.deepEqual(insights.hourlyOutcomes, []);
+});
+
+test("computeTradeInsights: переразметка в админке возвращает интуитивную сделку в час", () => {
+  const insights = computeTradeInsights(
+    [trade({ openedHourUtc: 4, resultR: 1, closeReason: "external", statsOutcome: "tp" })],
+    TZ,
+  );
+  assert.deepEqual(insights.hourlyOutcomes, [{ hour: 7, tpCount: 1, total: 1 }]);
 });
 
 test("computeTradeInsights: сделка без результата не попадает в часы", () => {
@@ -103,6 +113,7 @@ test("computeTradeInsights: отметка «как закрылась бы» д
     trade({ openedHourUtc: 8, closeReason: "manual", resultR: 0.5, intuitiveOutcome: "sl" }),
     trade({ openedHourUtc: 8, closeReason: "manual", resultR: 0.5 }),
   ];
-  // 8:00 UTC = 11:00 МСК; с отметкой «по тейку» — 1 тейк из 3 сделок часа.
-  assert.deepEqual(computeTradeInsights(trades, TZ).hourlyOutcomes, [{ hour: 11, tpCount: 1, total: 3 }]);
+  // 8:00 UTC = 11:00 МСК. Считаются только отмеченные: тейк и стоп. Третья, без отметки,
+  // в час не идёт вовсе (просьба пользователя от 23.11.2026) — поэтому total 2, а не 3.
+  assert.deepEqual(computeTradeInsights(trades, TZ).hourlyOutcomes, [{ hour: 11, tpCount: 1, total: 2 }]);
 });

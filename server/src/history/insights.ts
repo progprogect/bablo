@@ -1,6 +1,6 @@
 import { getLocalHour } from "../risk/tradingDay.js";
 import { mergeHourStats, type HourBaselineEntry } from "./hourBaseline.js";
-import { resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
+import { isUnmarkedIntuitive, resolveTradeOutcome, type TradeOutcome } from "./outcome.js";
 
 export type InsightTradeInput = {
   openedAt: Date;
@@ -51,6 +51,10 @@ function bucketByOpenHour(trades: InsightTradeInput[], tzOffsetMinutes: number):
 
   for (const trade of trades) {
     if (trade.resultR === null) continue;
+    // Интуитивное вмешательство без отметки: чем бы сделка кончилась — неизвестно, и в
+    // винрейт часа она не идёт вовсе (просьба пользователя от 23.11.2026). Как только
+    // отметка проставлена, сделка считается обычным тейком или стопом этого часа.
+    if (isUnmarkedIntuitive(trade)) continue;
     const hour = getLocalHour(trade.openedAt, tzOffsetMinutes);
     const bucket = buckets[hour]!;
     bucket.total += 1;

@@ -99,12 +99,19 @@ export function TradeRow({
 
   /**
    * «Интуитивное вмешательство» — сделка закрыта мимо своих SL/TP (вручную на бирже или
-   * кнопкой), ещё до того как дошла до них. Такие карточки подкрашены розовым (просьба
-   * пользователя от 22.11.2026), и у них есть отметка «как закрылась бы, если не трогать».
+   * кнопкой), ещё до того как дошла до них. У такой сделки спрашиваем, как она закрылась
+   * бы, если её не трогать.
+   *
+   * Розовым и с кнопками — только пока отметки НЕТ (просьба пользователя от 23.11.2026):
+   * розовый тут не метка «сделка особенная», а напоминание «ответь на вопрос». После
+   * ответа исход известен, сделка становится обычной строкой истории — и менять отметку
+   * уже нечем: решение принято один раз (переразметка осталась в админке).
    */
   const isIntuitive = trade.closeReason !== "sl" && trade.closeReason !== "tp";
+  const hasIntuitiveMark = trade.intuitiveOutcome === "tp" || trade.intuitiveOutcome === "sl";
+  const needsIntuitiveMark = isIntuitive && !hasIntuitiveMark;
 
-  async function saveIntuitiveOutcome(value: "tp" | "sl" | null) {
+  async function saveIntuitiveOutcome(value: "tp" | "sl") {
     setIsSavingIntuitive(true);
     setIntuitiveError(null);
     try {
@@ -121,7 +128,7 @@ export function TradeRow({
   return (
     <div
       className={`mx-4 flex flex-col gap-2 rounded-2xl border p-4 shadow-sm ${
-        isIntuitive ? "border-pink-200 bg-pink-50/70" : "border-line bg-card"
+        needsIntuitiveMark ? "border-pink-200 bg-pink-50/70" : "border-line bg-card"
       }`}
     >
       <div className="flex items-center justify-between">
@@ -166,13 +173,9 @@ export function TradeRow({
         </span>
       </div>
 
-      {isIntuitive && (
+      {needsIntuitiveMark && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-pink-200/70 pt-2 text-[11px]">
-          <span className="text-pink-700">
-            {trade.intuitiveOutcome
-              ? `Закрылась бы: ${trade.intuitiveOutcome === "tp" ? "по тейку" : "по стопу"}`
-              : "Как закрылась бы, если не трогать?"}
-          </span>
+          <span className="text-pink-700">Как закрылась бы, если не трогать?</span>
           {isEditingIntuitive ? (
             <span className="flex items-center gap-1.5">
               <button
@@ -191,16 +194,6 @@ export function TradeRow({
               >
                 по стопу
               </button>
-              {trade.intuitiveOutcome && (
-                <button
-                  type="button"
-                  disabled={isSavingIntuitive}
-                  onClick={() => saveIntuitiveOutcome(null)}
-                  className="rounded-md px-2 py-1 text-slate-500 disabled:opacity-50"
-                >
-                  снять
-                </button>
-              )}
               <button
                 type="button"
                 disabled={isSavingIntuitive}

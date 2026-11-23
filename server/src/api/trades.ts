@@ -58,7 +58,16 @@ function withOutcome(trade: Trade): Trade & { outcome: TradeOutcome; statsResult
   return {
     ...trade,
     outcome,
-    statsResultR: resolveStatsResultR({ statsRrPreset: trade.statsRrPreset, resultR }, outcome),
+    statsResultR: resolveStatsResultR(
+      {
+        statsRrPreset: trade.statsRrPreset,
+        resultR,
+        closeReason: trade.closeReason,
+        statsOutcome: trade.statsOutcome,
+        intuitiveOutcome: trade.intuitiveOutcome,
+      },
+      outcome,
+    ),
   };
 }
 

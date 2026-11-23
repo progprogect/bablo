@@ -153,3 +153,28 @@ test("отметка не перебивает реальные тейк/сто�
     "be",
   );
 });
+
+test("R отметки: тейк — ровно +1R, стоп — ровно −1R, факт не важен", () => {
+  // Решение пользователя от 23.11.2026: «R/R 1/1» в строке и в статистике, потому что
+  // фактический R руками закрытой сделки («+0.44R») рядом с «По тейку» ничего не значит.
+  const base = { closeReason: "manual", resultR: 0.44 };
+  assert.equal(resolveStatsResultR({ ...base, intuitiveOutcome: "tp" }, "tp"), 1);
+  assert.equal(resolveStatsResultR({ ...base, intuitiveOutcome: "sl" }, "sl"), -1);
+  // Без отметки — прежний факт, округлённый шагом 0.5.
+  assert.equal(resolveStatsResultR(base, "other"), 0.5);
+});
+
+test("R отметки: столбец R из админки главнее, реальные тейк/стоп не трогаются", () => {
+  assert.equal(
+    resolveStatsResultR(
+      { closeReason: "manual", resultR: 0.44, intuitiveOutcome: "tp", statsRrPreset: "1/3" },
+      "tp",
+    ),
+    3,
+  );
+  // Сделка закрыта своим тейком: её R — факт, пришедшая отметка ничего не меняет.
+  assert.equal(
+    resolveStatsResultR({ closeReason: "tp", resultR: 2.1, intuitiveOutcome: "sl" }, "tp"),
+    2,
+  );
+});

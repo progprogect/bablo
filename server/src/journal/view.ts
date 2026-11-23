@@ -59,7 +59,16 @@ export function toTradeCard(trade: Trade, categoryId: number | null): JournalTra
     },
     resultR ?? 0,
   );
-  const statsResultR = resolveStatsResultR({ statsRrPreset: trade.statsRrPreset, resultR }, outcome);
+  const statsResultR = resolveStatsResultR(
+    {
+      statsRrPreset: trade.statsRrPreset,
+      resultR,
+      closeReason: trade.closeReason,
+      statsOutcome: trade.statsOutcome,
+      intuitiveOutcome: trade.intuitiveOutcome,
+    },
+    outcome,
+  );
   const riskUsd = geo.riskUsd;
   const plannedTp = toNumber(trade.tpPriceInitial) ?? toNumber(trade.tpPrice);
   return {
